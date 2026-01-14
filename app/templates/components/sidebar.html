@@ -1,8 +1,10 @@
 <aside class="w-64 bg-white dark:bg-[#050505] border-r border-gray-200 dark:border-[#1E1E1E] flex flex-col justify-between z-20 h-screen sticky top-0">
     <div class="p-6 flex-1 overflow-y-auto">
-        <div class="mb-10">
-            <h1 class="text-2xl font-brand font-semibold tracking-tight text-black dark:text-white select-none leading-none">LabelLab</h1>
-            <span class="text-[9px] font-mono text-green-600 dark:text-green-500 font-bold uppercase tracking-widest block mt-1 select-none">{{ version }} // SECURE</span>
+        <div class="mb-10 select-none">
+            <h1 class="text-2xl font-brand font-bold tracking-tighter text-black dark:text-white leading-none">LabelLab</h1>
+            <div class="flex items-center gap-2 mt-2">
+                <span class="text-[9px] font-mono text-gray-400 dark:text-[#444] font-bold uppercase tracking-[0.2em]">Build [ {{ version }} ]</span>
+            </div>
         </div>
         
         <nav class="space-y-1">
@@ -52,9 +54,9 @@
         <div class="flex justify-between items-center border border-gray-200 dark:border-[#1E1E1E] p-3 bg-white dark:bg-[#050505]">
              <div>
                  <p class="text-[9px] font-bold uppercase text-gray-600">Balance</p>
-                 <p id="wallet-balance" class="text-sm font-mono font-bold text-black dark:text-white">$...</p>
+                 <p id="wallet-balance" class="text-sm font-mono font-bold text-black dark:text-white transition-all duration-500 transform">$...</p>
              </div>
-             <a href="{{ url_for('main.logout') }}" class="w-6 h-6 flex items-center justify-center bg-gray-200 dark:bg-[#111] hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all text-gray-500 text-xs font-bold">+</a>
+             <button onclick="switchTab('deposit')" class="w-6 h-6 flex items-center justify-center bg-gray-100 dark:bg-[#111] border border-transparent hover:border-green-500/30 hover:bg-green-500/10 hover:text-green-500 transition-all text-gray-500 text-xs font-bold">+</button>
         </div>
     </div>
 </aside>

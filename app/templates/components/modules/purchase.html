@@ -1,62 +1,126 @@
-<div class="w-full max-w-lg border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] p-1 relative shadow-glow">
-    <div class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-black dark:via-white to-transparent opacity-20"></div>
-    
-    <div class="p-8 space-y-6">
-        <div class="flex justify-between items-end">
-            <div>
-                <h2 class="text-sm font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Bulk Purchase</h2>
-                <p class="text-[10px] text-gray-600 font-mono mt-1">BATCH_ID: <span class="text-black dark:text-white">NEW</span></p>
-            </div>
-            <div class="px-2 py-1 border border-black/10 dark:border-white/20 bg-black/5 dark:bg-white/5">
-                <p class="text-[9px] font-bold text-black dark:text-white uppercase">Mode: Bulk</p>
+<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6">
+    <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4 gap-4">
+        <div>
+            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Bulk Purchase</h2>
+            <p class="text-[10px] text-gray-500 font-mono mt-1">HIGH-VOLUME SHIPPING ENGINE // ENCRYPTED TRANSFERS</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="px-4 py-2 bg-gray-100 dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-center min-w-[120px]">
+                <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Operation Mode</p>
+                <p class="text-xs font-mono font-bold text-black dark:text-white uppercase">BATCH_UPLOAD</p>
             </div>
         </div>
+    </div>
 
-        <form onsubmit="return false;" class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
-                <div class="space-y-1">
-                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Type</label>
-                    <select name="label_type" class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
-                        <option value="priority">Priority V2</option>
-                    </select>
+    <div class="flex items-start justify-center flex-1 pt-4 lg:pt-10">
+        <div class="w-full max-w-xl bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-black dark:via-white to-transparent opacity-20"></div>
+            
+            <div class="p-8 space-y-6">
+                <div class="flex justify-between items-end border-b border-gray-50 dark:border-[#151515] pb-4">
+                    <div>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-[0.2em]">Batch Configuration</h3>
+                        <p class="text-[9px] text-gray-500 font-mono mt-1 uppercase">Allocating Token: <span id="allocation-status" class="text-gray-400 font-bold">READY</span></p>
+                    </div>
+                    <div id="protocol-badge" class="px-2 py-1 bg-blue-500/5 border border-blue-500/20 text-blue-500 text-[9px] font-bold uppercase tracking-tighter">
+                        PRO-9505-ACTIVE
+                    </div>
                 </div>
-                <div class="space-y-1">
-                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Version</label>
-                    <select name="tracking_version" class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
-                        <option value="95055">95055</option>
-                        <option value="94888">94888</option>
-                    </select>
-                </div>
+
+                <form onsubmit="return false;" class="space-y-5">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Service Type</label>
+                            <select name="label_type" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
+                                <option value="priority">USPS Priority V2</option>
+                            </select>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Tracking Version</label>
+                            <select name="tracking_version" onchange="updateProtocolBadge(this.value)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
+                                <option value="95055">95055 (Standard)</option>
+                                <option value="94888">94888 (Legacy)</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Label Template</label>
+                        <select name="template_choice" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
+                            <option value="pitney_v2">Pitney Bowes [V2]</option>
+                            <option value="stamps_v2">Stamps.com [V2]</option>
+                            <option value="easypost_v2">EasyPost [V2]</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center px-1">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Input Manifest (.CSV)</label>
+                            <a href="/api/download/sample-csv" class="text-[9px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest hover:underline transition-all font-mono">Download_Template</a>
+                        </div>
+                        <input type="file" id="csvUpload" class="hidden" accept=".csv" onchange="handleFileDisplay(this)">
+                        <button onclick="document.getElementById('csvUpload').click()" class="w-full py-6 bg-gray-50 dark:bg-[#050505] border-2 border-dashed border-gray-200 dark:border-[#1E1E1E] hover:border-black text-xs font-mono font-bold uppercase text-gray-400 hover:text-black transition-all group">
+                            <span id="fileName" class="flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                <span>Attach Manifest File</span>
+                            </span>
+                        </button>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-50 dark:border-[#151515]">
+                        <button id="verifyBtn" onclick="triggerVerification()" class="flex-1 py-3.5 bg-white dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] hover:bg-gray-50 text-[10px] font-mono font-bold text-black dark:text-white uppercase transition-all shadow-sm">
+                            Verify Integrity
+                        </button>
+                        <button id="confirmBtn" onclick="triggerExecution()" disabled class="flex-[1.5] py-3.5 bg-gray-100 dark:bg-[#151515] text-gray-400 text-[10px] font-mono font-bold uppercase opacity-50 cursor-not-allowed transition-all shadow-sm">
+                            Execute Batch
+                        </button>
+                    </div>
+                </form>
             </div>
             
-            <div class="space-y-1">
-                <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Template</label>
-                <select name="template_choice" class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
-                    <option value="pitney_v2">Pitney Bowes [V2]</option>
-                    <option value="stamps_v2">Stamps.com [V2]</option>
-                    <option value="easypost_v2">EasyPost [V2]</option>
-                </select>
+            <div class="bg-gray-50 dark:bg-[#050505] p-4 border-t border-gray-200 dark:border-[#1E1E1E] text-center">
+                <p class="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Ensure addresses follow the strict CSV normalization guidelines</p>
             </div>
-
-            <div class="space-y-1">
-                <div class="flex justify-between items-center">
-                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Data Input</label>
-                    <a href="/api/download/sample-csv" class="text-[9px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest hover:underline transition-all">Download Format</a>
-                </div>
-                <input type="file" id="csvUpload" class="hidden" accept=".csv" onchange="document.getElementById('fileName').innerText = '> FILE: ' + this.files[0].name; document.getElementById('fileName').classList.add('text-green-600', 'dark:text-green-500')">
-                <button onclick="document.getElementById('csvUpload').click()" class="w-full py-4 bg-gray-50 dark:bg-[#050505] border border-dashed border-gray-300 dark:border-[#333] hover:border-black dark:hover:border-white text-[10px] font-mono font-bold uppercase text-gray-500 hover:text-black dark:hover:text-white transition-all group">
-                    <span id="fileName" class="group-hover:text-black dark:group-hover:text-white transition-colors">Select .CSV File</span>
-                </button>
-            </div>
-
-            <div class="flex gap-4 pt-4">
-                <button id="verifyBtn" onclick="verifyData()" class="flex-1 py-3 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[10px] font-mono font-bold text-black dark:text-white uppercase transition-all">
-                    Verify Integrity
-                </button>
-                <button id="confirmBtn" onclick="handlePurchase()" disabled class="flex-[2] py-3 bg-gray-200 dark:bg-[#111] text-gray-500 dark:text-gray-600 text-[10px] font-mono font-bold uppercase opacity-50 cursor-not-allowed transition-all">
-                    Execute
-                </button>
-            </div>
-        </form>
+        </div>
     </div>
 </div>
+
+<script>
+    // UPDATED: Logic to change "Allocating Token" text and badge color
+    function updateAllocationStatus(status) {
+        const el = document.getElementById('allocation-status');
+        el.innerText = status;
+        if (status === 'ALLOCATED') {
+            el.classList.remove('text-gray-400');
+            el.classList.add('text-blue-500');
+        } else {
+            el.classList.add('text-gray-400');
+            el.classList.remove('text-blue-500');
+        }
+    }
+
+    // UPDATED: Dynamic Protocol IDs
+    function updateProtocolBadge(version) {
+        const badge = document.getElementById('protocol-badge');
+        if (version === '94888') {
+            badge.innerText = 'PRO-9488-LEGACY';
+            badge.classList.replace('text-blue-500', 'text-yellow-500');
+            badge.classList.replace('border-blue-500/20', 'border-yellow-500/20');
+        } else {
+            badge.innerText = 'PRO-9505-ACTIVE';
+            badge.classList.replace('text-yellow-500', 'text-blue-500');
+            badge.classList.replace('border-yellow-500/20', 'border-blue-500/20');
+        }
+    }
+
+    // Wrappers to keep existing functionality while updating UI
+    function triggerVerification() {
+        updateAllocationStatus('ALLOCATED');
+        if (typeof verifyData === 'function') verifyData();
+    }
+
+    function triggerExecution() {
+        updateAllocationStatus('ALLOCATED');
+        if (typeof handlePurchase === 'function') handlePurchase();
+    }
+</script>

@@ -1,70 +1,77 @@
-<div class="h-full flex flex-col">
-    <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6">
+    <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4 gap-4">
         <div>
-            <h2 class="text-sm font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Bulk History</h2>
-            <p class="text-[10px] text-gray-500 font-mono mt-1">ARCHIVE RETENTION: 30 DAYS</p>
+            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Bulk History</h2>
+            <p class="text-[10px] text-gray-500 font-mono mt-1">ARCHIVE RETENTION: 30 DAYS // ENCRYPTION ENABLED</p>
         </div>
         
-        <div class="flex gap-2 w-full md:w-auto">
-            <div class="relative flex-1 md:w-64">
-                <input type="text" id="historySearch" placeholder="SEARCH BATCH ID..." 
+        <div class="flex gap-3 w-full md:w-auto">
+            <div class="relative flex-1 md:w-72">
+                <input type="text" id="historySearch" placeholder="SEARCH BATCH ID OR FILE..." 
                        oninput="debounceSearch()"
-                       class="w-full pl-3 pr-10 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase focus:border-black dark:focus:border-white outline-none transition-all">
-                <div class="absolute right-3 top-2.5 text-gray-400">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                       class="w-full pl-3 pr-10 py-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase focus:border-black dark:focus:border-white outline-none transition-all shadow-sm">
+                <div class="absolute right-3 top-3 text-gray-400">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
             </div>
 
             <div class="relative">
-                <button onclick="document.getElementById('filterMenu').classList.toggle('hidden')" class="h-full px-3 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] hover:border-black dark:hover:border-white transition-all text-black dark:text-white">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                <button onclick="document.getElementById('filterMenu').classList.toggle('hidden')" class="h-full px-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] hover:border-black dark:hover:border-white transition-all text-black dark:text-white shadow-sm flex items-center gap-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                    <span class="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Filter</span>
                 </button>
-                <div id="filterMenu" class="hidden absolute right-0 mt-2 w-48 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-xl z-50 py-1">
-                    <button onclick="applyFilter('recent')" class="w-full text-left px-4 py-2 text-[10px] font-mono font-bold uppercase hover:bg-gray-100 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white">Recent -> Oldest</button>
-                    <button onclick="applyFilter('oldest')" class="w-full text-left px-4 py-2 text-[10px] font-mono font-bold uppercase hover:bg-gray-100 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white">Oldest -> Recent</button>
-                    <div class="h-[1px] bg-gray-100 dark:bg-[#1E1E1E] my-1"></div>
-                    <button onclick="applyFilter('high')" class="w-full text-left px-4 py-2 text-[10px] font-mono font-bold uppercase hover:bg-gray-100 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white">Qty: High -> Low</button>
-                    <button onclick="applyFilter('low')" class="w-full text-left px-4 py-2 text-[10px] font-mono font-bold uppercase hover:bg-gray-100 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white">Qty: Low -> High</button>
+                <div id="filterMenu" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-2xl z-50 py-2">
+                    <p class="px-4 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-1">Sort Direction</p>
+                    <button onclick="applyFilter('recent')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Recent -> Oldest</button>
+                    <button onclick="applyFilter('oldest')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Oldest -> Recent</button>
+                    <div class="h-[1px] bg-gray-100 dark:bg-[#1E1E1E] my-2 mx-2"></div>
+                    <p class="px-4 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-1">Volume Ordering</p>
+                    <button onclick="applyFilter('high')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Qty: High -> Low</button>
+                    <button onclick="applyFilter('low')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Qty: Low -> High</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="flex-1 overflow-auto border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] relative shadow-glow">
-        <table class="w-full text-left border-collapse">
-            <thead class="bg-gray-50 dark:bg-[#050505] sticky top-0 z-10 border-b border-gray-200 dark:border-[#1E1E1E]">
-                <tr>
-                    <th class="p-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Batch Name</th>
-                    <th class="p-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">TransDate</th>
-                    <th class="p-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Labels</th>
-                    <th class="p-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Version</th>
-                    <th class="p-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                    <th class="p-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest text-right">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="history-table-body" class="divide-y divide-gray-100 dark:divide-[#1E1E1E]">
-                </tbody>
-        </table>
-    </div>
+    <div class="flex-1 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden">
+        <div class="flex-1 overflow-y-auto overflow-x-auto">
+            <table class="w-full text-left border-collapse min-w-[900px]">
+                <thead class="bg-gray-50 dark:bg-[#050505] sticky top-0 z-10 border-b border-gray-200 dark:border-[#1E1E1E]">
+                    <tr>
+                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Batch Identity</th>
+                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Generation Date</th>
+                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest text-center">Volume</th>
+                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Protocol</th>
+                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Process State</th>
+                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest text-right">Data Export</th>
+                    </tr>
+                </thead>
+                <tbody id="history-table-body" class="divide-y divide-gray-50 dark:divide-[#151515] text-[10px] font-mono">
+                    </tbody>
+            </table>
+        </div>
 
-    <div class="mt-4 flex justify-between items-center border-t border-gray-200 dark:border-[#1E1E1E] pt-4">
-        <span id="pageInfo" class="text-[10px] font-mono text-gray-500 uppercase">Page 1 of 1</span>
-        <div class="flex gap-2">
-            <button onclick="changePage(-1)" id="prevBtn" disabled class="px-3 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-gray-50 dark:hover:bg-[#111] transition-all">< Prev</button>
-            <button onclick="changePage(1)" id="nextBtn" disabled class="px-3 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-gray-50 dark:hover:bg-[#111] transition-all">Next ></button>
+        <div class="p-5 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+            <span id="pageInfo" class="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">SECURE_PAGE 1 OF 1</span>
+            <div class="flex gap-2">
+                <button onclick="changePage(-1)" id="prevBtn" disabled class="px-4 py-2 border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-black transition-all shadow-sm">< Prev</button>
+                <button onclick="changePage(1)" id="nextBtn" disabled class="px-4 py-2 border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-black transition-all shadow-sm">Next ></button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-    let currentPage = 1;
-    let currentSort = 'recent';
-    let currentSearch = '';
-    let searchTimeout = null;
+    // Variables initialized in dashboard.html for global state
+    // We only redefine them if they don't exist
+    if (typeof currentPage === 'undefined') window.currentPage = 1;
+    if (typeof currentSort === 'undefined') window.currentSort = 'recent';
+    if (typeof currentSearch === 'undefined') window.currentSearch = '';
+    let historySearchTimeout = null;
 
     function debounceSearch() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
+        clearTimeout(historySearchTimeout);
+        historySearchTimeout = setTimeout(() => {
             currentSearch = document.getElementById('historySearch').value;
             currentPage = 1;
             loadBatchHistory();
@@ -84,24 +91,24 @@
     }
 
     async function loadBatchHistory() {
+        if (activeTab !== 'history') return;
+
         try {
-            const query = `?page=${currentPage}&sort=${currentSort}&search=${currentSearch}`;
+            const query = `?page=${currentPage}&sort=${currentSort}&search=${currentSearch}&limit=10`;
             const res = await fetch('/api/batches' + query);
             const json = await res.json();
             
             allBatches = json.data;
             const meta = json.pagination;
 
-            // Render Table
             renderHistory();
 
-            // Update Pagination UI
-            document.getElementById('pageInfo').innerText = `Page ${meta.current_page} of ${meta.total_pages}`;
+            document.getElementById('pageInfo').innerText = `SECURE_PAGE ${meta.current_page} OF ${meta.total_pages || 1}`;
             document.getElementById('prevBtn').disabled = meta.current_page <= 1;
             document.getElementById('nextBtn').disabled = meta.current_page >= meta.total_pages;
 
         } catch (err) {
-            console.error(err);
+            console.error("Batch Sync Error:", err);
         }
     }
 </script>

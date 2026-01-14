@@ -1,175 +1,173 @@
-<div class="w-full max-w-7xl mx-auto flex flex-col justify-start relative py-10 px-6">
-    
-    <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-4 gap-4">
+<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6 space-y-6 animate-in fade-in duration-500">
+    <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4 gap-4">
         <div>
-            <h2 class="text-lg font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Automation Console</h2>
-            <p class="text-xs text-gray-500 font-mono mt-1">SELLER CENTRAL INTEGRATION SUITE</p>
+            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Automation Console</h2>
+            <div class="flex flex-col mt-1">
+                <p class="text-[10px] text-gray-500 font-mono uppercase">Seller Central Integration Suite // Session Tracking Enabled</p>
+                <p class="text-[9px] text-blue-500 font-mono mt-1 uppercase tracking-wider">
+                    <span class="text-gray-400">* Note:</span> Confirmation window remains open for 7 days after batch creation.
+                </p>
+            </div>
         </div>
+        
         <div class="flex gap-4 items-center">
-            <div class="px-4 py-2 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#333] text-xs font-mono font-bold uppercase text-gray-600 dark:text-gray-400">
-                MONTHLY: <span id="header_slots_m" class="text-black dark:text-white">{{ monthly_left }} / 50</span>
+            <div class="flex flex-col items-end px-2">
+                <span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">System Status</span>
+                <div class="flex items-center gap-2 text-green-500 text-[10px] font-mono font-bold uppercase">
+                    <div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+                    {{ system_status }}
+                </div>
             </div>
-            <div class="px-4 py-2 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#333] text-xs font-mono font-bold uppercase text-gray-600 dark:text-gray-400">
-                LIFETIME: <span id="header_slots_l" class="text-black dark:text-white">{{ lifetime_left }} / 10</span>
-            </div>
-            <div class="px-4 py-2 bg-green-500/10 border border-green-500/20 text-green-500 text-xs font-mono font-bold uppercase flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                {{ system_status }}
+            
+            <div class="h-8 w-[1px] bg-gray-200 dark:border-[#1E1E1E]"></div>
+            
+            <div class="flex gap-2">
+                <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] min-w-[90px] text-center">
+                    <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Monthly</p>
+                    <p id="header_slots_m" class="text-[10px] font-mono font-bold text-black dark:text-white">{{ monthly_left }} / 50</p>
+                </div>
+                <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] min-w-[90px] text-center">
+                    <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Lifetime</p>
+                    <p id="header_slots_l" class="text-[10px] font-mono font-bold text-black dark:text-white">{{ lifetime_left }} / 10</p>
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
-        
-        <div class="lg:col-span-1 space-y-6">
+    <div class="flex flex-col lg:grid lg:grid-cols-12 gap-6 flex-1 min-h-0">
+        <div class="lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar">
             
-            {% if not user.is_subscribed %}
-            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative">
-                <div class="flex justify-between items-center mb-2">
-                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Monthly License</h3>
-                    <span id="monthly_count" class="text-xs font-mono text-gray-500">{{ monthly_left }}/50 LEFT</span>
-                </div>
-                <div class="text-3xl font-mono font-bold text-black dark:text-white mb-4">$29.99 <span class="text-sm text-gray-500">/MO</span></div>
-                <button onclick="buyKey('monthly')" id="btnMonthly" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-xs font-mono font-bold uppercase hover:opacity-90 transition-all">Purchase Monthly</button>
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 relative overflow-hidden group shadow-glow">
+                {% if not user.is_subscribed %}
+                    <div class="flex flex-col gap-3">
+                        <div class="p-2 bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-bold uppercase text-center tracking-widest font-mono">License Required</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="buyKey('monthly')" class="p-2 bg-black dark:bg-white text-white dark:text-black text-[9px] font-bold uppercase hover:opacity-90 transition-all font-mono">Monthly $29.99</button>
+                            <button onclick="buyKey('lifetime')" class="p-2 bg-transparent border border-gray-200 dark:border-white/20 text-black dark:text-white text-[9px] font-bold uppercase hover:bg-gray-100 dark:hover:bg-white/10 transition-all font-mono">Lifetime $499</button>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-green-500/10 border border-green-500/20 text-green-500 flex items-center justify-center">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <div>
+                                <p class="text-[10px] font-bold text-black dark:text-white uppercase tracking-widest font-mono">License Active</p>
+                                <p class="text-[8px] font-mono text-gray-500 uppercase">Expires: {{ user.subscription_end }}</p>
+                            </div>
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer group/toggle">
+                            <span class="text-[8px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest group-hover/toggle:text-black dark:group-hover/toggle:text-white transition-colors font-mono">Auto-Renew</span>
+                            <input type="checkbox" id="autoRenewActive" {% if user.auto_renew %}checked{% endif %} onchange="saveSettings()" class="w-3.5 h-3.5 accent-green-500 cursor-pointer bg-gray-100 dark:bg-[#111] border-gray-300 dark:border-[#333]">
+                        </label>
+                    </div>
+                {% endif %}
             </div>
 
-            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative opacity-90 hover:opacity-100 transition-opacity">
-                <div class="absolute top-0 right-0 px-2 py-1 bg-blue-600 text-white text-[10px] font-bold uppercase">Best Value</div>
-                <div class="flex justify-between items-center mb-2">
-                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Lifetime License</h3>
-                    <span id="lifetime_count" class="text-xs font-mono text-gray-500">{{ lifetime_left }}/10 LEFT</span>
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] flex flex-col flex-1 relative overflow-hidden shadow-glow">
+                <div class="flex border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505]">
+                    <button onclick="toggleConfigTab('credentials')" id="tab-credentials" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest border-b-2 border-black dark:border-white text-black dark:text-white transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111]">API Keys</button>
+                    <button onclick="toggleConfigTab('inventory')" id="tab-inventory" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">Inventory</button>
+                    <button onclick="toggleConfigTab('sender')" id="tab-sender" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">Sender</button>
                 </div>
-                <div class="text-3xl font-mono font-bold text-black dark:text-white mb-4">$499.00 <span class="text-sm text-gray-500">/ONCE</span></div>
-                <button onclick="buyKey('lifetime')" id="btnLifetime" class="w-full py-3 bg-transparent border border-black dark:border-white text-black dark:text-white text-xs font-mono font-bold uppercase hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all">Purchase Lifetime</button>
-            </div>
 
-            {% else %}
-            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative overflow-hidden">
-                <div class="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="w-12 h-12 rounded-full bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    </div>
-                    <div>
-                        <h2 class="text-lg font-mono font-bold text-black dark:text-white">LICENSE ACTIVE</h2>
-                        <p class="text-xs font-mono text-gray-500">EXPIRES: {{ user.subscription_end }}</p>
-                    </div>
-                </div>
-                <div class="pt-4 border-t border-gray-100 dark:border-[#222]" id="autoRenewContainer">
-                    <div class="flex items-center gap-2">
-                        <input type="checkbox" id="autoRenewActive" {% if user.auto_renew %}checked{% endif %} onchange="saveSettings()" class="accent-black dark:accent-white w-4 h-4">
-                        <label for="autoRenewActive" class="text-xs font-mono text-gray-500 cursor-pointer select-none">Auto-Renew Enabled</label>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-
-            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative">
-                <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Configuration</h3>
-                
-                <div class="space-y-6">
-                    <div>
-                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">COOKIES</label>
-                        <textarea id="in_cookies" rows="2" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none resize-none rounded-none placeholder-gray-600" placeholder="Paste JSON cookie string..." {% if not user.is_subscribed %}disabled{% endif %}>{{ user.auth_cookies or '' }}</textarea>
-                    </div>
+                <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
                     
-                    <div>
-                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">CSRF_TOKEN</label>
-                        <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-600" placeholder="Paste token..." {% if not user.is_subscribed %}disabled{% endif %}>
+                    <div id="panel-credentials" class="space-y-4">
+                        <div>
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Cookies (JSON String)</label>
+                            <textarea id="in_cookies" rows="6" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none resize-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">{{ user.auth_cookies or '' }}</textarea>
+                        </div>
+                        <div>
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">CSRF Token</label>
+                            <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">
+                        </div>
                     </div>
-                    
-                    <div>
-                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Inventory Map</label>
-                        
+
+                    <div id="panel-inventory" class="hidden space-y-3">
                         <textarea id="in_inventory" class="hidden">{{ user.inventory_json or '{}' }}</textarea>
-
-                        <div class="border border-gray-200 dark:border-[#333] bg-gray-50 dark:bg-[#111] p-3 space-y-3">
-                            <div class="grid grid-cols-12 gap-2">
-                                <input id="inv_sku" type="text" placeholder="SKU" class="col-span-4 p-2 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono outline-none focus:border-blue-500">
-                                <input id="inv_weight" type="number" placeholder="Lbs" class="col-span-3 p-2 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono outline-none focus:border-blue-500">
-                                <input id="inv_desc" type="text" placeholder="Desc" class="col-span-5 p-2 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono outline-none focus:border-blue-500">
+                        <div class="bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] p-3 space-y-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <input id="inv_sku" type="text" placeholder="SKU ID" class="p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
+                                <input id="inv_weight" type="number" placeholder="Lbs" class="p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
                             </div>
-                            <button onclick="addInvItem()" class="w-full py-2 bg-blue-600 text-white text-xs font-bold uppercase hover:bg-blue-500 transition-all">ADD SKU MAP</button>
+                            <input id="inv_desc" type="text" placeholder="Package Description" class="w-full p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
+                            <button onclick="addInvItem()" class="w-full py-2 bg-black dark:bg-white border border-transparent text-white dark:text-black text-[9px] font-bold uppercase tracking-widest hover:opacity-90 transition-all font-mono">Update Map</button>
                         </div>
-
-                        <div id="inventory_list" class="mt-2 max-h-48 overflow-y-auto border border-gray-200 dark:border-[#333] bg-white dark:bg-[#050505] divide-y divide-gray-100 dark:divide-[#222]">
-                            </div>
+                        <div id="inventory_list" class="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar"></div>
                     </div>
-                    <div>
-                        <div class="flex justify-between items-center mb-2">
-                            <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block">Sender Profile</label>
-                            <a href="#" onclick="switchTab('addresses')" class="text-[10px] font-bold text-blue-500 hover:underline uppercase">Manage Profiles</a>
+
+                    <div id="panel-sender" class="hidden space-y-4">
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono">Sender Profile</label>
+                            <a href="#" onclick="switchTab('addresses')" class="text-[9px] font-bold text-blue-500 uppercase hover:text-blue-400 transition-colors font-mono underline decoration-blue-500/30 underline-offset-4">Manage Profiles</a>
                         </div>
-                        <select id="addr_select" onchange="handleAddrChange()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none appearance-none cursor-pointer" {% if not user.is_subscribed %}disabled{% endif %}>
+                        
+                        <select id="addr_select" onchange="handleAddrChange()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none cursor-pointer hover:bg-gray-100 dark:hover:bg-[#111] transition-all">
                             <option value="">LOADING...</option>
                         </select>
-                    </div>
 
-                    <div>
-                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Unshipped Orders (.TXT)</label>
-                        <div class="flex flex-col gap-2">
-                            <input type="file" id="in_file" accept=".txt" class="hidden" onchange="handleFileSelect(this)" {% if not user.is_subscribed %}disabled{% endif %}>
-                            <button id="uploadBtn" onclick="document.getElementById('in_file').click()" class="w-full py-3 border border-dashed border-gray-300 dark:border-[#333] bg-gray-50 dark:bg-[#050505] hover:border-black dark:hover:border-white text-xs font-mono text-gray-500 hover:text-black dark:hover:text-white transition-all uppercase flex items-center justify-center gap-2" {% if not user.is_subscribed %}disabled{% endif %}>
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                                <span id="selectedFileName">Select .TXT File</span>
+                        <div class="pt-4 border-t border-gray-200 dark:border-[#1E1E1E]">
+                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Unshipped Data (.TXT)</label>
+                            <input type="file" id="in_file" accept=".txt" class="hidden" onchange="handleFileSelect(this)">
+                            <button onclick="document.getElementById('in_file').click()" class="w-full py-6 border border-dashed border-gray-300 dark:border-[#333] hover:border-black dark:hover:border-white text-[9px] font-mono text-gray-400 hover:text-black dark:hover:text-white transition-all uppercase group bg-gray-50 dark:bg-[#050505]">
+                                <span id="selectedFileName">Select Amazon Report</span>
                             </button>
                         </div>
                     </div>
                 </div>
 
-                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-[#222] space-y-3">
-                    <button onclick="saveSettings()" id="saveBtn" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-xs font-mono font-bold uppercase hover:opacity-90 transition-all" {% if not user.is_subscribed %}disabled{% endif %}>Save Configuration</button>
-                    <button onclick="formatFile()" id="parseBtn" disabled class="w-full py-3 text-xs font-mono font-bold uppercase transition-all flex items-center justify-center gap-2 bg-gray-200 dark:bg-[#151515] text-gray-400 cursor-not-allowed"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg> Parse Unshipped Orders</button>
+                <div class="p-5 border-t border-gray-200 dark:border-[#1E1E1E] space-y-2 bg-gray-50 dark:bg-[#050505]">
+                    <button onclick="saveSettings()" id="saveBtn" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold text-[9px] uppercase tracking-widest hover:opacity-90 transition-all font-mono shadow-sm">Save Config</button>
+                    <button onclick="formatFile()" id="parseBtn" disabled class="w-full py-3 bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#1E1E1E] text-gray-400 text-[9px] font-bold uppercase tracking-widest cursor-not-allowed transition-all font-mono">Parse Orders</button>
                 </div>
-                
-                {% if not user.is_subscribed %}
-                <div class="absolute inset-0 bg-white/60 dark:bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-10">
-                    <div class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-xs font-mono font-bold uppercase shadow-xl border border-gray-800">License Required</div>
-                </div>
-                {% endif %}
             </div>
         </div>
 
-        <div class="lg:col-span-2 h-full flex flex-col">
-            <div class="flex-1 p-0 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative flex flex-col min-h-[500px]">
-                <div class="p-6 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center">
-                    <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest">Pending Confirmations</h3>
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                        <span class="text-xs font-mono text-green-500 font-bold uppercase">Live Feed</span>
+        <div class="lg:col-span-8 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden">
+            <div class="p-5 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+                <div class="flex items-center gap-6">
+                    <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">Pending Confirmations</h3>
+                    <div class="flex items-center gap-4 border-l border-gray-200 dark:border-[#1E1E1E] pl-6 text-center">
+                        <div>
+                            <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Ready</p>
+                            <p id="stat-ready" class="text-[10px] font-mono font-bold text-black dark:text-white">0</p>
+                        </div>
+                        <div>
+                            <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Partial</p>
+                            <p id="stat-partial" class="text-[10px] font-mono font-bold text-yellow-500">0</p>
+                        </div>
                     </div>
                 </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-green-500/5 border border-green-500/20">
+                    <div class="w-1 h-1 rounded-full bg-green-500 animate-pulse"></div>
+                    <span class="text-[8px] font-mono text-green-600 dark:text-green-400 font-bold uppercase tracking-widest">Real-Time</span>
+                </div>
+            </div>
 
-                <div class="flex-1 overflow-auto relative">
-                    {% if user.is_subscribed %}
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-gray-50 dark:bg-[#050505] sticky top-0 z-10 border-b border-gray-200 dark:border-[#1E1E1E]">
-                            <tr>
-                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Batch Name</th>
-                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Date</th>
-                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Labels</th>
-                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="automation-history-body" class="divide-y divide-gray-100 dark:divide-[#1E1E1E] text-xs font-mono"></tbody>
-                    </table>
-                    {% else %}
-                    <div class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50/50 dark:bg-[#050505]/50 backdrop-blur-sm">
-                        <p class="text-xs font-mono font-bold text-gray-400 uppercase">History Locked</p>
-                    </div>
-                    {% endif %}
-                </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar">
+                <table class="w-full text-left border-collapse min-w-[800px]">
+                    <thead class="bg-white dark:bg-[#0A0A0A] sticky top-0 z-10 border-b border-gray-200 dark:border-[#1E1E1E]">
+                        <tr>
+                            <th class="px-6 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Batch Identity</th>
+                            <th class="px-6 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Date</th>
+                            <th class="px-6 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Volume</th>
+                            <th class="px-6 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Status</th>
+                            <th class="px-6 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-right font-mono">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="automation-history-body" class="divide-y divide-gray-100 dark:divide-[#151515] text-[10px] font-mono">
+                        </tbody>
+                </table>
+            </div>
 
-                {% if user.is_subscribed %}
-                <div class="p-4 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
-                    <span id="auto_page_info" class="text-xs font-mono font-bold text-gray-500 uppercase">Page 1</span>
-                    <div class="flex gap-2">
-                        <button onclick="changeAutoPage(-1)" id="btnPrevAuto" disabled class="px-3 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-[#111] transition-all">< Prev</button>
-                        <button onclick="changeAutoPage(1)" id="btnNextAuto" disabled class="px-3 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-[#111] transition-all">Next ></button>
-                    </div>
+            <div class="p-4 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+                <span id="auto_page_info" class="text-[9px] font-mono font-bold text-gray-500 uppercase tracking-widest">Page 0 of 0</span>
+                <div class="flex gap-2">
+                    <button onclick="changeAutoPage(-1)" id="btnPrevAuto" disabled class="px-4 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-[8px] font-bold uppercase text-black dark:text-white hover:bg-white dark:hover:bg-[#151515] disabled:opacity-30 transition-all font-mono">Prev</button>
+                    <button onclick="changeAutoPage(1)" id="btnNextAuto" disabled class="px-4 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-[8px] font-bold uppercase text-black dark:text-white hover:bg-white dark:hover:bg-[#151515] disabled:opacity-30 transition-all font-mono">Next</button>
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -180,38 +178,80 @@
     let autoCurrentPage = 1;
     let fileSelected = false;
     let addressesAvailable = false;
-
-    // --- NEW: SESSION MEMORY ---
-    // This tracks which batches were confirmed in this session
     window.confirmedSessionIds = []; 
 
-    // --- INVENTORY MANAGEMENT LOGIC ---
+    // --- UI TOGGLE LOGIC ---
+    function toggleConfigTab(tabId) {
+        ['credentials', 'inventory', 'sender'].forEach(id => {
+            document.getElementById(`panel-${id}`).classList.add('hidden');
+            document.getElementById(`tab-${id}`).classList.remove('text-black', 'dark:text-white', 'border-black', 'dark:border-white');
+            document.getElementById(`tab-${id}`).classList.add('text-gray-400', 'border-transparent');
+        });
+        document.getElementById(`panel-${tabId}`).classList.remove('hidden');
+        document.getElementById(`tab-${tabId}`).classList.add('text-black', 'dark:text-white', 'border-black', 'dark:border-white');
+        document.getElementById(`tab-${tabId}`).classList.remove('text-gray-400', 'border-transparent');
+    }
+
+    // --- SENDER PROFILE LOGIC ---
+    async function loadDropdown() {
+        const sel = document.getElementById('addr_select');
+        try {
+            const res = await fetch('/api/addresses');
+            const data = await res.json();
+            
+            if (data.length === 0) {
+                sel.innerHTML = '<option value="">NO SAVED PROFILES</option>';
+                sel.disabled = true; 
+                addressesAvailable = false;
+            } else {
+                let opts = '<option value="" disabled>Select Sender Profile...</option>';
+                const savedId = localStorage.getItem('lastSelectedSender');
+                let foundSaved = false;
+
+                data.forEach(a => {
+                    const isSelected = (savedId && String(a.id) === String(savedId));
+                    if (isSelected) foundSaved = true;
+                    opts += `<option value="${a.id}" ${isSelected ? 'selected' : ''}>${a.name} | ${a.state}</option>`;
+                });
+                
+                sel.innerHTML = opts; 
+                sel.disabled = false; 
+                addressesAvailable = true;
+                if (!foundSaved) sel.value = "";
+            }
+            checkParseReady(); 
+        } catch(e) { sel.innerHTML = '<option>ERROR LOADING</option>'; }
+    }
+
+    function handleAddrChange() {
+        const sel = document.getElementById('addr_select');
+        if (sel.value) {
+            localStorage.setItem('lastSelectedSender', sel.value);
+            checkParseReady();
+        }
+    }
+
+    // --- INVENTORY MANAGEMENT ---
     function renderInventory() {
         const raw = document.getElementById('in_inventory').value;
         const listDiv = document.getElementById('inventory_list');
         let data = {};
-        
-        try { 
-            data = JSON.parse(raw); 
-        } catch(e) { 
-            data = {}; 
-            document.getElementById('in_inventory').value = "{}"; 
-        }
+        try { data = JSON.parse(raw); } catch(e) { data = {}; }
         
         if (Object.keys(data).length === 0) {
-            listDiv.innerHTML = '<div class="p-4 text-center text-gray-400 italic text-xs">No items mapped. Add one above.</div>';
+            listDiv.innerHTML = '<div class="p-3 text-center text-gray-400 italic text-[9px] font-mono uppercase tracking-widest">Inventory map empty.</div>';
             return;
         }
 
         let html = '';
         for (const [sku, details] of Object.entries(data)) {
             html += `
-            <div class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-[#111] transition-colors">
+            <div class="flex items-center justify-between p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E]">
                 <div class="flex flex-col">
-                    <span class="text-xs font-bold text-black dark:text-white font-mono">${sku}</span>
-                    <span class="text-[10px] text-gray-500">${details.weight} lbs | ${details.description}</span>
+                    <span class="text-[10px] font-bold text-black dark:text-white font-mono">${sku}</span>
+                    <span class="text-[8px] text-gray-500 uppercase tracking-widest font-mono">${details.weight} lbs // ${details.description}</span>
                 </div>
-                <button onclick="removeInvItem('${sku}')" class="text-red-500 hover:text-red-600 text-[10px] font-bold uppercase tracking-wider">REMOVE</button>
+                <button onclick="removeInvItem('${sku}')" class="text-red-500 hover:text-red-600 text-[8px] font-bold uppercase tracking-widest font-mono">Remove</button>
             </div>`;
         }
         listDiv.innerHTML = html;
@@ -222,25 +262,21 @@
         const weight = document.getElementById('inv_weight').value.trim();
         const desc = document.getElementById('inv_desc').value.trim();
         const hiddenInput = document.getElementById('in_inventory');
-
-        if (!sku || !weight || !desc) {
-            showNotification("MISSING FIELDS", "error");
-            return;
-        }
-
+        
+        if (!sku || !weight || !desc) { showNotification("MISSING FIELDS", "error"); return; }
+        
         let data = {};
         try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; }
-
-        data[sku] = { "weight": parseFloat(weight), "description": desc };
-
-        hiddenInput.value = JSON.stringify(data);
-        renderInventory();
         
-        document.getElementById('inv_sku').value = '';
-        document.getElementById('inv_weight').value = '';
+        data[sku] = { "weight": parseFloat(weight), "description": desc };
+        hiddenInput.value = JSON.stringify(data);
+        
+        renderInventory();
+        document.getElementById('inv_sku').value = ''; 
+        document.getElementById('inv_weight').value = ''; 
         document.getElementById('inv_desc').value = '';
         
-        showNotification(`ADDED: ${sku}`, "success");
+        showNotification(`MAPPED: ${sku}`, "success");
     }
 
     function removeInvItem(sku) {
@@ -252,54 +288,74 @@
             delete data[sku];
             hiddenInput.value = JSON.stringify(data);
             renderInventory();
-            showNotification(`REMOVED: ${sku}`, "success");
+            showNotification(`UNMAPPED: ${sku}`, "success");
         }
     }
-    // ----------------------------------
 
-    const subEnd = "{{ user.subscription_end }}";
-    if (subEnd && parseInt(subEnd.split('-')[0]) > 2030) {
-        const renewBox = document.getElementById('autoRenewContainer');
-        if(renewBox) renewBox.classList.add('hidden');
-    }
+    // --- FORMAT & PARSE ---
+    async function formatFile() {
+        const fileInput = document.getElementById('in_file');
+        const addrSelect = document.getElementById('addr_select');
+        const inventoryData = document.getElementById('in_inventory').value;
 
-    // --- UPDATED CONFIRM ORDER (With Session Memory & Active Tracking) ---
-    async function confirmOrder(batchId) {
-        // 1. Notify start
-        showNotification('STARTING CONFIRMATION...', 'processing'); // Changed to Blue (processing) color
-        
+        if (!fileInput.files[0]) {
+            showNotification("MISSING FILE: UPLOAD .TXT", "error");
+            return;
+        }
+        if (!addrSelect.value) {
+            showNotification("MISSING PROFILE: SELECT SENDER", "error");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('address_id', addrSelect.value);
+        formData.append('inventory', inventoryData); 
+
+        const btn = document.getElementById('parseBtn');
+        const originalText = btn.innerText;
+        btn.innerText = "PROCESSING...";
+        btn.disabled = true;
+
         try {
-            const res = await fetch('/api/automation/confirm', { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ batch_id: batchId }) 
-            });
-            const data = await res.json();
+            const res = await fetch('/api/automation/format', { method: 'POST', body: formData });
             
             if (res.ok) {
-                // REMOVED "Session Verified" popup to reduce clutter.
-                // The dashboard poller will detect the status change and show the final success.
-                
-                // Add to session memory immediately so the button UI knows to switch
-                if (!window.confirmedSessionIds.includes(batchId)) {
-                    window.confirmedSessionIds.push(batchId);
-                }
-                
-                // Force a quick reload of the table
-                setTimeout(loadAutomationHistory, 500); 
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; 
+                a.download = `Parsed_Orders_${new Date().getTime()}.zip`;
+                document.body.appendChild(a); a.click(); a.remove();
+                showNotification("FILE PARSED SUCCESSFULLY", 'success');
             } else {
-                showNotification(data.error, 'error');
+                const err = await res.json();
+                showNotification(`ERROR: ${err.error || 'BAD REQUEST'}`, 'error');
             }
-        } catch(e) { showNotification('FAILED TO START', 'error'); }
+        } catch(e) { showNotification("CONNECTION FAILED", 'error'); }
+        
+        btn.innerText = originalText;
+        btn.disabled = false;
     }
 
-    async function buyKey(plan) {
-        try {
-            const res = await fetch('/api/automation/purchase', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ plan: plan }) });
-            const data = await res.json();
-            if (res.ok) { showNotification(data.message, 'success'); setTimeout(() => window.location.reload(), 1500); } 
-            else showNotification(data.error, 'error');
-        } catch (e) { showNotification("CONNECTION ERROR", 'error'); }
+    function handleFileSelect(input) {
+        if (input.files && input.files[0]) {
+            const name = input.files[0].name;
+            const span = document.getElementById('selectedFileName');
+            if(span) { span.innerText = name; span.classList.add('text-black', 'dark:text-white', 'font-bold'); }
+            showNotification(name + " STAGED", 'success');
+            fileSelected = true; 
+            checkParseReady(); 
+        }
+    }
+
+    function checkParseReady() {
+        const parseBtn = document.getElementById('parseBtn');
+        const addrValue = document.getElementById('addr_select').value;
+        if (fileSelected && addressesAvailable && addrValue) {
+            parseBtn.disabled = false; 
+            parseBtn.classList.remove('text-gray-400', 'cursor-not-allowed', 'bg-gray-100', 'dark:bg-[#151515]');
+            parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90');
+        }
     }
 
     async function saveSettings() {
@@ -309,131 +365,35 @@
         formData.append('csrf', document.getElementById('in_csrf').value);
         formData.append('inventory', document.getElementById('in_inventory').value);
         const arActive = document.getElementById('autoRenewActive');
-        if (arActive) formData.append('auto_renew', arActive.checked); else formData.append('auto_renew', false);
-        
+        formData.append('auto_renew', arActive ? arActive.checked : false);
         try {
             const res = await fetch('/api/automation/save', { method: 'POST', body: formData });
-            if (res.ok) {
-                showNotification("SETTINGS SAVED", 'success');
-            } else showNotification("SAVE FAILED", 'error');
+            if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } 
+            else showNotification("SAVE FAILED", 'error');
         } catch (e) { showNotification("ERROR SAVING", 'error'); }
         btn.innerText = original;
     }
 
-    function handleAddrChange() {
-        const val = document.getElementById('addr_select').value;
-        if(val) {
-            localStorage.setItem('lastSelectedAddress', val);
-            checkParseReady();
-        }
-    }
-
-    async function loadDropdown() {
-        const sel = document.getElementById('addr_select');
+    async function confirmOrder(batchId) {
+        showNotification('STARTING CONFIRMATION...', 'processing');
         try {
-            const res = await fetch('/api/addresses');
+            const res = await fetch('/api/automation/confirm', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ batch_id: batchId }) 
+            });
             const data = await res.json();
-            
-            if (data.length === 0) {
-                sel.innerHTML = '<option value="">NO SAVED PROFILES (CREATE ONE)</option>';
-                sel.disabled = true;
-                sel.classList.add('opacity-50', 'cursor-not-allowed');
-                addressesAvailable = false;
-            } else {
-                let opts = '<option value="" disabled selected>Select Sender Profile...</option>';
-                const saved = localStorage.getItem('lastSelectedAddress');
-                
-                data.forEach(a => { 
-                    const isSel = (saved && saved == a.id) ? 'selected' : '';
-                    opts += `<option value="${a.id}" ${isSel}>${a.name} | ${a.state}</option>`; 
-                });
-                
-                sel.innerHTML = opts;
-                sel.disabled = false;
-                sel.classList.remove('opacity-50', 'cursor-not-allowed');
-                addressesAvailable = true;
-            }
-            checkParseReady(); 
-        } catch(e) { sel.innerHTML = '<option>ERROR LOADING</option>'; }
-    }
-
-    function handleFileSelect(input) {
-        if (input.files && input.files[0]) {
-            const name = input.files[0].name;
-            const span = document.getElementById('selectedFileName');
-            if(span) {
-                span.innerText = name;
-                span.classList.add('text-blue-500', 'font-bold');
-            }
-            const btn = document.getElementById('uploadBtn');
-            btn.classList.remove('border-gray-300', 'dark:border-[#333]', 'text-gray-500');
-            btn.classList.add('border-blue-500', 'text-blue-500', 'bg-blue-500/5');
-            showNotification(name + " STAGED", 'success');
-            fileSelected = true;
-            checkParseReady(); 
-        }
-    }
-
-    function checkParseReady() {
-        const parseBtn = document.getElementById('parseBtn');
-        const addrValue = document.getElementById('addr_select').value;
-        
-        if (fileSelected && addressesAvailable && addrValue) {
-            parseBtn.disabled = false;
-            parseBtn.classList.remove('bg-gray-200', 'dark:bg-[#151515]', 'text-gray-400', 'cursor-not-allowed');
-            parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90', 'shadow-glow');
-        } else {
-            parseBtn.disabled = true;
-            parseBtn.classList.add('bg-gray-200', 'dark:bg-[#151515]', 'text-gray-400', 'cursor-not-allowed');
-            parseBtn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90', 'shadow-glow');
-        }
-    }
-
-    async function formatFile() {
-        const formData = new FormData();
-        const fileInput = document.getElementById('in_file');
-        if(!fileInput.files[0]) { showNotification("NO FILE SELECTED", "error"); return; }
-        
-        formData.append('file', fileInput.files[0]);
-        const addrId = document.getElementById('addr_select').value;
-        if(addrId) formData.append('address_id', addrId);
-
-        try {
-            const res = await fetch('/api/automation/format', { method: 'POST', body: formData });
             if (res.ok) {
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; 
-                const date = new Date().toISOString().slice(0,10);
-                a.download = `Parsed_Orders_${date}.zip`;
-                document.body.appendChild(a); a.click(); a.remove();
-                
-                showNotification("FILE PARSED SUCCESSFULLY", 'success');
-            } else {
-                const data = await res.json();
-                showNotification(data.error || "FORMAT FAILED", 'error');
-            }
-        } catch(e) { showNotification("DOWNLOAD FAILED", 'error'); }
+                if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); }
+                showNotification(data.message, 'success');
+            } else { showNotification(data.error, 'error'); }
+            setTimeout(loadAutomationHistory, 1000); 
+        } catch(e) { showNotification('FAILED TO START', 'error'); }
     }
-
-    setInterval(async () => {
-        try {
-            const res = await fetch('/api/status/check');
-            const data = await res.json();
-            if(document.getElementById('monthly_count')) document.getElementById('monthly_count').innerText = (data.monthly_left || 0) + "/50 LEFT";
-            if(document.getElementById('lifetime_count')) document.getElementById('lifetime_count').innerText = (data.lifetime_left || 0) + "/10 LEFT";
-            if(document.getElementById('header_slots_m')) document.getElementById('header_slots_m').innerText = (data.monthly_left || 0) + "/50";
-            if(document.getElementById('header_slots_l')) document.getElementById('header_slots_l').innerText = (data.lifetime_left || 0) + "/10";
-            
-            if (wasSubscribed && !data.subscribed) { window.location.reload(); }
-            if (!wasSubscribed && data.subscribed) window.location.reload();
-            wasSubscribed = data.subscribed;
-            if (data.subscribed && autoCurrentPage === 1) loadAutomationHistory();
-        } catch (e) {}
-    }, 5000); 
 
     function changeAutoPage(delta) { autoCurrentPage += delta; loadAutomationHistory(); }
 
+    // --- UPDATED TABLE LOGIC (FIXED COLORS FOR LIGHT MODE) ---
     async function loadAutomationHistory() {
         const tbody = document.getElementById('automation-history-body');
         if(!tbody) return; 
@@ -441,74 +401,83 @@
             const res = await fetch(`/api/batches?page=${autoCurrentPage}&limit=10`);
             const json = await res.json();
             let html = '';
+            let readyCount = 0, partialCount = 0;
             
+            // --- NEW: FETCH BALANCE REAL-TIME WITH PULSE ANIMATION ---
+            const userRes = await fetch('/api/user');
+            const userData = await userRes.json();
+            const balElem = document.getElementById('wallet-balance');
+            if (balElem && userData.balance !== undefined) {
+                const newBalance = '$' + parseFloat(userData.balance).toFixed(2);
+                
+                // If balance actually changed, trigger a "Cooler" animation
+                if (balElem.innerText !== newBalance && balElem.innerText !== '$...') {
+                    balElem.innerText = newBalance;
+                    balElem.classList.add('text-green-500', 'scale-110', 'glow-ping');
+                    setTimeout(() => {
+                        balElem.classList.remove('text-green-500', 'scale-110', 'glow-ping');
+                    }, 800);
+                } else {
+                    balElem.innerText = newBalance;
+                }
+            }
+
             json.data.forEach(b => {
-                let statusBadge = '';
-                let actionBtn = '';
-                let opacityClass = '';
-                let labelClass = '';
-                let countText = `${b.success_count} / ${b.count}`;
-
-                if (b.status === 'PROCESSING') {
-                    labelClass = 'text-blue-500 border-blue-500/30 bg-blue-500/10';
-                    statusBadge = '<span class="text-blue-500 font-bold animate-pulse">PROCESSING...</span>';
-                    actionBtn = `<button id="btn-confirm-${b.batch_id}" disabled class="px-4 py-2 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[10px] cursor-not-allowed border border-gray-200 dark:border-[#333]">CONFIRMING...</button>`;
+                let statusBadge = '', actionBtn = '', labelClass = '';
+                
+                if (b.is_expired) {
+                    labelClass = 'text-gray-500 border border-gray-500/20';
+                    statusBadge = '<span class="text-gray-500 font-bold font-mono uppercase text-[9px]">EXPIRED</span>';
+                    actionBtn = `<button disabled class="px-3 py-1.5 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-gray-300 dark:border-[#333] font-mono">WINDOW EXPIRED</button>`;
+                }
+                else if (b.status === 'CONFIRMED') {
+                    readyCount++;
+                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/30';
+                    statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">CONFIRMED</span>';
+                    actionBtn = `<button disabled class="px-3 py-1.5 bg-gray-100 dark:bg-[#111] text-green-600 dark:text-green-400 font-bold uppercase text-[8px] cursor-not-allowed border border-green-500/20 font-mono">ALREADY CONFIRMED</button>`;
+                }
+                else if (b.status === 'PROCESSING') {
+                    labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/30';
+                    statusBadge = '<span class="text-blue-600 dark:text-blue-400 font-bold font-mono animate-pulse uppercase text-[9px]">PROCESSING...</span>';
+                    actionBtn = `<span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span>`;
                 } 
-                else if (b.status === 'COMPLETED') {
-                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/30 bg-green-500/10';
-                    statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold">COMPLETED</span>';
-                    
-                    // --- CHANGED LOGIC: Check global session memory ---
-                    let btnText = "CONFIRM SHIPMENT";
-                    if (window.confirmedSessionIds.includes(b.batch_id)) {
-                        btnText = "RECONFIRM";
-                    }
-
-                    actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow">${btnText}</button>`;
+                else if (b.status === 'COMPLETED' || b.status === 'READY') {
+                    readyCount++;
+                    // FIXED: Replaced 'text-white' with visible colors for light mode
+                    labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
+                    statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono">CONFIRM SHIPMENT</button>`;
                 } 
                 else if (b.status === 'PARTIAL') {
-                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
-                    statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold">PARTIAL</span>';
-                    actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow">CONFIRM REMAINING</button>`;
-                }
-                else if (b.status === 'FAILED' || b.status === 'TIMEOUT') {
-                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/30 bg-red-500/10';
-                    statusBadge = '<span class="text-red-600 dark:text-red-400 font-bold">FAILED</span>';
-                    
-                    if (b.success_count > 0) {
-                        actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-red-600 text-white font-bold uppercase text-[10px] hover:bg-red-500 transition-all shadow-glow">RETRY CONFIRM</button>`;
-                    } else {
-                        actionBtn = `<span class="text-gray-500 font-bold text-xs uppercase cursor-not-allowed">LOCKED</span>`;
-                        opacityClass = 'opacity-60';
-                    }
-                } 
-                else if (b.status === 'QUEUED') {
-                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-transparent';
-                    statusBadge = `<span class="text-gray-500 font-bold animate-pulse">QUEUED</span>`;
-                    actionBtn = `<span class="text-gray-400 font-bold text-xs uppercase">WAITING</span>`;
+                    partialCount++;
+                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30';
+                    statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold font-mono uppercase text-[9px]">PARTIAL</span>';
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono">CONFIRM REMAINING</button>`;
                 }
                 else {
-                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-transparent';
-                    statusBadge = '<span class="text-gray-500 font-bold">READY</span>';
-                    actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow">CONFIRM ORDERS</button>`;
+                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/20';
+                    statusBadge = `<span class="text-red-600 dark:text-red-400 font-bold font-mono uppercase text-[9px]">${b.status}</span>`;
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 border border-red-500/20 text-red-600 dark:text-red-400 font-bold uppercase text-[8px] hover:bg-red-500/10 transition-all font-mono">RETRY</button>`;
                 }
 
-                let labelsText = `<span class="px-2 py-1 border font-mono text-xs font-bold ${labelClass}">${countText}</span>`;
-
                 html += `
-                <tr class="border-b border-gray-100 dark:border-[#1E1E1E] hover:bg-gray-50 dark:hover:bg-[#111] transition-colors ${opacityClass}">
-                    <td class="p-4">
-                        <p class="text-black dark:text-white font-bold">${b.batch_name}</p>
-                        <p class="text-xs text-gray-500 font-mono mt-0.5">ID: ${b.batch_id}</p>
+                <tr class="hover:bg-gray-50 dark:hover:bg-[#0A0A0A] transition-colors group border-b border-gray-100 dark:border-[#151515] last:border-0">
+                    <td class="px-6 py-3">
+                        <p class="text-black dark:text-white font-bold font-mono uppercase tracking-wide text-[10px]">${b.batch_name}</p>
+                        <p class="text-[8px] text-gray-400 font-mono mt-0.5 tracking-widest">ID: ${b.batch_id}</p>
                     </td>
-                    <td class="p-4 text-gray-500 text-xs">${b.date}</td>
-                    <td class="p-4">${labelsText}</td>
-                    <td class="p-4 text-xs">${statusBadge}</td>
-                    <td class="p-4 text-right">${actionBtn}</td>
+                    <td class="px-6 py-3 text-center text-gray-500 font-mono text-[9px] tracking-wide">${b.date}</td>
+                    <td class="px-6 py-3 text-center">
+                        <span class="px-2 py-0.5 border ${labelClass} text-[9px] font-mono font-bold">${b.success_count} / ${b.count}</span>
+                    </td>
+                    <td class="px-6 py-3 text-center">${statusBadge}</td>
+                    <td class="px-6 py-3 text-right">${actionBtn}</td>
                 </tr>`;
             });
-            tbody.innerHTML = html || '<tr><td colspan="5" class="p-8 text-center text-gray-500 font-mono text-xs">NO BATCHES FOUND</td></tr>';
+            tbody.innerHTML = html || '<tr><td colspan="5" class="p-8 text-center text-gray-400 font-mono text-[9px] tracking-[0.2em] uppercase">NO DATA FOUND</td></tr>';
             
+            document.getElementById('stat-ready').innerText = readyCount;
+            document.getElementById('stat-partial').innerText = partialCount;
             const meta = json.pagination;
             document.getElementById('auto_page_info').innerText = `PAGE ${meta.current_page} OF ${meta.total_pages || 1}`;
             document.getElementById('btnPrevAuto').disabled = meta.current_page <= 1;
@@ -516,9 +485,25 @@
         } catch(e) {}
     }
     
-    if(wasSubscribed) {
-        loadAutomationHistory();
-        loadDropdown();
+    // Heartbeat Init
+    if(wasSubscribed) { 
+        loadAutomationHistory(); 
+        loadDropdown(); 
         renderInventory();
+        setInterval(loadAutomationHistory, 3000); 
     }
 </script>
+
+<style>
+/* New "Cooler" Hacker Pulse Animation */
+@keyframes glowPing {
+    0% { filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0)); }
+    50% { filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.8)); }
+    100% { filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0)); }
+}
+
+.glow-ping {
+    animation: glowPing 0.8s ease-in-out;
+    text-shadow: 0 0 5px rgba(34, 197, 94, 0.5);
+}
+</style>

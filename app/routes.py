@@ -23,7 +23,6 @@ from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf,
 main_bp = Blueprint('main', __name__)
 
 # --- GLOBAL PURCHASE QUEUE SYSTEM ---
-# (Preserved exactly as is)
 class BatchQueue:
     def __init__(self):
         self.q = queue.Queue()
@@ -141,7 +140,7 @@ def normalize_dataframe(df):
             return None, f"Duplicate Order Numbers found: {list(dupes)}. Each row must have a unique '{order_col}' value."
 
     incomplete_rows = df[df['ToName'].isnull() | (df['ToName'].astype(str).str.strip() == '') | 
-                         df['Street1To'].isnull() | (df['Street1To'].astype(str).str.strip() == '')]
+                          df['Street1To'].isnull() | (df['Street1To'].astype(str).str.strip() == '')]
     
     if not incomplete_rows.empty:
         first_error_idx = incomplete_rows.index[0] + 2
@@ -295,16 +294,14 @@ def api_batches():
     conn = get_db()
     c = conn.cursor()
 
-    try:
-        # --- UPDATE: Increased Timeout to 120 Minutes ---
-        c.execute("""
-            UPDATE batches 
-            SET status = 'TIMEOUT' 
-            WHERE status = 'PROCESSING' 
-            AND created_at < datetime('now', '-120 minutes')
-        """)
-        conn.commit()
-    except: pass
+    # --- REMOVED AGGRESSIVE RESET TO PREVENT OLD ORDERS FROM RESETTING ---
+    # c.execute("""
+    #     UPDATE batches 
+    #     SET status = 'COMPLETED' 
+    #     WHERE status = 'PROCESSING' 
+    #     AND created_at < datetime('now', '-5 minutes')
+    # """)
+    # conn.commit()
 
     c.execute("SELECT batch_id FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC")
     queue_list = [row[0] for row in c.fetchall()]
@@ -315,14 +312,9 @@ def api_batches():
     if search:
         query += " AND (batch_id LIKE ? OR filename LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%"])
-        
-    query += """
-    ORDER BY 
-        CASE 
-            WHEN status IN ('PROCESSING', 'QUEUED') THEN 0 
-            ELSE 1 
-        END ASC,
-    """
+    
+    # --- SORTING BY DATE ONLY (NO JUMPING) ---
+    query += " ORDER BY"
     
     if sort_by == 'oldest': query += " created_at ASC"
     elif sort_by == 'high': query += " count DESC"
@@ -341,6 +333,8 @@ def api_batches():
     conn.close()
     
     data = []
+    now = datetime.utcnow()
+
     for r in rows:
         b_id = r[0]
         full_filename = r[2]
@@ -350,6 +344,16 @@ def api_batches():
         est_date = to_est(utc_date)
         queue_pos = queue_list.index(b_id) + 1 if status == 'QUEUED' and b_id in queue_list else -1
 
+        # --- 7-DAY EXPIRATION LOGIC ---
+        is_expired = False
+        try:
+            created_dt = datetime.strptime(utc_date, "%Y-%m-%d %H:%M:%S")
+            age = now - created_dt
+            if age.days >= 7:
+                is_expired = True
+        except: pass
+        # ------------------------------
+
         data.append({
             "batch_id": b_id, 
             "batch_name": clean_name,
@@ -357,7 +361,8 @@ def api_batches():
             "success_count": r[4], 
             "status": status, 
             "date": est_date,
-            "queue_pos": queue_pos
+            "queue_pos": queue_pos,
+            "is_expired": is_expired
         })
     
     return jsonify({"data": data, "pagination": {"current_page": page, "total_pages": total_pages}})
@@ -423,14 +428,15 @@ def automation_purchase():
 @login_required
 def automation_save():
     cookies = request.form.get('cookies', '')
-    csrf = request.form.get('csrf', '')
+    # --- TRIM WHITESPACE FROM CSRF ---
+    csrf = request.form.get('csrf', '').strip()
     inventory = request.form.get('inventory', '')
     current_user.update_settings(cookies, csrf, "", inventory, False)
     return jsonify({"status": "success", "message": "SETTINGS SAVED"})
 
 @main_bp.route('/api/automation/format', methods=['POST'])
 @login_required
-@limiter.limit("5 per minute")
+@limiter.limit("50 per minute")
 def automation_format():
     if not current_user.is_subscribed: return jsonify({"error": "LICENSE REQUIRED"}), 403
     file = request.files.get('file')
@@ -455,7 +461,7 @@ def automation_format():
 # *** UPDATED CONFIRMATION ROUTE (CONCURRENCY ENABLED) ***
 @main_bp.route('/api/automation/confirm', methods=['POST'])
 @login_required
-@limiter.limit("10 per minute")
+@limiter.limit("50 per minute")
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED"}), 403
     batch_id = request.json.get('batch_id')
@@ -494,14 +500,28 @@ def automation_confirm():
                 c.execute("SELECT count, success_count FROM batches WHERE batch_id = ?", (batch_id,))
                 cnt_row = c.fetchone()
                 
-                final_status = 'COMPLETED'
-                if cnt_row and cnt_row[1] > 0:
-                    if cnt_row[1] >= cnt_row[0]: final_status = 'COMPLETED'
-                    else: final_status = 'PARTIAL'
-                else: final_status = 'FAILED'
+                # --- CHECK IF IT RETURNED 'CONFIRMED' STATUS ---
+                # The python script sets it to CONFIRMED on success.
+                # If python script failed/crashed, we fallback to logic below.
                 
-                c.execute("UPDATE batches SET status = ? WHERE batch_id = ?", (final_status, batch_id))
-                conn.commit(); conn.close()
+                # We need to read the current status to see if the script set it to CONFIRMED
+                c.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))
+                current_status_row = c.fetchone()
+                current_status = current_status_row[0]
+
+                if current_status != 'CONFIRMED':
+                    # Fallback logic if script didn't set final status
+                    final_status = 'COMPLETED'
+                    if cnt_row and cnt_row[1] > 0:
+                        if cnt_row[1] >= cnt_row[0]: final_status = 'COMPLETED'
+                        else: final_status = 'PARTIAL'
+                    else: final_status = 'FAILED'
+                    
+                    c.execute("UPDATE batches SET status = ? WHERE batch_id = ?", (final_status, batch_id))
+                    conn.commit()
+                
+                conn.close()
+
             except Exception as e:
                 print(f"[CONFIRM] CRITICAL ERROR: {e}")
             finally:
@@ -510,6 +530,20 @@ def automation_confirm():
     thread = threading.Thread(target=task, args=(current_app._get_current_object().app_context(),))
     thread.start()
     return jsonify({"status": "success", "message": "STARTED - SESSION VERIFIED"})
+
+@main_bp.route('/api/debug/reset-stuck')
+@login_required
+def debug_reset_stuck():
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        # Force all "PROCESSING" batches back to "COMPLETED" (Ready)
+        c.execute("UPDATE batches SET status = 'COMPLETED' WHERE status = 'PROCESSING'")
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "ALL STUCK ORDERS RESET TO READY"})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 # --- STANDARD ROUTES (PURCHASE QUEUE) ---
 @main_bp.route('/process', methods=['POST'])
