@@ -1,0 +1,80 @@
+<div class="w-full max-w-6xl mx-auto">
+    <h2 class="text-lg font-bold text-black dark:text-white uppercase tracking-wider mb-6">System Configuration</h2>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">Profile Identity</h3>
+            <div class="space-y-4">
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Username</label>
+                    <input type="text" value="{{ user.username }}" disabled class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] text-xs font-mono text-gray-500 cursor-not-allowed">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Email Address</label>
+                    <input type="text" value="{{ user.email }}" disabled class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] text-xs font-mono text-gray-500 cursor-not-allowed">
+                </div>
+                <div class="pt-4">
+                    <button class="w-full py-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] hover:border-red-500 text-black dark:text-white text-[10px] font-mono font-bold uppercase tracking-widest transition-all group">
+                        <span class="group-hover:text-red-500 transition-colors">Reset Password</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">Default Config</h3>
+            <div class="space-y-4">
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Default Type</label>
+                    <select class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
+                        <option value="priority">Priority V2</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Default Version</label>
+                    <select class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
+                        <option value="95055">95055</option>
+                        <option value="94888">94888</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Default Template</label>
+                    <select class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
+                        <option value="pitney_v2">Pitney Bowes [V2]</option>
+                        <option value="stamps_v2">Stamps.com [V2]</option>
+                        <option value="easypost_v2">EasyPost [V2]</option>
+                    </select>
+                </div>
+                <button class="w-full py-3 mt-2 bg-black dark:bg-white hover:opacity-90 text-white dark:text-black rounded-none text-[10px] font-bold uppercase tracking-widest shadow-glow transition-all">
+                    Save Defaults
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative group">
+            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">Service Pricing</h3>
+            <div class="space-y-3">
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333]">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">Priority V2</span>
+                    <span class="text-xs font-mono font-bold text-green-600 dark:text-green-500">${{ "{:.2f}".format(user.price_per_label) }}</span>
+                </div>
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] opacity-50">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">Ground Adv</span>
+                    <span class="text-xs font-mono font-bold text-gray-500">OFFLINE</span>
+                </div>
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#333] opacity-50">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">Express</span>
+                    <span class="text-xs font-mono font-bold text-gray-500">OFFLINE</span>
+                </div>
+            </div>
+            
+            <div class="mt-6 p-4 border border-blue-500/20 bg-blue-500/5">
+                <p class="text-[9px] font-bold text-blue-500 uppercase leading-relaxed">
+                    > NOTE: Pricing is dynamic based on volume. Contact support for bulk discounts > 1k/day.
+                </p>
+            </div>
+        </div>
+
+    </div>
+</div>

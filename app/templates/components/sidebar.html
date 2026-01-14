@@ -1,0 +1,60 @@
+<aside class="w-64 bg-white dark:bg-[#050505] border-r border-gray-200 dark:border-[#1E1E1E] flex flex-col justify-between z-20 h-screen sticky top-0">
+    <div class="p-6 flex-1 overflow-y-auto">
+        <div class="mb-10">
+            <h1 class="text-2xl font-brand font-semibold tracking-tight text-black dark:text-white select-none leading-none">LabelLab</h1>
+            <span class="text-[9px] font-mono text-green-600 dark:text-green-500 font-bold uppercase tracking-widest block mt-1 select-none">{{ version }} // SECURE</span>
+        </div>
+        
+        <nav class="space-y-1">
+            <p class="text-[9px] font-bold text-gray-400 dark:text-[#333] uppercase tracking-widest mb-4 ml-2 select-none">Modules</p>
+            
+            <button id="nav-purchase" onclick="switchTab('purchase')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Bulk Purchase
+            </button>
+            
+            <button id="nav-history" onclick="switchTab('history')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> History
+            </button>
+
+            <button id="nav-automation" onclick="switchTab('automation')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Automation
+            </button>
+
+            <button id="nav-addresses" onclick="switchTab('addresses')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Address Book
+            </button>
+            
+            <button id="nav-deposit" onclick="switchTab('deposit')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Deposit
+            </button>
+
+            <p class="text-[9px] font-bold text-gray-400 dark:text-[#333] uppercase tracking-widest mt-8 mb-4 ml-2 select-none">System</p>
+            
+            <button id="nav-api" onclick="switchTab('api')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> API Access
+            </button>
+
+            <button id="nav-stats" onclick="switchTab('stats')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Statistics
+            </button>
+            
+            <button id="nav-settings" onclick="switchTab('settings')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Settings
+            </button>
+        </nav>
+    </div>
+    
+    <div class="p-6 border-t border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#0A0A0A]">
+        <div class="flex items-center gap-2 mb-4">
+            <div class="w-2 h-2 rounded-full bg-green-500 shadow-glow-green animate-pulse"></div>
+            <p class="text-[10px] font-bold uppercase text-gray-500">USER: <span class="text-black dark:text-white ml-1 font-mono">{{ user.username }}</span></p>
+        </div>
+        <div class="flex justify-between items-center border border-gray-200 dark:border-[#1E1E1E] p-3 bg-white dark:bg-[#050505]">
+             <div>
+                 <p class="text-[9px] font-bold uppercase text-gray-600">Balance</p>
+                 <p id="wallet-balance" class="text-sm font-mono font-bold text-black dark:text-white">$...</p>
+             </div>
+             <a href="{{ url_for('main.logout') }}" class="w-6 h-6 flex items-center justify-center bg-gray-200 dark:bg-[#111] hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all text-gray-500 text-xs font-bold">+</a>
+        </div>
+    </div>
+</aside>

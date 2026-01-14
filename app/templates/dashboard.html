@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>LABELLAB // CONSOLE</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;800&family=Inter:wght@400;600;700;900&family=Poppins:wght@600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { 
+                        sans: ['Inter', 'sans-serif'], 
+                        mono: ['JetBrains Mono', 'monospace'],
+                        brand: ['Poppins', 'sans-serif'] 
+                    },
+                    colors: { 
+                        bot: { bg: '#050505', card: '#0A0A0A', border: '#1E1E1E' } 
+                    },
+                    boxShadow: {
+                        'glow': '0 0 10px rgba(255, 255, 255, 0.1)',
+                        'glow-green': '0 0 10px rgba(34, 197, 94, 0.4)',
+                        'glow-red': '0 0 10px rgba(239, 68, 68, 0.4)',
+                        'glow-blue': '0 0 10px rgba(59, 130, 246, 0.4)',
+                        'glow-gray': '0 0 10px rgba(156, 163, 175, 0.4)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #050505; background-image: radial-gradient(#1a1a1a 1px, transparent 1px); background-size: 40px 40px; }
+        html.light body { background-color: #f3f4f6; background-image: radial-gradient(#e5e7eb 1px, transparent 1px); }
+        .rounded-xl, .rounded-lg, .rounded-md, .rounded { border-radius: 0px !important; }
+        .rounded-full { border-radius: 9999px !important; } 
+        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #333; }
+        .hidden-section { display: none !important; }
+        input:focus, select:focus, textarea:focus { box-shadow: 0 0 0 1px #fff; border-color: #fff; }
+        @keyframes slideIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes shrink { from { width: 100%; } to { width: 0%; } }
+    </style>
+    <script>
+        // --- GLOBAL STATE ---
+        let allBatches = []; 
+        let activeTab = "{{ active_tab|default('purchase') }}";
+        
+        // MEMORY FOR TRACKING CHANGES
+        let batchStatusMemory = {}; 
+        let batchProgressMemory = {}; 
+        let isFirstLoad = true; 
+
+        // SHARED MEMORY FOR AUTOMATION
+        window.confirmedSessionIds = window.confirmedSessionIds || [];
+        
+        // NEW: WATCH LIST FOR ACTIVE CONFIRMATIONS
+        // This tracks batches the user manually clicked so we can report the result accurately
+        window.confirmingBatches = window.confirmingBatches || new Set();
+        
+        // FILTER STATE
+        let currentPage = 1;
+        let currentSort = 'recent';
+        let currentSearch = '';
+        let searchTimeout = null;
+        
+        // Theme Init
+        if (localStorage.getItem('theme') === 'light') { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light'); } 
+        else { document.documentElement.classList.add('dark'); document.documentElement.classList.remove('light'); }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            if (html.classList.contains('dark')) {
+                html.classList.remove('dark'); html.classList.add('light'); localStorage.setItem('theme', 'light');
+                document.getElementById('icon-moon').classList.add('hidden');
+                document.getElementById('icon-sun').classList.remove('hidden');
+            } else {
+                html.classList.add('dark'); html.classList.remove('light'); localStorage.setItem('theme', 'dark');
+                document.getElementById('icon-moon').classList.remove('hidden');
+                document.getElementById('icon-sun').classList.add('hidden');
+            }
+            updateNavUI(activeTab);
+        }
+
+        function switchTab(tabName) {
+            ['view-purchase', 'view-automation', 'view-history', 'view-deposit', 'view-api', 'view-settings', 'view-stats', 'view-addresses'].forEach(id => { 
+                const el = document.getElementById(id); if(el) el.classList.add('hidden-section'); 
+            });
+            const target = document.getElementById('view-' + tabName); 
+            if(target) target.classList.remove('hidden-section');
+            
+            activeTab = tabName; 
+            window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
+
+            if (tabName === 'history') {
+                currentPage = 1; 
+                loadBatchHistory();
+            }
+            if (tabName === 'stats') loadStats();
+            if (tabName === 'addresses' && typeof loadAddressList === 'function') loadAddressList();
+            if (tabName === 'automation') {
+                if(typeof loadDropdown === 'function') loadDropdown();
+                if(typeof loadAutomationHistory === 'function') loadAutomationHistory();
+            }
+            updateNavUI(tabName);
+        }
+
+        function updateNavUI(tabName) {
+            const isDark = document.documentElement.classList.contains('dark');
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.className = "nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent";
+                if(isDark) btn.classList.add('text-gray-500', 'hover:text-white'); else btn.classList.add('text-gray-500', 'hover:text-black');
+                const dot = btn.querySelector('.status-dot'); if(dot) { dot.className = "status-dot w-1.5 h-1.5 rounded-full"; dot.classList.add(isDark ? 'bg-gray-600' : 'bg-gray-400'); }
+            });
+            const activeBtn = document.getElementById('nav-' + tabName);
+            if(activeBtn) {
+                if(isDark) { activeBtn.classList.remove('text-gray-500', 'hover:text-white'); activeBtn.classList.add('bg-white', 'text-black', 'shadow-glow'); } 
+                else { activeBtn.classList.remove('text-gray-500', 'hover:text-black'); activeBtn.classList.add('bg-black', 'text-white', 'shadow-glow'); }
+                const dot = activeBtn.querySelector('.status-dot'); if(dot) { dot.classList.remove('bg-gray-600', 'bg-gray-400'); dot.classList.add(isDark ? 'bg-black' : 'bg-white'); }
+            }
+        }
+        
+        async function loadUserData() { 
+            try { 
+                const res = await fetch('/api/user'); 
+                const data = await res.json(); 
+                document.getElementById('wallet-balance').innerText = "$" + data.balance.toFixed(2);
+            } catch(e) {} 
+        }
+
+        // --- HISTORY TAB LOGIC ---
+        function debounceSearch() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentSearch = document.getElementById('historySearch').value;
+                currentPage = 1;
+                loadBatchHistory();
+            }, 500);
+        }
+
+        function applyFilter(sortType) {
+            currentSort = sortType;
+            document.getElementById('filterMenu').classList.add('hidden');
+            currentPage = 1;
+            loadBatchHistory();
+        }
+
+        function changePage(delta) {
+            currentPage += delta;
+            loadBatchHistory();
+        }
+
+        async function loadBatchHistory() { 
+            if (activeTab !== 'history') return;
+
+            try { 
+                const query = `?page=${currentPage}&sort=${currentSort}&search=${currentSearch}&limit=10`;
+                const res = await fetch('/api/batches' + query);
+                if (!res.ok) throw new Error("API Error");
+                const json = await res.json(); 
+                allBatches = json.data || []; 
+                
+                renderHistory();
+                
+                const pageInfo = document.getElementById('pageInfo');
+                if(pageInfo && json.pagination) {
+                    const meta = json.pagination;
+                    pageInfo.innerText = `Page ${meta.current_page} of ${meta.total_pages}`;
+                    document.getElementById('prevBtn').disabled = meta.current_page <= 1;
+                    document.getElementById('nextBtn').disabled = meta.current_page >= meta.total_pages;
+                }
+            } catch (err) { console.error("History Load Error:", err); } 
+        }
+        
+        // --- NOTIFICATION POLLER (GLOBAL) ---
+        async function pollNotifications() {
+            try {
+                // Poll recent batches to check for background changes
+                const res = await fetch('/api/batches?page=1&sort=recent&limit=10');
+                if (!res.ok) return;
+                const json = await res.json();
+                const notificationBatches = json.data || [];
+                
+                checkStatusChanges(notificationBatches);
+                
+                if (activeTab === 'history' && currentPage === 1 && currentSearch === '') {
+                    allBatches = notificationBatches;
+                    renderHistory();
+                }
+            } catch(e) {}
+        }
+
+        function checkStatusChanges(currentBatches) {
+            if (isFirstLoad) {
+                currentBatches.forEach(b => {
+                    batchStatusMemory[b.batch_id] = b.status;
+                    batchProgressMemory[b.batch_id] = b.success_count;
+                });
+                isFirstLoad = false;
+                currentBatches.forEach(b => updateAutomationButtonUI(b));
+                return;
+            }
+
+            currentBatches.forEach(batch => {
+                const id = batch.batch_id;
+                const name = batch.batch_name;
+                const newStatus = batch.status;
+                const oldStatus = batchStatusMemory[id];
+                const newCount = batch.success_count;
+                const total = batch.count;
+
+                // --- COMPLETION DETECTOR ---
+                // Trigger if status just became COMPLETED, 
+                // OR if it was already COMPLETED but the count increased (late update)
+                const justFinished = (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED');
+                const countUpdated = (newStatus === 'COMPLETED' && newCount > (batchProgressMemory[id] || 0));
+
+                if (justFinished || countUpdated) {
+                    // Only show if we have been watching this batch or tracking it
+                    if (window.confirmedSessionIds && window.confirmedSessionIds.includes(id)) {
+                         let msg = `<span class="text-gray-400 text-[10px]">BATCH COMPLETE</span><br>${name}<br><span class="text-green-500 text-sm">CONFIRMED: ${newCount} / ${total}</span>`;
+                         showNotification(msg, 'success');
+                    }
+                }
+                
+                else if (newStatus === 'PROCESSING' && oldStatus !== 'PROCESSING') {
+                    showNotification(`${name}<br>STARTED PROCESSING`, 'processing');
+                }
+                else if (newStatus === 'FAILED' && oldStatus !== 'FAILED') {
+                    showNotification(`${name}<br>FAILED`, 'error');
+                }
+
+                updateAutomationButtonUI(batch);
+
+                batchStatusMemory[id] = newStatus;
+                batchProgressMemory[id] = newCount;
+            });
+        }
+
+        // --- HELPER TO UPDATE THE BUTTON UI WITHOUT RELOADING TABLE ---
+        function updateAutomationButtonUI(batch) {
+            const btn = document.getElementById(`btn-confirm-${batch.batch_id}`);
+            
+            if (btn) {
+                if (batch.status === 'COMPLETED') {
+                    // Ensure global arrays exist
+                    window.confirmedSessionIds = window.confirmedSessionIds || [];
+                    
+                    // If currently in the "Watching" phase, keep it disabled/processing visual if needed,
+                    // BUT since we update UI every 3s, let's just show the correct state.
+
+                    let btnText = "CONFIRM SHIPMENT";
+                    if (window.confirmedSessionIds.includes(batch.batch_id)) {
+                        btnText = "RECONFIRM";
+                    }
+
+                    btn.innerText = btnText;
+                    btn.disabled = false;
+                    
+                    // Restore active button styles (Black/White)
+                    btn.className = "px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow";
+                    
+                    // Re-attach click handler
+                    if(typeof confirmOrder === 'function') {
+                        btn.onclick = function() { confirmOrder(batch.batch_id); };
+                    }
+                } 
+                else if (batch.status === 'PROCESSING') {
+                    btn.innerText = `CONFIRMING (${batch.success_count}/${batch.count})...`;
+                    btn.disabled = true;
+                    btn.className = "px-4 py-2 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[10px] cursor-not-allowed border border-gray-200 dark:border-[#333]";
+                }
+            }
+        }
+
+        // --- VISUAL NOTIFICATION RENDERER ---
+        function showNotification(message, type = 'success') {
+            const container = document.getElementById('notif-container');
+            
+            // Limit stack to 3
+            if (container.children.length >= 3) {
+                container.removeChild(container.firstElementChild);
+            }
+
+            const notif = document.createElement('div');
+            
+            let borderColor = 'border-green-500';
+            let dotColor = 'bg-green-500 shadow-glow-green';
+            let barColor = '#22c55e';
+
+            if (type === 'error') {
+                borderColor = 'border-red-500'; dotColor = 'bg-red-500 shadow-glow-red'; barColor = '#ef4444';
+            } else if (type === 'processing') {
+                borderColor = 'border-blue-500'; dotColor = 'bg-blue-500 shadow-glow-blue'; barColor = '#3b82f6';
+            } else if (type === 'queued') {
+                borderColor = 'border-gray-500'; dotColor = 'bg-gray-500 shadow-glow-gray'; barColor = '#6b7280';
+            }
+            
+            notif.className = `w-80 bg-white dark:bg-[#0A0A0A] border ${borderColor} p-4 shadow-xl mb-4 relative overflow-hidden animate-[slideIn_0.3s_ease-out]`;
+            notif.innerHTML = `<div class="flex items-start gap-3 relative z-10">
+                <div class="w-2 h-2 rounded-full ${dotColor} mt-1 flex-shrink-0"></div>
+                <div>
+                    <h4 class="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">SYSTEM NOTIFICATION</h4>
+                    <p class="text-xs font-mono font-bold text-black dark:text-white leading-tight">${message}</p>
+                </div>
+            </div>
+            <div class="absolute bottom-0 left-0 h-1 bg-gray-100 dark:bg-[#222] w-full">
+                <div class="h-full" style="background-color: ${barColor}; animation: shrink 4s linear forwards;"></div>
+            </div>`;
+            
+            container.appendChild(notif);
+            setTimeout(() => { notif.style.animation = 'fadeOut 0.5s forwards'; setTimeout(() => notif.remove(), 500); }, 4000);
+        }
+
+        // --- FILE UPLOAD DISPLAY ---
+        function handleFileDisplay(input) {
+            if (input.files && input.files[0]) {
+                const fSpan = document.getElementById('fileName');
+                if(fSpan) {
+                    fSpan.innerText = input.files[0].name;
+                    fSpan.classList.remove('text-green-600', 'dark:text-green-500', 'text-blue-500', 'text-red-500');
+                    fSpan.classList.add('text-black', 'dark:text-white', 'font-bold');
+                }
+            }
+        }
+
+        // --- PURCHASE VERIFICATION ---
+        async function verifyData() { 
+            const fileInput = document.getElementById('csvUpload'); 
+            if (!fileInput.files[0]) return; 
+            const verifyBtn = document.getElementById('verifyBtn'); const originalText = verifyBtn.innerText;
+            verifyBtn.innerText = "SCANNING..."; 
+            const formData = new FormData(); formData.append('file', fileInput.files[0]); 
+            try { 
+                const res = await fetch('/verify-csv', { method: 'POST', body: formData }); 
+                const data = await res.json(); 
+                verifyBtn.innerText = originalText;
+                if (res.ok && data.count) { 
+                    showNotification(`SCAN COMPLETE: ${data.count} LABELS`, 'success'); 
+                    const confirmBtn = document.getElementById('confirmBtn'); 
+                    confirmBtn.disabled = false; 
+                    confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
+                    confirmBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
+                    confirmBtn.innerText = `EXECUTE ($${data.cost.toFixed(2)})`; 
+                } else { showNotification("ERROR: " + (data.error || "Unknown"), 'error'); } 
+            } catch (error) { showNotification("NETWORK ERROR", 'error'); verifyBtn.innerText = originalText; } 
+        }
+
+        async function handlePurchase() {
+            const btn = document.getElementById('confirmBtn'); 
+            const fileInput = document.getElementById('csvUpload');
+            const formData = new FormData(); 
+            formData.append('file', fileInput.files[0]);
+            formData.append('label_type', document.querySelector('[name="label_type"]').value);
+            formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
+            formData.append('template_choice', document.querySelector('[name="template_choice"]').value);
+            const originalText = btn.innerText; btn.innerText = "PROCESSING...";
+            const res = await fetch('/process', { method: 'POST', body: formData });
+            const data = await res.json();
+            if(data.status === 'success') {
+                showNotification("BATCH SUBMITTED", 'queued'); 
+                loadUserData(); 
+                // Reset UI
+                fileInput.value = ""; 
+                const fSpan = document.getElementById('fileName');
+                if(fSpan) {
+                    fSpan.innerText = "Select .CSV File";
+                    fSpan.classList.remove('text-black', 'dark:text-white', 'font-bold');
+                }
+                btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
+                btn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
+                btn.innerText = "EXECUTE";
+            } else { showNotification("ERROR: " + data.error, 'error'); btn.innerText = originalText; }
+        }
+
+        async function loadStats() { try { const res = await fetch('/api/stats'); const data = await res.json(); document.getElementById('stat-labels').innerText = data.total_labels; document.getElementById('stat-batches').innerText = data.total_batches; } catch(e) {} }
+
+        // --- RENDER HISTORY (LABEL GENERATION) ---
+        function renderHistory() {
+            const tableBody = document.getElementById('history-table-body');
+            if (!tableBody) return; 
+
+            if (allBatches.length === 0) { 
+                tableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-xs text-gray-600 font-mono py-8">> SYSTEM_LOG: NO_DATA_FOUND</td></tr>'; 
+                return; 
+            }
+            let html = '';
+            allBatches.forEach(b => {
+                let labelClass = '';
+                let statusBadge = '';
+                let countText = `${b.success_count} / ${b.count}`;
+                let isProcessing = false;
+
+                if (b.status === 'PROCESSING') {
+                    isProcessing = true;
+                    labelClass = 'text-blue-500 border-blue-500/30 bg-blue-500/10';
+                    statusBadge = '<span class="text-blue-500 font-bold animate-pulse">PROCESSING...</span>';
+                } else if (b.status === 'QUEUED') {
+                    isProcessing = true;
+                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-transparent';
+                    statusBadge = `<span class="text-gray-500 font-bold animate-pulse">QUEUED</span>`;
+                } else if (b.status === 'COMPLETED') {
+                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/30 bg-green-500/10';
+                    statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold">COMPLETED</span>';
+                } else if (b.status === 'PARTIAL') {
+                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
+                    statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold">PARTIAL</span>';
+                } else {
+                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/30 bg-red-500/10';
+                    statusBadge = '<span class="text-red-600 dark:text-red-400 font-bold">FAILED</span>';
+                }
+
+                let pdfButton = '';
+                if (isProcessing) {
+                    pdfButton = `<span class="text-[10px] font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none inline-flex items-center gap-1 align-middle"><svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> WAIT</span>`;
+                } else if (b.success_count > 0) {
+                    pdfButton = `<a href="/api/download/pdf/${b.batch_id}" class="text-[10px] font-mono font-bold text-blue-500 hover:text-blue-400 transition-all">PDF</a>`;
+                } else {
+                    pdfButton = `<span class="text-[10px] font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">PDF</span>`;
+                }
+
+                html += `<tr class="border-b border-gray-200 dark:border-[#1E1E1E] hover:bg-gray-50 dark:hover:bg-[#0A0A0A] transition-colors group"><td class="p-4"><p class="font-mono text-xs text-black dark:text-white font-bold">${b.batch_name}</p><p class="font-mono text-[10px] text-gray-500">ID: ${b.batch_id}</p></td><td class="p-4 font-mono text-xs text-gray-500">${b.date}</td><td class="p-4"><span class="px-2 py-1 border font-mono text-[10px] font-bold ${labelClass}">${countText}</span></td><td class="p-4 font-mono text-[10px] text-gray-400">PRIORITY V2</td><td class="p-4 font-mono text-[10px]">${statusBadge}</td><td class="p-4 text-right space-x-2">${pdfButton}<span class="text-gray-400">|</span><a href="/api/download/csv/${b.batch_id}" class="text-[10px] font-mono font-bold text-gray-500 hover:text-black dark:hover:text-white transition-all">CSV</a></td></tr>`;
+            });
+            tableBody.innerHTML = html;
+        }
+
+        setInterval(() => { 
+            loadUserData(); 
+            pollNotifications(); 
+        }, 3000);
+
+        window.onload = function() { 
+            loadUserData(); 
+            switchTab(activeTab);
+            const csvIn = document.getElementById('csvUpload');
+            if(csvIn) {
+                csvIn.addEventListener('change', function() { handleFileDisplay(this); });
+            }
+        };
+    </script>
+</head>
+<body class="bg-gray-100 dark:bg-bot-bg text-black dark:text-bot-text h-screen flex overflow-hidden font-sans selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
+    <div id="notif-container" class="fixed bottom-6 right-6 z-50 flex flex-col items-end pointer-events-none">
+        <style>#notif-container > * { pointer-events: auto; }</style>
+    </div>
+    {% include 'components/sidebar.html' %}
+    <main class="flex-1 flex flex-col relative overflow-hidden">
+        {% include 'components/topbar.html' %}
+        <div class="flex-1 overflow-y-auto p-8">
+            <div id="view-purchase" class="h-full flex items-center justify-center"> {% include 'components/modules/purchase.html' %} </div>
+            <div id="view-history" class="hidden-section w-full max-w-6xl mx-auto flex flex-col h-full"> {% include 'components/modules/history.html' %} </div>
+            <div id="view-automation" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/automation.html' %} </div>
+            <div id="view-stats" class="hidden-section w-full max-w-4xl mx-auto pt-10"> {% include 'components/modules/stats.html' %} </div>
+            <div id="view-deposit" class="hidden-section h-full flex flex-col items-center justify-start pt-10"> {% include 'components/modules/deposit.html' %} </div>
+            <div id="view-api" class="hidden-section h-full flex items-center justify-center"> {% include 'components/modules/api.html' %} </div>
+            <div id="view-settings" class="hidden-section h-full flex items-center justify-center"> {% include 'components/modules/settings.html' %} </div>
+            <div id="view-addresses" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/addresses.html' %} </div>
+        </div>
+    </main>
+</body>
+</html>

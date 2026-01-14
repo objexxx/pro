@@ -1,0 +1,62 @@
+<div class="w-full max-w-lg border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] p-1 relative shadow-glow">
+    <div class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-black dark:via-white to-transparent opacity-20"></div>
+    
+    <div class="p-8 space-y-6">
+        <div class="flex justify-between items-end">
+            <div>
+                <h2 class="text-sm font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Bulk Purchase</h2>
+                <p class="text-[10px] text-gray-600 font-mono mt-1">BATCH_ID: <span class="text-black dark:text-white">NEW</span></p>
+            </div>
+            <div class="px-2 py-1 border border-black/10 dark:border-white/20 bg-black/5 dark:bg-white/5">
+                <p class="text-[9px] font-bold text-black dark:text-white uppercase">Mode: Bulk</p>
+            </div>
+        </div>
+
+        <form onsubmit="return false;" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Type</label>
+                    <select name="label_type" class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
+                        <option value="priority">Priority V2</option>
+                    </select>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Version</label>
+                    <select name="tracking_version" class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
+                        <option value="95055">95055</option>
+                        <option value="94888">94888</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="space-y-1">
+                <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Template</label>
+                <select name="template_choice" class="custom-select w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all">
+                    <option value="pitney_v2">Pitney Bowes [V2]</option>
+                    <option value="stamps_v2">Stamps.com [V2]</option>
+                    <option value="easypost_v2">EasyPost [V2]</option>
+                </select>
+            </div>
+
+            <div class="space-y-1">
+                <div class="flex justify-between items-center">
+                    <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Data Input</label>
+                    <a href="/api/download/sample-csv" class="text-[9px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest hover:underline transition-all">Download Format</a>
+                </div>
+                <input type="file" id="csvUpload" class="hidden" accept=".csv" onchange="document.getElementById('fileName').innerText = '> FILE: ' + this.files[0].name; document.getElementById('fileName').classList.add('text-green-600', 'dark:text-green-500')">
+                <button onclick="document.getElementById('csvUpload').click()" class="w-full py-4 bg-gray-50 dark:bg-[#050505] border border-dashed border-gray-300 dark:border-[#333] hover:border-black dark:hover:border-white text-[10px] font-mono font-bold uppercase text-gray-500 hover:text-black dark:hover:text-white transition-all group">
+                    <span id="fileName" class="group-hover:text-black dark:group-hover:text-white transition-colors">Select .CSV File</span>
+                </button>
+            </div>
+
+            <div class="flex gap-4 pt-4">
+                <button id="verifyBtn" onclick="verifyData()" class="flex-1 py-3 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[10px] font-mono font-bold text-black dark:text-white uppercase transition-all">
+                    Verify Integrity
+                </button>
+                <button id="confirmBtn" onclick="handlePurchase()" disabled class="flex-[2] py-3 bg-gray-200 dark:bg-[#111] text-gray-500 dark:text-gray-600 text-[10px] font-mono font-bold uppercase opacity-50 cursor-not-allowed transition-all">
+                    Execute
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

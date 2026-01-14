@@ -1,0 +1,218 @@
+<div class="w-full max-w-6xl mx-auto flex flex-col justify-start relative py-10 px-6">
+    
+    <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-4 gap-4">
+        <div>
+            <h2 class="text-sm font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Address Book</h2>
+            <p class="text-[10px] text-gray-500 font-mono mt-1">MANAGE SENDER PROFILES FOR AUTOMATION (MAX 8)</p>
+        </div>
+        <div>
+            <button onclick="resetAddressForm()" class="text-[10px] font-mono font-bold text-gray-500 hover:text-black dark:hover:text-white uppercase tracking-wider transition-colors">
+                Reset Form
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        <div class="lg:col-span-4 space-y-6">
+            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-6">New Profile</h3>
+                
+                <form id="addrForm" onsubmit="event.preventDefault(); saveAddress();" class="space-y-4">
+                    
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Sender Info</label>
+                        <div class="space-y-2">
+                            <input type="text" id="a_name" placeholder="Full Name / Business Name" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors" required>
+                            <input type="text" id="a_company" placeholder="Company Name (Optional)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Contact</label>
+                        <div class="flex">
+                            <input type="text" id="a_phone" placeholder="10-Digit Phone" maxlength="10" 
+                                class="flex-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors border-r-0" 
+                                oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                            <button type="button" onclick="randomPhone()" class="bg-gray-100 dark:bg-[#151515] border border-gray-300 dark:border-[#333] px-3 text-[9px] font-bold text-gray-500 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#222] transition-all uppercase">
+                                Random
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">Location</label>
+                        <div class="space-y-2">
+                            <input type="text" id="a_street1" placeholder="Street Address" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors" required>
+                            <input type="text" id="a_street2" placeholder="Apt, Suite, Unit (Optional)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors">
+                        </div>
+                        
+                        <div class="grid grid-cols-3 gap-2 mt-2">
+                            <input type="text" id="a_city" placeholder="City" class="col-span-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors" required>
+                            
+                            <input type="text" id="a_state" placeholder="State" maxlength="2" 
+                                class="col-span-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors text-center uppercase" 
+                                oninput="this.value = this.value.replace(/[^a-zA-Z]/g, '').toUpperCase()" required>
+                            
+                            <input type="text" id="a_zip" placeholder="Zip" maxlength="5" 
+                                class="col-span-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-400 transition-colors text-center" 
+                                oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 border-t border-gray-100 dark:border-[#222]">
+                        <button type="submit" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-[10px] font-mono font-bold uppercase hover:opacity-90 transition-all shadow-glow">
+                            Save Profile
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="lg:col-span-8">
+            <div class="h-full flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative min-h-[500px]">
+                
+                <div class="p-6 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Saved Profiles</h3>
+                        <span id="profile-count" class="px-2 py-0.5 bg-gray-200 dark:bg-[#151515] text-[9px] font-mono text-gray-500 rounded">0/8</span>
+                    </div>
+                    
+                    <button onclick="deleteAllAddresses()" class="text-[9px] font-mono font-bold text-red-500 hover:text-white hover:bg-red-500 border border-red-500/20 px-3 py-1 uppercase transition-all">
+                        Remove All
+                    </button>
+                </div>
+
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 content-start overflow-y-auto" id="address-container">
+                    <div class="col-span-full flex flex-col items-center justify-center py-20 opacity-50">
+                        <svg class="w-10 h-10 text-gray-300 dark:text-gray-700 mb-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <p class="text-[10px] font-mono text-gray-400">LOADING...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function loadAddressList() {
+        const container = document.getElementById('address-container');
+        try {
+            const res = await fetch('/api/addresses');
+            const data = await res.json();
+            
+            document.getElementById('profile-count').innerText = `${data.length}/8`;
+
+            if (data.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center py-20 opacity-50">
+                        <svg class="w-12 h-12 text-gray-300 dark:text-gray-700 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        <p class="text-[10px] font-mono text-gray-400 uppercase">Address Book Empty</p>
+                    </div>`;
+                return;
+            }
+
+            let html = '';
+            data.forEach(addr => {
+                html += `
+                <div class="p-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] flex flex-col justify-between group hover:border-black dark:hover:border-white transition-all shadow-sm h-32 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 w-12 h-12 bg-gray-50 dark:bg-[#111] -mr-6 -mt-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <p class="text-[10px] font-bold text-black dark:text-white uppercase truncate pr-4" title="${addr.name}">
+                                ${addr.name}
+                            </p>
+                            <span class="text-[9px] font-bold text-gray-300 dark:text-gray-700 bg-gray-100 dark:bg-[#151515] px-1.5 py-0.5">${addr.state}</span>
+                        </div>
+                        <p class="text-[9px] font-mono text-gray-500 leading-relaxed">
+                            ${addr.street1} ${addr.street2}<br>
+                            ${addr.city}, ${addr.state} ${addr.zip}
+                        </p>
+                    </div>
+                    
+                    <div class="flex justify-between items-end mt-2 pt-2 border-t border-gray-100 dark:border-[#151515]">
+                        <p class="text-[9px] font-mono text-gray-400">${addr.phone}</p>
+                        <button onclick="deleteAddress(${addr.id})" class="text-red-500 hover:text-white hover:bg-red-500 px-2 py-1 text-[8px] font-bold uppercase transition-all rounded-none">
+                            Remove
+                        </button>
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+
+        } catch(e) { 
+            container.innerHTML = '<div class="col-span-full text-center text-red-500 text-[10px] font-mono">ERROR LOADING DATA</div>'; 
+        }
+    }
+
+    function randomPhone() {
+        const num = Math.floor(1000000000 + Math.random() * 9000000000);
+        document.getElementById('a_phone').value = num;
+    }
+
+    // --- NEW: RESET FORM FUNCTION ---
+    function resetAddressForm() {
+        document.getElementById('addrForm').reset();
+        showNotification("FORM RESET", "success");
+    }
+
+    async function saveAddress() {
+        const payload = {
+            name: document.getElementById('a_name').value,
+            company: document.getElementById('a_company').value,
+            phone: document.getElementById('a_phone').value,
+            street1: document.getElementById('a_street1').value,
+            street2: document.getElementById('a_street2').value,
+            city: document.getElementById('a_city').value,
+            state: document.getElementById('a_state').value,
+            zip: document.getElementById('a_zip').value
+        };
+        
+        if(payload.phone.length !== 10) { showNotification("PHONE MUST BE 10 DIGITS", "error"); return; }
+        if(payload.zip.length !== 5) { showNotification("ZIP MUST BE 5 DIGITS", "error"); return; }
+        if(payload.state.length !== 2) { showNotification("STATE MUST BE 2 LETTERS", "error"); return; }
+
+        try {
+            const res = await fetch('/api/addresses', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            
+            const data = await res.json();
+
+            if(res.ok) {
+                showNotification("PROFILE SAVED", "success");
+                document.getElementById('addrForm').reset();
+                loadAddressList();
+            } else {
+                showNotification(data.error || "FAILED TO SAVE", "error");
+            }
+        } catch(e) { showNotification("CONNECTION ERROR", "error"); }
+    }
+
+    // --- MODIFIED: NO CONFIRMATION DIALOGS ---
+    async function deleteAddress(id) {
+        try {
+            const res = await fetch(`/api/addresses/${id}`, { method: 'DELETE' });
+            if(res.ok) {
+                showNotification("PROFILE REMOVED", "success");
+                loadAddressList();
+            }
+        } catch(e) { showNotification("DELETE FAILED", "error"); }
+    }
+
+    async function deleteAllAddresses() {
+        try {
+            const res = await fetch('/api/addresses/all', { method: 'DELETE' });
+            if(res.ok) {
+                showNotification("ALL PROFILES REMOVED", "success");
+                loadAddressList();
+            }
+        } catch(e) { showNotification("ACTION FAILED", "error"); }
+    }
+
+    // Load on init
+    loadAddressList();
+</script>

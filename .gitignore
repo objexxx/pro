@@ -1,0 +1,10 @@
+instance/
+app/instance/
+*.db
+__pycache__/
+app/__pycache__/
+app/services/__pycache__/
+data/pdfs/
+data/uploads/
+venv/
+.env

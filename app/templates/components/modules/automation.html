@@ -1,0 +1,524 @@
+<div class="w-full max-w-7xl mx-auto flex flex-col justify-start relative py-10 px-6">
+    
+    <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-4 gap-4">
+        <div>
+            <h2 class="text-lg font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Automation Console</h2>
+            <p class="text-xs text-gray-500 font-mono mt-1">SELLER CENTRAL INTEGRATION SUITE</p>
+        </div>
+        <div class="flex gap-4 items-center">
+            <div class="px-4 py-2 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#333] text-xs font-mono font-bold uppercase text-gray-600 dark:text-gray-400">
+                MONTHLY: <span id="header_slots_m" class="text-black dark:text-white">{{ monthly_left }} / 50</span>
+            </div>
+            <div class="px-4 py-2 bg-gray-100 dark:bg-[#111] border border-gray-200 dark:border-[#333] text-xs font-mono font-bold uppercase text-gray-600 dark:text-gray-400">
+                LIFETIME: <span id="header_slots_l" class="text-black dark:text-white">{{ lifetime_left }} / 10</span>
+            </div>
+            <div class="px-4 py-2 bg-green-500/10 border border-green-500/20 text-green-500 text-xs font-mono font-bold uppercase flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                {{ system_status }}
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-20">
+        
+        <div class="lg:col-span-1 space-y-6">
+            
+            {% if not user.is_subscribed %}
+            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Monthly License</h3>
+                    <span id="monthly_count" class="text-xs font-mono text-gray-500">{{ monthly_left }}/50 LEFT</span>
+                </div>
+                <div class="text-3xl font-mono font-bold text-black dark:text-white mb-4">$29.99 <span class="text-sm text-gray-500">/MO</span></div>
+                <button onclick="buyKey('monthly')" id="btnMonthly" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-xs font-mono font-bold uppercase hover:opacity-90 transition-all">Purchase Monthly</button>
+            </div>
+
+            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative opacity-90 hover:opacity-100 transition-opacity">
+                <div class="absolute top-0 right-0 px-2 py-1 bg-blue-600 text-white text-[10px] font-bold uppercase">Best Value</div>
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Lifetime License</h3>
+                    <span id="lifetime_count" class="text-xs font-mono text-gray-500">{{ lifetime_left }}/10 LEFT</span>
+                </div>
+                <div class="text-3xl font-mono font-bold text-black dark:text-white mb-4">$499.00 <span class="text-sm text-gray-500">/ONCE</span></div>
+                <button onclick="buyKey('lifetime')" id="btnLifetime" class="w-full py-3 bg-transparent border border-black dark:border-white text-black dark:text-white text-xs font-mono font-bold uppercase hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all">Purchase Lifetime</button>
+            </div>
+
+            {% else %}
+            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="w-12 h-12 rounded-full bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-mono font-bold text-black dark:text-white">LICENSE ACTIVE</h2>
+                        <p class="text-xs font-mono text-gray-500">EXPIRES: {{ user.subscription_end }}</p>
+                    </div>
+                </div>
+                <div class="pt-4 border-t border-gray-100 dark:border-[#222]" id="autoRenewContainer">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="autoRenewActive" {% if user.auto_renew %}checked{% endif %} onchange="saveSettings()" class="accent-black dark:accent-white w-4 h-4">
+                        <label for="autoRenewActive" class="text-xs font-mono text-gray-500 cursor-pointer select-none">Auto-Renew Enabled</label>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="p-6 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative">
+                <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-6">Configuration</h3>
+                
+                <div class="space-y-6">
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">COOKIES</label>
+                        <textarea id="in_cookies" rows="2" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none resize-none rounded-none placeholder-gray-600" placeholder="Paste JSON cookie string..." {% if not user.is_subscribed %}disabled{% endif %}>{{ user.auth_cookies or '' }}</textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">CSRF_TOKEN</label>
+                        <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none placeholder-gray-600" placeholder="Paste token..." {% if not user.is_subscribed %}disabled{% endif %}>
+                    </div>
+                    
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Inventory Map</label>
+                        
+                        <textarea id="in_inventory" class="hidden">{{ user.inventory_json or '{}' }}</textarea>
+
+                        <div class="border border-gray-200 dark:border-[#333] bg-gray-50 dark:bg-[#111] p-3 space-y-3">
+                            <div class="grid grid-cols-12 gap-2">
+                                <input id="inv_sku" type="text" placeholder="SKU" class="col-span-4 p-2 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono outline-none focus:border-blue-500">
+                                <input id="inv_weight" type="number" placeholder="Lbs" class="col-span-3 p-2 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono outline-none focus:border-blue-500">
+                                <input id="inv_desc" type="text" placeholder="Desc" class="col-span-5 p-2 bg-white dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono outline-none focus:border-blue-500">
+                            </div>
+                            <button onclick="addInvItem()" class="w-full py-2 bg-blue-600 text-white text-xs font-bold uppercase hover:bg-blue-500 transition-all">ADD SKU MAP</button>
+                        </div>
+
+                        <div id="inventory_list" class="mt-2 max-h-48 overflow-y-auto border border-gray-200 dark:border-[#333] bg-white dark:bg-[#050505] divide-y divide-gray-100 dark:divide-[#222]">
+                            </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between items-center mb-2">
+                            <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block">Sender Profile</label>
+                            <a href="#" onclick="switchTab('addresses')" class="text-[10px] font-bold text-blue-500 hover:underline uppercase">Manage Profiles</a>
+                        </div>
+                        <select id="addr_select" onchange="handleAddrChange()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-300 dark:border-[#333] text-xs font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none rounded-none appearance-none cursor-pointer" {% if not user.is_subscribed %}disabled{% endif %}>
+                            <option value="">LOADING...</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-2">Unshipped Orders (.TXT)</label>
+                        <div class="flex flex-col gap-2">
+                            <input type="file" id="in_file" accept=".txt" class="hidden" onchange="handleFileSelect(this)" {% if not user.is_subscribed %}disabled{% endif %}>
+                            <button id="uploadBtn" onclick="document.getElementById('in_file').click()" class="w-full py-3 border border-dashed border-gray-300 dark:border-[#333] bg-gray-50 dark:bg-[#050505] hover:border-black dark:hover:border-white text-xs font-mono text-gray-500 hover:text-black dark:hover:text-white transition-all uppercase flex items-center justify-center gap-2" {% if not user.is_subscribed %}disabled{% endif %}>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                <span id="selectedFileName">Select .TXT File</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-6 border-t border-gray-100 dark:border-[#222] space-y-3">
+                    <button onclick="saveSettings()" id="saveBtn" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black text-xs font-mono font-bold uppercase hover:opacity-90 transition-all" {% if not user.is_subscribed %}disabled{% endif %}>Save Configuration</button>
+                    <button onclick="formatFile()" id="parseBtn" disabled class="w-full py-3 text-xs font-mono font-bold uppercase transition-all flex items-center justify-center gap-2 bg-gray-200 dark:bg-[#151515] text-gray-400 cursor-not-allowed"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg> Parse Unshipped Orders</button>
+                </div>
+                
+                {% if not user.is_subscribed %}
+                <div class="absolute inset-0 bg-white/60 dark:bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-10">
+                    <div class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-xs font-mono font-bold uppercase shadow-xl border border-gray-800">License Required</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 h-full flex flex-col">
+            <div class="flex-1 p-0 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative flex flex-col min-h-[500px]">
+                <div class="p-6 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center">
+                    <h3 class="text-sm font-bold text-gray-400 uppercase tracking-widest">Pending Confirmations</h3>
+                    <div class="flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                        <span class="text-xs font-mono text-green-500 font-bold uppercase">Live Feed</span>
+                    </div>
+                </div>
+
+                <div class="flex-1 overflow-auto relative">
+                    {% if user.is_subscribed %}
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-50 dark:bg-[#050505] sticky top-0 z-10 border-b border-gray-200 dark:border-[#1E1E1E]">
+                            <tr>
+                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Batch Name</th>
+                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Date</th>
+                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Labels</th>
+                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Status</th>
+                                <th class="p-4 text-xs font-bold text-gray-400 uppercase tracking-widest text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="automation-history-body" class="divide-y divide-gray-100 dark:divide-[#1E1E1E] text-xs font-mono"></tbody>
+                    </table>
+                    {% else %}
+                    <div class="absolute inset-0 flex flex-col items-center justify-center bg-gray-50/50 dark:bg-[#050505]/50 backdrop-blur-sm">
+                        <p class="text-xs font-mono font-bold text-gray-400 uppercase">History Locked</p>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if user.is_subscribed %}
+                <div class="p-4 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+                    <span id="auto_page_info" class="text-xs font-mono font-bold text-gray-500 uppercase">Page 1</span>
+                    <div class="flex gap-2">
+                        <button onclick="changeAutoPage(-1)" id="btnPrevAuto" disabled class="px-3 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-[#111] transition-all">< Prev</button>
+                        <button onclick="changeAutoPage(1)" id="btnNextAuto" disabled class="px-3 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-[#111] transition-all">Next ></button>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let wasSubscribed = "{{ 'true' if user.is_subscribed else 'false' }}" === "true";
+    let autoCurrentPage = 1;
+    let fileSelected = false;
+    let addressesAvailable = false;
+
+    // --- NEW: SESSION MEMORY ---
+    // This tracks which batches were confirmed in this session
+    window.confirmedSessionIds = []; 
+
+    // --- INVENTORY MANAGEMENT LOGIC ---
+    function renderInventory() {
+        const raw = document.getElementById('in_inventory').value;
+        const listDiv = document.getElementById('inventory_list');
+        let data = {};
+        
+        try { 
+            data = JSON.parse(raw); 
+        } catch(e) { 
+            data = {}; 
+            document.getElementById('in_inventory').value = "{}"; 
+        }
+        
+        if (Object.keys(data).length === 0) {
+            listDiv.innerHTML = '<div class="p-4 text-center text-gray-400 italic text-xs">No items mapped. Add one above.</div>';
+            return;
+        }
+
+        let html = '';
+        for (const [sku, details] of Object.entries(data)) {
+            html += `
+            <div class="flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-[#111] transition-colors">
+                <div class="flex flex-col">
+                    <span class="text-xs font-bold text-black dark:text-white font-mono">${sku}</span>
+                    <span class="text-[10px] text-gray-500">${details.weight} lbs | ${details.description}</span>
+                </div>
+                <button onclick="removeInvItem('${sku}')" class="text-red-500 hover:text-red-600 text-[10px] font-bold uppercase tracking-wider">REMOVE</button>
+            </div>`;
+        }
+        listDiv.innerHTML = html;
+    }
+
+    function addInvItem() {
+        const sku = document.getElementById('inv_sku').value.trim();
+        const weight = document.getElementById('inv_weight').value.trim();
+        const desc = document.getElementById('inv_desc').value.trim();
+        const hiddenInput = document.getElementById('in_inventory');
+
+        if (!sku || !weight || !desc) {
+            showNotification("MISSING FIELDS", "error");
+            return;
+        }
+
+        let data = {};
+        try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; }
+
+        data[sku] = { "weight": parseFloat(weight), "description": desc };
+
+        hiddenInput.value = JSON.stringify(data);
+        renderInventory();
+        
+        document.getElementById('inv_sku').value = '';
+        document.getElementById('inv_weight').value = '';
+        document.getElementById('inv_desc').value = '';
+        
+        showNotification(`ADDED: ${sku}`, "success");
+    }
+
+    function removeInvItem(sku) {
+        const hiddenInput = document.getElementById('in_inventory');
+        let data = {};
+        try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; }
+        
+        if(data[sku]) {
+            delete data[sku];
+            hiddenInput.value = JSON.stringify(data);
+            renderInventory();
+            showNotification(`REMOVED: ${sku}`, "success");
+        }
+    }
+    // ----------------------------------
+
+    const subEnd = "{{ user.subscription_end }}";
+    if (subEnd && parseInt(subEnd.split('-')[0]) > 2030) {
+        const renewBox = document.getElementById('autoRenewContainer');
+        if(renewBox) renewBox.classList.add('hidden');
+    }
+
+    // --- UPDATED CONFIRM ORDER (With Session Memory & Active Tracking) ---
+    async function confirmOrder(batchId) {
+        // 1. Notify start
+        showNotification('STARTING CONFIRMATION...', 'processing'); // Changed to Blue (processing) color
+        
+        try {
+            const res = await fetch('/api/automation/confirm', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ batch_id: batchId }) 
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                // REMOVED "Session Verified" popup to reduce clutter.
+                // The dashboard poller will detect the status change and show the final success.
+                
+                // Add to session memory immediately so the button UI knows to switch
+                if (!window.confirmedSessionIds.includes(batchId)) {
+                    window.confirmedSessionIds.push(batchId);
+                }
+                
+                // Force a quick reload of the table
+                setTimeout(loadAutomationHistory, 500); 
+            } else {
+                showNotification(data.error, 'error');
+            }
+        } catch(e) { showNotification('FAILED TO START', 'error'); }
+    }
+
+    async function buyKey(plan) {
+        try {
+            const res = await fetch('/api/automation/purchase', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ plan: plan }) });
+            const data = await res.json();
+            if (res.ok) { showNotification(data.message, 'success'); setTimeout(() => window.location.reload(), 1500); } 
+            else showNotification(data.error, 'error');
+        } catch (e) { showNotification("CONNECTION ERROR", 'error'); }
+    }
+
+    async function saveSettings() {
+        const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; 
+        const formData = new FormData();
+        formData.append('cookies', document.getElementById('in_cookies').value);
+        formData.append('csrf', document.getElementById('in_csrf').value);
+        formData.append('inventory', document.getElementById('in_inventory').value);
+        const arActive = document.getElementById('autoRenewActive');
+        if (arActive) formData.append('auto_renew', arActive.checked); else formData.append('auto_renew', false);
+        
+        try {
+            const res = await fetch('/api/automation/save', { method: 'POST', body: formData });
+            if (res.ok) {
+                showNotification("SETTINGS SAVED", 'success');
+            } else showNotification("SAVE FAILED", 'error');
+        } catch (e) { showNotification("ERROR SAVING", 'error'); }
+        btn.innerText = original;
+    }
+
+    function handleAddrChange() {
+        const val = document.getElementById('addr_select').value;
+        if(val) {
+            localStorage.setItem('lastSelectedAddress', val);
+            checkParseReady();
+        }
+    }
+
+    async function loadDropdown() {
+        const sel = document.getElementById('addr_select');
+        try {
+            const res = await fetch('/api/addresses');
+            const data = await res.json();
+            
+            if (data.length === 0) {
+                sel.innerHTML = '<option value="">NO SAVED PROFILES (CREATE ONE)</option>';
+                sel.disabled = true;
+                sel.classList.add('opacity-50', 'cursor-not-allowed');
+                addressesAvailable = false;
+            } else {
+                let opts = '<option value="" disabled selected>Select Sender Profile...</option>';
+                const saved = localStorage.getItem('lastSelectedAddress');
+                
+                data.forEach(a => { 
+                    const isSel = (saved && saved == a.id) ? 'selected' : '';
+                    opts += `<option value="${a.id}" ${isSel}>${a.name} | ${a.state}</option>`; 
+                });
+                
+                sel.innerHTML = opts;
+                sel.disabled = false;
+                sel.classList.remove('opacity-50', 'cursor-not-allowed');
+                addressesAvailable = true;
+            }
+            checkParseReady(); 
+        } catch(e) { sel.innerHTML = '<option>ERROR LOADING</option>'; }
+    }
+
+    function handleFileSelect(input) {
+        if (input.files && input.files[0]) {
+            const name = input.files[0].name;
+            const span = document.getElementById('selectedFileName');
+            if(span) {
+                span.innerText = name;
+                span.classList.add('text-blue-500', 'font-bold');
+            }
+            const btn = document.getElementById('uploadBtn');
+            btn.classList.remove('border-gray-300', 'dark:border-[#333]', 'text-gray-500');
+            btn.classList.add('border-blue-500', 'text-blue-500', 'bg-blue-500/5');
+            showNotification(name + " STAGED", 'success');
+            fileSelected = true;
+            checkParseReady(); 
+        }
+    }
+
+    function checkParseReady() {
+        const parseBtn = document.getElementById('parseBtn');
+        const addrValue = document.getElementById('addr_select').value;
+        
+        if (fileSelected && addressesAvailable && addrValue) {
+            parseBtn.disabled = false;
+            parseBtn.classList.remove('bg-gray-200', 'dark:bg-[#151515]', 'text-gray-400', 'cursor-not-allowed');
+            parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90', 'shadow-glow');
+        } else {
+            parseBtn.disabled = true;
+            parseBtn.classList.add('bg-gray-200', 'dark:bg-[#151515]', 'text-gray-400', 'cursor-not-allowed');
+            parseBtn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90', 'shadow-glow');
+        }
+    }
+
+    async function formatFile() {
+        const formData = new FormData();
+        const fileInput = document.getElementById('in_file');
+        if(!fileInput.files[0]) { showNotification("NO FILE SELECTED", "error"); return; }
+        
+        formData.append('file', fileInput.files[0]);
+        const addrId = document.getElementById('addr_select').value;
+        if(addrId) formData.append('address_id', addrId);
+
+        try {
+            const res = await fetch('/api/automation/format', { method: 'POST', body: formData });
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; 
+                const date = new Date().toISOString().slice(0,10);
+                a.download = `Parsed_Orders_${date}.zip`;
+                document.body.appendChild(a); a.click(); a.remove();
+                
+                showNotification("FILE PARSED SUCCESSFULLY", 'success');
+            } else {
+                const data = await res.json();
+                showNotification(data.error || "FORMAT FAILED", 'error');
+            }
+        } catch(e) { showNotification("DOWNLOAD FAILED", 'error'); }
+    }
+
+    setInterval(async () => {
+        try {
+            const res = await fetch('/api/status/check');
+            const data = await res.json();
+            if(document.getElementById('monthly_count')) document.getElementById('monthly_count').innerText = (data.monthly_left || 0) + "/50 LEFT";
+            if(document.getElementById('lifetime_count')) document.getElementById('lifetime_count').innerText = (data.lifetime_left || 0) + "/10 LEFT";
+            if(document.getElementById('header_slots_m')) document.getElementById('header_slots_m').innerText = (data.monthly_left || 0) + "/50";
+            if(document.getElementById('header_slots_l')) document.getElementById('header_slots_l').innerText = (data.lifetime_left || 0) + "/10";
+            
+            if (wasSubscribed && !data.subscribed) { window.location.reload(); }
+            if (!wasSubscribed && data.subscribed) window.location.reload();
+            wasSubscribed = data.subscribed;
+            if (data.subscribed && autoCurrentPage === 1) loadAutomationHistory();
+        } catch (e) {}
+    }, 5000); 
+
+    function changeAutoPage(delta) { autoCurrentPage += delta; loadAutomationHistory(); }
+
+    async function loadAutomationHistory() {
+        const tbody = document.getElementById('automation-history-body');
+        if(!tbody) return; 
+        try {
+            const res = await fetch(`/api/batches?page=${autoCurrentPage}&limit=10`);
+            const json = await res.json();
+            let html = '';
+            
+            json.data.forEach(b => {
+                let statusBadge = '';
+                let actionBtn = '';
+                let opacityClass = '';
+                let labelClass = '';
+                let countText = `${b.success_count} / ${b.count}`;
+
+                if (b.status === 'PROCESSING') {
+                    labelClass = 'text-blue-500 border-blue-500/30 bg-blue-500/10';
+                    statusBadge = '<span class="text-blue-500 font-bold animate-pulse">PROCESSING...</span>';
+                    actionBtn = `<button id="btn-confirm-${b.batch_id}" disabled class="px-4 py-2 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[10px] cursor-not-allowed border border-gray-200 dark:border-[#333]">CONFIRMING...</button>`;
+                } 
+                else if (b.status === 'COMPLETED') {
+                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/30 bg-green-500/10';
+                    statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold">COMPLETED</span>';
+                    
+                    // --- CHANGED LOGIC: Check global session memory ---
+                    let btnText = "CONFIRM SHIPMENT";
+                    if (window.confirmedSessionIds.includes(b.batch_id)) {
+                        btnText = "RECONFIRM";
+                    }
+
+                    actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow">${btnText}</button>`;
+                } 
+                else if (b.status === 'PARTIAL') {
+                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
+                    statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold">PARTIAL</span>';
+                    actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow">CONFIRM REMAINING</button>`;
+                }
+                else if (b.status === 'FAILED' || b.status === 'TIMEOUT') {
+                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/30 bg-red-500/10';
+                    statusBadge = '<span class="text-red-600 dark:text-red-400 font-bold">FAILED</span>';
+                    
+                    if (b.success_count > 0) {
+                        actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-red-600 text-white font-bold uppercase text-[10px] hover:bg-red-500 transition-all shadow-glow">RETRY CONFIRM</button>`;
+                    } else {
+                        actionBtn = `<span class="text-gray-500 font-bold text-xs uppercase cursor-not-allowed">LOCKED</span>`;
+                        opacityClass = 'opacity-60';
+                    }
+                } 
+                else if (b.status === 'QUEUED') {
+                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-transparent';
+                    statusBadge = `<span class="text-gray-500 font-bold animate-pulse">QUEUED</span>`;
+                    actionBtn = `<span class="text-gray-400 font-bold text-xs uppercase">WAITING</span>`;
+                }
+                else {
+                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-transparent';
+                    statusBadge = '<span class="text-gray-500 font-bold">READY</span>';
+                    actionBtn = `<button id="btn-confirm-${b.batch_id}" onclick="confirmOrder('${b.batch_id}')" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow">CONFIRM ORDERS</button>`;
+                }
+
+                let labelsText = `<span class="px-2 py-1 border font-mono text-xs font-bold ${labelClass}">${countText}</span>`;
+
+                html += `
+                <tr class="border-b border-gray-100 dark:border-[#1E1E1E] hover:bg-gray-50 dark:hover:bg-[#111] transition-colors ${opacityClass}">
+                    <td class="p-4">
+                        <p class="text-black dark:text-white font-bold">${b.batch_name}</p>
+                        <p class="text-xs text-gray-500 font-mono mt-0.5">ID: ${b.batch_id}</p>
+                    </td>
+                    <td class="p-4 text-gray-500 text-xs">${b.date}</td>
+                    <td class="p-4">${labelsText}</td>
+                    <td class="p-4 text-xs">${statusBadge}</td>
+                    <td class="p-4 text-right">${actionBtn}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html || '<tr><td colspan="5" class="p-8 text-center text-gray-500 font-mono text-xs">NO BATCHES FOUND</td></tr>';
+            
+            const meta = json.pagination;
+            document.getElementById('auto_page_info').innerText = `PAGE ${meta.current_page} OF ${meta.total_pages || 1}`;
+            document.getElementById('btnPrevAuto').disabled = meta.current_page <= 1;
+            document.getElementById('btnNextAuto').disabled = meta.current_page >= meta.total_pages;
+        } catch(e) {}
+    }
+    
+    if(wasSubscribed) {
+        loadAutomationHistory();
+        loadDropdown();
+        renderInventory();
+    }
+</script>

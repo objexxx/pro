@@ -1,0 +1,233 @@
+/* app/static/style.css */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&family=Poppins:wght@600&display=swap');
+
+:root {
+    /* --- UNIFIED DARK THEME (MATCHES DASHBOARD) --- */
+    --bg-color: #050505;        /* True Black */
+    --card-bg: #0A0A0A;         /* Slightly lighter black */
+    --border: #1E1E1E;          /* Subtle border */
+    --text-main: #ffffff;
+    --text-muted: #A1A1AA;      /* Light Grey */
+    --accent: #ffffff;          /* White buttons */
+    --accent-hover: #cccccc;
+    --btn-text: #000000;
+    --input-bg: #050505;        /* Match background */
+    --success: #10b981;         /* Terminal Green */
+    --danger: #ef4444;
+    --grid-color: #1a1a1a;
+}
+
+[data-theme="light"] {
+    /* --- UNIFIED LIGHT THEME --- */
+    --bg-color: #f3f4f6;
+    --card-bg: #ffffff;
+    --border: #e5e7eb;
+    --text-main: #000000;
+    --text-muted: #6b7280;
+    --accent: #000000;
+    --accent-hover: #333333;
+    --btn-text: #ffffff;
+    --input-bg: #ffffff;
+    --success: #059669;
+    --danger: #dc2626;
+    --grid-color: #e5e7eb;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    /* The Exact Grid Pattern from Dashboard */
+    background-image: radial-gradient(var(--grid-color) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+/* --- Theme Toggle Button --- */
+.theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 0; /* Sharp corners */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.theme-toggle:hover {
+    color: var(--text-main);
+    border-color: var(--text-main);
+}
+
+/* --- Login Container --- */
+.login-container {
+    background-color: var(--card-bg);
+    padding: 3rem;
+    width: 100%;
+    max-width: 420px;
+    border: 1px solid var(--border);
+    border-radius: 0; /* Sharp corners */
+    position: relative;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5); /* Stronger shadow */
+}
+
+/* Top Gradient Line (Matches Dashboard Modules) */
+.login-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--text-main), transparent);
+    opacity: 0.2;
+}
+
+.brand-section {
+    margin-bottom: 2.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* --- LOGO (Poppins) --- */
+.brand-section h1 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    font-size: 1.5rem;
+    letter-spacing: -0.5px;
+    color: var(--text-main);
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+}
+
+.status-indicator {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem;
+    color: var(--success);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(16, 185, 129, 0.1);
+    padding: 4px 8px;
+    border-radius: 999px; /* Keep pill shape for status */
+    text-transform: uppercase;
+    font-weight: 700;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+    background-color: var(--success);
+    border-radius: 50%;
+    box-shadow: 0 0 5px var(--success);
+}
+
+/* --- Form --- */
+.form-group { margin-bottom: 1.5rem; }
+
+label {
+    display: block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input {
+    width: 100%;
+    padding: 1rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text-main);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    border-radius: 0; /* Sharp inputs */
+    transition: all 0.2s;
+}
+
+input:focus {
+    outline: none;
+    border-color: var(--text-main);
+    box-shadow: 0 0 0 1px var(--text-main);
+}
+
+input::placeholder {
+    color: #444;
+}
+
+/* --- Buttons --- */
+.btn-primary {
+    width: 100%;
+    padding: 1rem;
+    background-color: var(--accent);
+    color: var(--btn-text);
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    border-radius: 0; /* Sharp button */
+    margin-top: 1rem;
+    letter-spacing: 1px;
+}
+
+.btn-primary:hover {
+    opacity: 0.9;
+}
+
+.toggle-link {
+    margin-top: 2rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    text-align: center;
+}
+.toggle-link a { color: var(--text-main); text-decoration: none; border-bottom: 1px solid var(--border); }
+.toggle-link a:hover { border-bottom: 1px solid var(--text-main); }
+
+.alert-error {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 0.8rem;
+    font-size: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 1.5rem;
+    border-radius: 0;
+}
+
+/* Checkbox Style */
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 1.5rem;
+}
+.checkbox-group input { width: auto; margin: 0; cursor: pointer; accent-color: var(--text-main); }
+.checkbox-group label { margin: 0; cursor: pointer; text-transform: none; color: var(--text-main); font-size: 0.8rem; }
