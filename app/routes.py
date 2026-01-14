@@ -643,12 +643,19 @@ def delete_all_user_addresses():
 @login_required
 def download_csv(batch_id):
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT filename FROM batches WHERE batch_id = ?", (batch_id,))
+    # --- CRITICAL FIX: SCOPED TO USER ---
+    c.execute("SELECT filename FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
     batch_row = c.fetchone()
+    
+    if not batch_row:
+        conn.close()
+        return jsonify({"error": "UNAUTHORIZED"}), 403
+
     download_name = f"{batch_id}.csv"
     if batch_row and batch_row[0]:
         stored_filename = batch_row[0]
         if '_' in stored_filename: download_name = stored_filename.split('_', 1)[1]
+    
     c.execute("SELECT id, from_name, to_name, tracking, created_at, address_to FROM history WHERE batch_id = ?", (batch_id,))
     rows = c.fetchall()
     conn.close()
@@ -664,9 +671,14 @@ def download_csv(batch_id):
 @login_required
 def download_pdf(batch_id):
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT filename FROM batches WHERE batch_id = ?", (batch_id,))
+    # --- CRITICAL FIX: SCOPED TO USER ---
+    c.execute("SELECT filename FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
     batch_row = c.fetchone()
     conn.close()
+    
+    if not batch_row:
+        return jsonify({"error": "UNAUTHORIZED"}), 403
+
     clean_name = f"Batch_{batch_id}"
     if batch_row and batch_row[0]:
         stored_filename = batch_row[0]

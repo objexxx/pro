@@ -15,6 +15,15 @@ class LabelEngine:
     def __init__(self):
         self.mode = "production"
 
+    # --- SECURITY FIX: ZPL SANITIZATION ---
+    def sanitize_zpl(self, text):
+        """
+        Removes ZPL control characters (^ and ~) to prevent injection attacks.
+        Example: "Company^XA" becomes "CompanyXA"
+        """
+        if not text: return ""
+        return str(text).replace("^", "").replace("~", "")
+
     def get_mailer_id(self, version):
         json_path = os.path.join(current_app.config['DATA_FOLDER'], 'mailer_ids.json')
         default_ids = ['90000000'] 
@@ -90,7 +99,8 @@ class LabelEngine:
     def format_address(self, name, company, street, city, state, zip_val):
         def clean(val):
             if not val or str(val).lower() == 'nan': return ""
-            return str(val).strip()
+            # Apply Sanitization here as well for safety
+            return self.sanitize_zpl(str(val).strip())
             
         parts = []
         if clean(name): parts.append(clean(name))
@@ -159,7 +169,8 @@ class LabelEngine:
             def safe_get(key, default=""):
                 val = row.get(key)
                 if pd.isna(val) or str(val).lower() == 'nan': return default
-                return str(val).strip()
+                # --- SANITIZATION APPLIED HERE ---
+                return self.sanitize_zpl(str(val).strip())
 
             order_id = safe_get('Ref01') 
             sku = safe_get('Ref02') 

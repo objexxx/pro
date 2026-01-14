@@ -54,10 +54,6 @@
         // SHARED MEMORY FOR AUTOMATION
         window.confirmedSessionIds = window.confirmedSessionIds || [];
         
-        // NEW: WATCH LIST FOR ACTIVE CONFIRMATIONS
-        // This tracks batches the user manually clicked so we can report the result accurately
-        window.confirmingBatches = window.confirmingBatches || new Set();
-        
         // FILTER STATE
         let currentPage = 1;
         let currentSort = 'recent';
@@ -93,6 +89,7 @@
             window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
 
             if (tabName === 'history') {
+                // Rely on the dashboard's load function to sync IDs
                 currentPage = 1; 
                 loadBatchHistory();
             }
@@ -128,21 +125,15 @@
             } catch(e) {} 
         }
 
-        // --- HISTORY TAB LOGIC ---
+        // --- HISTORY TAB LOGIC (FIXED IDS) ---
         function debounceSearch() {
             clearTimeout(searchTimeout);
             searchTimeout = setTimeout(() => {
-                currentSearch = document.getElementById('historySearch').value;
+                const searchInput = document.getElementById('historySearchInput'); 
+                currentSearch = searchInput ? searchInput.value : '';
                 currentPage = 1;
                 loadBatchHistory();
             }, 500);
-        }
-
-        function applyFilter(sortType) {
-            currentSort = sortType;
-            document.getElementById('filterMenu').classList.add('hidden');
-            currentPage = 1;
-            loadBatchHistory();
         }
 
         function changePage(delta) {
@@ -162,12 +153,15 @@
                 
                 renderHistory();
                 
-                const pageInfo = document.getElementById('pageInfo');
+                const pageInfo = document.getElementById('history_page_label'); 
                 if(pageInfo && json.pagination) {
                     const meta = json.pagination;
-                    pageInfo.innerText = `Page ${meta.current_page} of ${meta.total_pages}`;
-                    document.getElementById('prevBtn').disabled = meta.current_page <= 1;
-                    document.getElementById('nextBtn').disabled = meta.current_page >= meta.total_pages;
+                    pageInfo.innerText = `Secure_Page ${meta.current_page} of ${meta.total_pages}`;
+                    
+                    const pBtn = document.getElementById('btnPrevHistory');
+                    const nBtn = document.getElementById('btnNextHistory');
+                    if(pBtn) pBtn.disabled = meta.current_page <= 1;
+                    if(nBtn) nBtn.disabled = meta.current_page >= meta.total_pages;
                 }
             } catch (err) { console.error("History Load Error:", err); } 
         }
@@ -183,6 +177,7 @@
                 
                 checkStatusChanges(notificationBatches);
                 
+                // If on history tab, FORCE UPDATE the table with new statuses
                 if (activeTab === 'history' && currentPage === 1 && currentSearch === '') {
                     allBatches = notificationBatches;
                     renderHistory();
@@ -209,20 +204,11 @@
                 const newCount = batch.success_count;
                 const total = batch.count;
 
-                // --- COMPLETION DETECTOR ---
-                // Trigger if status just became COMPLETED, 
-                // OR if it was already COMPLETED but the count increased (late update)
-                const justFinished = (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED');
-                const countUpdated = (newStatus === 'COMPLETED' && newCount > (batchProgressMemory[id] || 0));
-
-                if (justFinished || countUpdated) {
-                    // Only show if we have been watching this batch or tracking it
-                    if (window.confirmedSessionIds && window.confirmedSessionIds.includes(id)) {
-                         let msg = `<span class="text-gray-400 text-[10px]">BATCH COMPLETE</span><br>${name}<br><span class="text-green-500 text-sm">CONFIRMED: ${newCount} / ${total}</span>`;
-                         showNotification(msg, 'success');
-                    }
+                // Detect Completion
+                if (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED') {
+                     let msg = `<span class="text-gray-400 text-[10px]">BATCH COMPLETE</span><br>${name}<br><span class="text-green-500 text-sm">READY: ${newCount} / ${total}</span>`;
+                     showNotification(msg, 'success');
                 }
-                
                 else if (newStatus === 'PROCESSING' && oldStatus !== 'PROCESSING') {
                     showNotification(`${name}<br>STARTED PROCESSING`, 'processing');
                 }
@@ -237,30 +223,13 @@
             });
         }
 
-        // --- HELPER TO UPDATE THE BUTTON UI WITHOUT RELOADING TABLE ---
         function updateAutomationButtonUI(batch) {
             const btn = document.getElementById(`btn-confirm-${batch.batch_id}`);
-            
             if (btn) {
-                if (batch.status === 'COMPLETED') {
-                    // Ensure global arrays exist
-                    window.confirmedSessionIds = window.confirmedSessionIds || [];
-                    
-                    // If currently in the "Watching" phase, keep it disabled/processing visual if needed,
-                    // BUT since we update UI every 3s, let's just show the correct state.
-
-                    let btnText = "CONFIRM SHIPMENT";
-                    if (window.confirmedSessionIds.includes(batch.batch_id)) {
-                        btnText = "RECONFIRM";
-                    }
-
-                    btn.innerText = btnText;
+                if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
+                    btn.innerText = "CONFIRM SHIPMENT";
                     btn.disabled = false;
-                    
-                    // Restore active button styles (Black/White)
                     btn.className = "px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow";
-                    
-                    // Re-attach click handler
                     if(typeof confirmOrder === 'function') {
                         btn.onclick = function() { confirmOrder(batch.batch_id); };
                     }
@@ -276,8 +245,6 @@
         // --- VISUAL NOTIFICATION RENDERER ---
         function showNotification(message, type = 'success') {
             const container = document.getElementById('notif-container');
-            
-            // Limit stack to 3
             if (container.children.length >= 3) {
                 container.removeChild(container.firstElementChild);
             }
@@ -324,7 +291,7 @@
             }
         }
 
-        // --- PURCHASE VERIFICATION ---
+        // --- PURCHASE LOGIC ---
         async function verifyData() { 
             const fileInput = document.getElementById('csvUpload'); 
             if (!fileInput.files[0]) return; 
@@ -375,9 +342,9 @@
 
         async function loadStats() { try { const res = await fetch('/api/stats'); const data = await res.json(); document.getElementById('stat-labels').innerText = data.total_labels; document.getElementById('stat-batches').innerText = data.total_batches; } catch(e) {} }
 
-        // --- RENDER HISTORY (LABEL GENERATION) ---
+        // --- RENDER HISTORY (FIXED TARGET ID) ---
         function renderHistory() {
-            const tableBody = document.getElementById('history-table-body');
+            const tableBody = document.getElementById('history-body-content'); 
             if (!tableBody) return; 
 
             if (allBatches.length === 0) { 
@@ -393,33 +360,73 @@
 
                 if (b.status === 'PROCESSING') {
                     isProcessing = true;
-                    labelClass = 'text-blue-500 border-blue-500/30 bg-blue-500/10';
-                    statusBadge = '<span class="text-blue-500 font-bold animate-pulse">PROCESSING...</span>';
+                    labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse';
+                    statusBadge = 'PROCESSING...';
                 } else if (b.status === 'QUEUED') {
                     isProcessing = true;
-                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-transparent';
-                    statusBadge = `<span class="text-gray-500 font-bold animate-pulse">QUEUED</span>`;
-                } else if (b.status === 'COMPLETED') {
-                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/30 bg-green-500/10';
-                    statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold">COMPLETED</span>';
+                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
+                    statusBadge = 'QUEUED';
+                } else if (b.status === 'COMPLETED' || b.status === 'CONFIRMED') {
+                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
+                    statusBadge = 'COMPLETED';
                 } else if (b.status === 'PARTIAL') {
-                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30 bg-yellow-500/10';
-                    statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold">PARTIAL</span>';
+                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/20 bg-yellow-500/5';
+                    statusBadge = 'PARTIAL';
                 } else {
-                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/30 bg-red-500/10';
-                    statusBadge = '<span class="text-red-600 dark:text-red-400 font-bold">FAILED</span>';
+                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
+                    statusBadge = 'FAILED';
                 }
 
                 let pdfButton = '';
+                let csvButton = '';
+
+                // --- ALIGNMENT & COLOR FIX ---
+                // Using "flex items-center" on parent AND children to force vertical center
+                // PDF = Blue, CSV = Gray (Original)
+                
                 if (isProcessing) {
-                    pdfButton = `<span class="text-[10px] font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none inline-flex items-center gap-1 align-middle"><svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> WAIT</span>`;
-                } else if (b.success_count > 0) {
-                    pdfButton = `<a href="/api/download/pdf/${b.batch_id}" class="text-[10px] font-mono font-bold text-blue-500 hover:text-blue-400 transition-all">PDF</a>`;
-                } else {
-                    pdfButton = `<span class="text-[10px] font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">PDF</span>`;
+                    pdfButton = `
+                        <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
+                            <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg> 
+                            WAIT
+                        </span>`;
+                    csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
+                } 
+                else if (b.success_count > 0) {
+                    pdfButton = `<a href="/api/download/pdf/${b.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
+                    // FIXED: Restored Gray/White hover scheme for CSV
+                    csvButton = `<a href="/api/download/csv/${b.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
+                } 
+                else {
+                    pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
+                    csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
                 }
 
-                html += `<tr class="border-b border-gray-200 dark:border-[#1E1E1E] hover:bg-gray-50 dark:hover:bg-[#0A0A0A] transition-colors group"><td class="p-4"><p class="font-mono text-xs text-black dark:text-white font-bold">${b.batch_name}</p><p class="font-mono text-[10px] text-gray-500">ID: ${b.batch_id}</p></td><td class="p-4 font-mono text-xs text-gray-500">${b.date}</td><td class="p-4"><span class="px-2 py-1 border font-mono text-[10px] font-bold ${labelClass}">${countText}</span></td><td class="p-4 font-mono text-[10px] text-gray-400">PRIORITY V2</td><td class="p-4 font-mono text-[10px]">${statusBadge}</td><td class="p-4 text-right space-x-2">${pdfButton}<span class="text-gray-400">|</span><a href="/api/download/csv/${b.batch_id}" class="text-[10px] font-mono font-bold text-gray-500 hover:text-black dark:hover:text-white transition-all">CSV</a></td></tr>`;
+                html += `
+                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors group">
+                    <td class="px-8 py-5">
+                        <p class="text-black dark:text-white font-bold uppercase tracking-wide text-[10px]">${b.batch_name}</p>
+                        <p class="text-[8px] text-gray-400 font-mono mt-0.5 uppercase">ID: ${b.batch_id}</p>
+                    </td>
+                    <td class="px-8 py-5 text-center text-gray-500 font-mono text-[9px]">${b.date}</td>
+                    <td class="px-8 py-5 text-center">
+                        <span class="px-2.5 py-1 border rounded-sm font-bold ${labelClass}">${countText}</span>
+                    </td>
+                    <td class="px-8 py-5 text-center text-gray-400 font-mono text-[9px] uppercase tracking-tighter">Priority V2</td>
+                    <td class="px-8 py-5 text-center">
+                        <span class="font-black uppercase tracking-widest text-[9px] ${labelClass.split(' ')[0]}">${statusBadge}</span>
+                    </td>
+                    <td class="px-8 py-5 text-right font-mono">
+                        <div class="flex justify-end items-center gap-3">
+                            ${pdfButton}
+                            <span class="text-gray-300 text-[9px] leading-none select-none">|</span>
+                            ${csvButton}
+                        </div>
+                    </td>
+                </tr>`;
             });
             tableBody.innerHTML = html;
         }

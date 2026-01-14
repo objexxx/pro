@@ -45,11 +45,9 @@
 </div>
 
 <script>
-    // Variables specifically scoped for History module
     var histCurrentPage = 1;
     var histSearchTimeout = null;
 
-    // Search logic
     const searchInp = document.getElementById('historySearchInput');
     if(searchInp) {
         searchInp.addEventListener('input', function() {
@@ -79,8 +77,8 @@
                 result.data.forEach(batch => {
                     let badgeTxt = '';
                     let colorStyles = '';
+                    let isProcessing = false;
 
-                    // Match logic from Automation module
                     if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
                         colorStyles = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
                         badgeTxt = 'COMPLETED';
@@ -90,16 +88,46 @@
                         badgeTxt = 'PARTIAL';
                     } 
                     else if (batch.status === 'PROCESSING') {
+                        isProcessing = true;
                         colorStyles = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse';
                         badgeTxt = 'PROCESSING...';
                     }
                     else if (batch.status === 'QUEUED') {
+                        isProcessing = true;
                         colorStyles = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
                         badgeTxt = 'QUEUED';
                     }
                     else {
                         colorStyles = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
                         badgeTxt = 'FAILED';
+                    }
+
+                    // --- ALIGNMENT & COLOR FIX ---
+                    let pdfButton = '';
+                    let csvButton = '';
+
+                    // The "flex items-center" on the parent div + "leading-none" on text 
+                    // ensures vertical centering regardless of content type (text vs svg)
+                    
+                    if (isProcessing) {
+                        pdfButton = `
+                            <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
+                                <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg> 
+                                WAIT
+                            </span>`;
+                        csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
+                    } 
+                    else if (batch.success_count > 0) {
+                        // PDF = Blue, CSV = Gray (Original Scheme)
+                        pdfButton = `<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
+                        csvButton = `<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
+                    } 
+                    else {
+                        pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
+                        csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
                     }
 
                     rowHtml += `
@@ -117,10 +145,10 @@
                             <span class="font-black uppercase tracking-widest text-[9px] ${colorStyles.split(' ')[0]}">${badgeTxt}</span>
                         </td>
                         <td class="px-8 py-5 text-right font-mono">
-                            <div class="flex justify-end gap-3">
-                                <a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] transition-colors">PDF</a>
-                                <span class="text-gray-300">|</span>
-                                <a href="/api/download/csv/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] transition-colors">CSV</a>
+                            <div class="flex justify-end items-center gap-3">
+                                ${pdfButton}
+                                <span class="text-gray-300 text-[9px] leading-none select-none">|</span>
+                                ${csvButton}
                             </div>
                         </td>
                     </tr>`;
@@ -131,7 +159,6 @@
 
             targetBody.innerHTML = rowHtml;
             
-            // Handle Pagination Visibility
             const pInfo = document.getElementById('history_page_label');
             if (pInfo) pInfo.innerText = `Secure_Page ${result.pagination.current_page} of ${result.pagination.total_pages || 1}`;
             
@@ -146,6 +173,5 @@
         }
     }
 
-    // Run immediately
     loadFullHistory();
 </script>
