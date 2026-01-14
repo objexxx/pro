@@ -34,35 +34,26 @@
         </div>
     </div>
 
+    {% if user.is_subscribed %}
     <div class="flex flex-col lg:grid lg:grid-cols-12 gap-6 flex-1 min-h-0">
         <div class="lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar">
             
             <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 relative overflow-hidden group shadow-glow">
-                {% if not user.is_subscribed %}
-                    <div class="flex flex-col gap-3">
-                        <div class="p-2 bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-bold uppercase text-center tracking-widest font-mono">License Required</div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button onclick="buyKey('monthly')" class="p-2 bg-black dark:bg-white text-white dark:text-black text-[9px] font-bold uppercase hover:opacity-90 transition-all font-mono">Monthly $29.99</button>
-                            <button onclick="buyKey('lifetime')" class="p-2 bg-transparent border border-gray-200 dark:border-white/20 text-black dark:text-white text-[9px] font-bold uppercase hover:bg-gray-100 dark:hover:bg-white/10 transition-all font-mono">Lifetime $499</button>
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-green-500/10 border border-green-500/20 text-green-500 flex items-center justify-center">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-bold text-black dark:text-white uppercase tracking-widest font-mono">License Active</p>
+                            <p class="text-[8px] font-mono text-gray-500 uppercase">Expires: {{ user.subscription_end }}</p>
                         </div>
                     </div>
-                {% else %}
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-green-500/10 border border-green-500/20 text-green-500 flex items-center justify-center">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            </div>
-                            <div>
-                                <p class="text-[10px] font-bold text-black dark:text-white uppercase tracking-widest font-mono">License Active</p>
-                                <p class="text-[8px] font-mono text-gray-500 uppercase">Expires: {{ user.subscription_end }}</p>
-                            </div>
-                        </div>
-                        <label class="flex items-center gap-2 cursor-pointer group/toggle">
-                            <span class="text-[8px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest group-hover/toggle:text-black dark:group-hover/toggle:text-white transition-colors font-mono">Auto-Renew</span>
-                            <input type="checkbox" id="autoRenewActive" {% if user.auto_renew %}checked{% endif %} onchange="saveSettings()" class="w-3.5 h-3.5 accent-green-500 cursor-pointer bg-gray-100 dark:bg-[#111] border-gray-300 dark:border-[#333]">
-                        </label>
-                    </div>
-                {% endif %}
+                    <label class="flex items-center gap-2 cursor-pointer group/toggle">
+                        <span class="text-[8px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest group-hover/toggle:text-black dark:group-hover/toggle:text-white transition-colors font-mono">Auto-Renew</span>
+                        <input type="checkbox" id="autoRenewActive" {% if user.auto_renew %}checked{% endif %} onchange="saveSettings()" class="w-3.5 h-3.5 accent-green-500 cursor-pointer bg-gray-100 dark:bg-[#111] border-gray-300 dark:border-[#333]">
+                    </label>
+                </div>
             </div>
 
             <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] flex flex-col flex-1 relative overflow-hidden shadow-glow">
@@ -73,7 +64,6 @@
                 </div>
 
                 <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
-                    
                     <div id="panel-credentials" class="space-y-4">
                         <div>
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Cookies (JSON String)</label>
@@ -84,7 +74,6 @@
                             <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">
                         </div>
                     </div>
-
                     <div id="panel-inventory" class="hidden space-y-3">
                         <textarea id="in_inventory" class="hidden">{{ user.inventory_json or '{}' }}</textarea>
                         <div class="bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] p-3 space-y-2">
@@ -97,17 +86,14 @@
                         </div>
                         <div id="inventory_list" class="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar"></div>
                     </div>
-
                     <div id="panel-sender" class="hidden space-y-4">
                         <div class="flex justify-between items-center mb-1">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono">Sender Profile</label>
                             <a href="#" onclick="switchTab('addresses')" class="text-[9px] font-bold text-blue-500 uppercase hover:text-blue-400 transition-colors font-mono underline decoration-blue-500/30 underline-offset-4">Manage Profiles</a>
                         </div>
-                        
                         <select id="addr_select" onchange="handleAddrChange()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none cursor-pointer hover:bg-gray-100 dark:hover:bg-[#111] transition-all">
                             <option value="">LOADING...</option>
                         </select>
-
                         <div class="pt-4 border-t border-gray-200 dark:border-[#1E1E1E]">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Unshipped Data (.TXT)</label>
                             <input type="file" id="in_file" accept=".txt" class="hidden" onchange="handleFileSelect(this)">
@@ -157,8 +143,7 @@
                             <th class="px-6 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-right font-mono">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="automation-history-body" class="divide-y divide-gray-100 dark:divide-[#151515] text-[10px] font-mono">
-                        </tbody>
+                    <tbody id="automation-history-body" class="divide-y divide-gray-100 dark:divide-[#151515] text-[10px] font-mono"></tbody>
                 </table>
             </div>
 
@@ -171,6 +156,22 @@
             </div>
         </div>
     </div>
+
+    {% else %}
+    <div class="flex flex-1 items-center justify-center">
+        <div class="max-w-md w-full bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-8 shadow-glow text-center">
+            <div class="w-16 h-16 bg-red-500/10 border border-red-500/20 text-red-500 flex items-center justify-center mx-auto mb-6">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m0 0v2m0-2h2m-2 0H10m4-11a4 4 0 11-8 0 4 4 0 018 0zM7 10h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            <h3 class="text-xs font-black text-black dark:text-white uppercase tracking-[0.3em] mb-2 font-mono">Access Restricted</h3>
+            <p class="text-[10px] text-gray-500 font-mono uppercase mb-8 leading-relaxed">Automation Suite requires an active integration license. Please select a plan below to continue.</p>
+            <div class="grid grid-cols-1 gap-3">
+                <button onclick="buyKey('monthly')" class="w-full py-4 bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase hover:opacity-90 transition-all font-mono shadow-sm">Unlock Monthly Access $29.99</button>
+                <button onclick="buyKey('lifetime')" class="w-full py-4 bg-transparent border border-gray-200 dark:border-white/10 text-black dark:text-white text-[10px] font-black uppercase hover:bg-gray-100 dark:hover:bg-white/5 transition-all font-mono">Unlock Lifetime Suite $499</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <script>
@@ -180,220 +181,59 @@
     let addressesAvailable = false;
     window.confirmedSessionIds = []; 
 
-    // --- UI TOGGLE LOGIC ---
-    function toggleConfigTab(tabId) {
-        ['credentials', 'inventory', 'sender'].forEach(id => {
-            document.getElementById(`panel-${id}`).classList.add('hidden');
-            document.getElementById(`tab-${id}`).classList.remove('text-black', 'dark:text-white', 'border-black', 'dark:border-white');
-            document.getElementById(`tab-${id}`).classList.add('text-gray-400', 'border-transparent');
-        });
-        document.getElementById(`panel-${tabId}`).classList.remove('hidden');
-        document.getElementById(`tab-${tabId}`).classList.add('text-black', 'dark:text-white', 'border-black', 'dark:border-white');
-        document.getElementById(`tab-${tabId}`).classList.remove('text-gray-400', 'border-transparent');
-    }
-
-    // --- SENDER PROFILE LOGIC ---
-    async function loadDropdown() {
-        const sel = document.getElementById('addr_select');
+    // --- NEW: PURCHASE FUNCTION ---
+    async function buyKey(plan) {
+        showNotification(`PURCHASING ${plan.toUpperCase()} LICENSE...`, 'processing');
         try {
-            const res = await fetch('/api/addresses');
-            const data = await res.json();
-            
-            if (data.length === 0) {
-                sel.innerHTML = '<option value="">NO SAVED PROFILES</option>';
-                sel.disabled = true; 
-                addressesAvailable = false;
-            } else {
-                let opts = '<option value="" disabled>Select Sender Profile...</option>';
-                const savedId = localStorage.getItem('lastSelectedSender');
-                let foundSaved = false;
-
-                data.forEach(a => {
-                    const isSelected = (savedId && String(a.id) === String(savedId));
-                    if (isSelected) foundSaved = true;
-                    opts += `<option value="${a.id}" ${isSelected ? 'selected' : ''}>${a.name} | ${a.state}</option>`;
-                });
-                
-                sel.innerHTML = opts; 
-                sel.disabled = false; 
-                addressesAvailable = true;
-                if (!foundSaved) sel.value = "";
-            }
-            checkParseReady(); 
-        } catch(e) { sel.innerHTML = '<option>ERROR LOADING</option>'; }
-    }
-
-    function handleAddrChange() {
-        const sel = document.getElementById('addr_select');
-        if (sel.value) {
-            localStorage.setItem('lastSelectedSender', sel.value);
-            checkParseReady();
-        }
-    }
-
-    // --- INVENTORY MANAGEMENT ---
-    function renderInventory() {
-        const raw = document.getElementById('in_inventory').value;
-        const listDiv = document.getElementById('inventory_list');
-        let data = {};
-        try { data = JSON.parse(raw); } catch(e) { data = {}; }
-        
-        if (Object.keys(data).length === 0) {
-            listDiv.innerHTML = '<div class="p-3 text-center text-gray-400 italic text-[9px] font-mono uppercase tracking-widest">Inventory map empty.</div>';
-            return;
-        }
-
-        let html = '';
-        for (const [sku, details] of Object.entries(data)) {
-            html += `
-            <div class="flex items-center justify-between p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E]">
-                <div class="flex flex-col">
-                    <span class="text-[10px] font-bold text-black dark:text-white font-mono">${sku}</span>
-                    <span class="text-[8px] text-gray-500 uppercase tracking-widest font-mono">${details.weight} lbs // ${details.description}</span>
-                </div>
-                <button onclick="removeInvItem('${sku}')" class="text-red-500 hover:text-red-600 text-[8px] font-bold uppercase tracking-widest font-mono">Remove</button>
-            </div>`;
-        }
-        listDiv.innerHTML = html;
-    }
-
-    function addInvItem() {
-        const sku = document.getElementById('inv_sku').value.trim();
-        const weight = document.getElementById('inv_weight').value.trim();
-        const desc = document.getElementById('inv_desc').value.trim();
-        const hiddenInput = document.getElementById('in_inventory');
-        
-        if (!sku || !weight || !desc) { showNotification("MISSING FIELDS", "error"); return; }
-        
-        let data = {};
-        try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; }
-        
-        data[sku] = { "weight": parseFloat(weight), "description": desc };
-        hiddenInput.value = JSON.stringify(data);
-        
-        renderInventory();
-        document.getElementById('inv_sku').value = ''; 
-        document.getElementById('inv_weight').value = ''; 
-        document.getElementById('inv_desc').value = '';
-        
-        showNotification(`MAPPED: ${sku}`, "success");
-    }
-
-    function removeInvItem(sku) {
-        const hiddenInput = document.getElementById('in_inventory');
-        let data = {};
-        try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; }
-        
-        if(data[sku]) {
-            delete data[sku];
-            hiddenInput.value = JSON.stringify(data);
-            renderInventory();
-            showNotification(`UNMAPPED: ${sku}`, "success");
-        }
-    }
-
-    // --- FORMAT & PARSE ---
-    async function formatFile() {
-        const fileInput = document.getElementById('in_file');
-        const addrSelect = document.getElementById('addr_select');
-        const inventoryData = document.getElementById('in_inventory').value;
-
-        if (!fileInput.files[0]) {
-            showNotification("MISSING FILE: UPLOAD .TXT", "error");
-            return;
-        }
-        if (!addrSelect.value) {
-            showNotification("MISSING PROFILE: SELECT SENDER", "error");
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        formData.append('address_id', addrSelect.value);
-        formData.append('inventory', inventoryData); 
-
-        const btn = document.getElementById('parseBtn');
-        const originalText = btn.innerText;
-        btn.innerText = "PROCESSING...";
-        btn.disabled = true;
-
-        try {
-            const res = await fetch('/api/automation/format', { method: 'POST', body: formData });
-            
-            if (res.ok) {
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; 
-                a.download = `Parsed_Orders_${new Date().getTime()}.zip`;
-                document.body.appendChild(a); a.click(); a.remove();
-                showNotification("FILE PARSED SUCCESSFULLY", 'success');
-            } else {
-                const err = await res.json();
-                showNotification(`ERROR: ${err.error || 'BAD REQUEST'}`, 'error');
-            }
-        } catch(e) { showNotification("CONNECTION FAILED", 'error'); }
-        
-        btn.innerText = originalText;
-        btn.disabled = false;
-    }
-
-    function handleFileSelect(input) {
-        if (input.files && input.files[0]) {
-            const name = input.files[0].name;
-            const span = document.getElementById('selectedFileName');
-            if(span) { span.innerText = name; span.classList.add('text-black', 'dark:text-white', 'font-bold'); }
-            showNotification(name + " STAGED", 'success');
-            fileSelected = true; 
-            checkParseReady(); 
-        }
-    }
-
-    function checkParseReady() {
-        const parseBtn = document.getElementById('parseBtn');
-        const addrValue = document.getElementById('addr_select').value;
-        if (fileSelected && addressesAvailable && addrValue) {
-            parseBtn.disabled = false; 
-            parseBtn.classList.remove('text-gray-400', 'cursor-not-allowed', 'bg-gray-100', 'dark:bg-[#151515]');
-            parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90');
-        }
-    }
-
-    async function saveSettings() {
-        const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; 
-        const formData = new FormData();
-        formData.append('cookies', document.getElementById('in_cookies').value);
-        formData.append('csrf', document.getElementById('in_csrf').value);
-        formData.append('inventory', document.getElementById('in_inventory').value);
-        const arActive = document.getElementById('autoRenewActive');
-        formData.append('auto_renew', arActive ? arActive.checked : false);
-        try {
-            const res = await fetch('/api/automation/save', { method: 'POST', body: formData });
-            if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } 
-            else showNotification("SAVE FAILED", 'error');
-        } catch (e) { showNotification("ERROR SAVING", 'error'); }
-        btn.innerText = original;
-    }
-
-    async function confirmOrder(batchId) {
-        showNotification('STARTING CONFIRMATION...', 'processing');
-        try {
-            const res = await fetch('/api/automation/confirm', { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ batch_id: batchId }) 
+            const res = await fetch('/api/automation/purchase', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan: plan })
             });
             const data = await res.json();
             if (res.ok) {
-                if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); }
                 showNotification(data.message, 'success');
-            } else { showNotification(data.error, 'error'); }
-            setTimeout(loadAutomationHistory, 1000); 
-        } catch(e) { showNotification('FAILED TO START', 'error'); }
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                // This triggers the ERROR: INSUFFICIENT FUNDS notification
+                showNotification(data.error || "PURCHASE FAILED", 'error');
+            }
+        } catch (e) {
+            showNotification("CONNECTION ERROR", "error");
+        }
     }
 
+    function toggleConfigTab(tabId) {
+        ['credentials', 'inventory', 'sender'].forEach(id => {
+            const p = document.getElementById(`panel-${id}`);
+            const t = document.getElementById(`tab-${id}`);
+            if(p && t) {
+                p.classList.add('hidden');
+                t.classList.remove('text-black', 'dark:text-white', 'border-black', 'dark:border-white');
+                t.classList.add('text-gray-400', 'border-transparent');
+            }
+        });
+        const p_new = document.getElementById(`panel-${tabId}`);
+        const t_new = document.getElementById(`tab-${tabId}`);
+        if(p_new && t_new) {
+            p_new.classList.remove('hidden');
+            t_new.classList.add('text-black', 'dark:text-white', 'border-black', 'dark:border-white');
+            t_new.classList.remove('text-gray-400', 'border-transparent');
+        }
+    }
+
+    async function loadDropdown() { const sel = document.getElementById('addr_select'); if(!sel) return; try { const res = await fetch('/api/addresses'); const data = await res.json(); if (data.length === 0) { sel.innerHTML = '<option value="">NO SAVED PROFILES</option>'; sel.disabled = true; addressesAvailable = false; } else { let opts = '<option value="" disabled>Select Sender Profile...</option>'; const savedId = localStorage.getItem('lastSelectedSender'); let foundSaved = false; data.forEach(a => { const isSelected = (savedId && String(a.id) === String(savedId)); if (isSelected) foundSaved = true; opts += `<option value="${a.id}" ${isSelected ? 'selected' : ''}>${a.name} | ${a.state}</option>`; }); sel.innerHTML = opts; sel.disabled = false; addressesAvailable = true; if (!foundSaved) sel.value = ""; } checkParseReady(); } catch(e) { sel.innerHTML = '<option>ERROR LOADING</option>'; } }
+    function handleAddrChange() { const sel = document.getElementById('addr_select'); if (sel && sel.value) { localStorage.setItem('lastSelectedSender', sel.value); checkParseReady(); } }
+    function renderInventory() { const raw = document.getElementById('in_inventory'); const listDiv = document.getElementById('inventory_list'); if(!raw || !listDiv) return; let data = {}; try { data = JSON.parse(raw.value); } catch(e) { data = {}; } if (Object.keys(data).length === 0) { listDiv.innerHTML = '<div class="p-3 text-center text-gray-400 italic text-[9px] font-mono uppercase tracking-widest">Inventory map empty.</div>'; return; } let html = ''; for (const [sku, details] of Object.entries(data)) { html += `<div class="flex items-center justify-between p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E]"><div class="flex flex-col"><span class="text-[10px] font-bold text-black dark:text-white font-mono">${sku}</span><span class="text-[8px] text-gray-500 uppercase tracking-widest font-mono">${details.weight} lbs // ${details.description}</span></div><button onclick="removeInvItem('${sku}')" class="text-red-500 hover:text-red-600 text-[8px] font-bold uppercase tracking-widest font-mono">Remove</button></div>`; } listDiv.innerHTML = html; }
+    function addInvItem() { const sku = document.getElementById('inv_sku').value.trim(); const weight = document.getElementById('inv_weight').value.trim(); const desc = document.getElementById('inv_desc').value.trim(); const hiddenInput = document.getElementById('in_inventory'); if (!sku || !weight || !desc) { showNotification("MISSING FIELDS", "error"); return; } let data = {}; try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; } data[sku] = { "weight": parseFloat(weight), "description": desc }; hiddenInput.value = JSON.stringify(data); renderInventory(); document.getElementById('inv_sku').value = ''; document.getElementById('inv_weight').value = ''; document.getElementById('inv_desc').value = ''; showNotification(`MAPPED: ${sku}`, "success"); }
+    function removeInvItem(sku) { const hiddenInput = document.getElementById('in_inventory'); let data = {}; try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; } if(data[sku]) { delete data[sku]; hiddenInput.value = JSON.stringify(data); renderInventory(); showNotification(`UNMAPPED: ${sku}`, "success"); } }
+    async function formatFile() { const fileInput = document.getElementById('in_file'); const addrSelect = document.getElementById('addr_select'); const inventoryData = document.getElementById('in_inventory').value; if (!fileInput.files[0]) { showNotification("MISSING FILE: UPLOAD .TXT", "error"); return; } if (!addrSelect.value) { showNotification("MISSING PROFILE: SELECT SENDER", "error"); return; } const formData = new FormData(); formData.append('file', fileInput.files[0]); formData.append('address_id', addrSelect.value); formData.append('inventory', inventoryData); const btn = document.getElementById('parseBtn'); const originalText = btn.innerText; btn.innerText = "PROCESSING..."; btn.disabled = true; try { const res = await fetch('/api/automation/format', { method: 'POST', body: formData }); if (res.ok) { const blob = await res.blob(); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Parsed_Orders_${new Date().getTime()}.zip`; document.body.appendChild(a); a.click(); a.remove(); showNotification("FILE PARSED SUCCESSFULLY", 'success'); } else { const err = await res.json(); showNotification(`ERROR: ${err.error || 'BAD REQUEST'}`, 'error'); } } catch(e) { showNotification("CONNECTION FAILED", 'error'); } btn.innerText = originalText; btn.disabled = false; }
+    function handleFileSelect(input) { if (input.files && input.files[0]) { const name = input.files[0].name; const span = document.getElementById('selectedFileName'); if(span) { span.innerText = name; span.classList.add('text-black', 'dark:text-white', 'font-bold'); } showNotification(name + " STAGED", 'success'); fileSelected = true; checkParseReady(); } }
+    function checkParseReady() { const parseBtn = document.getElementById('parseBtn'); const addrValue = document.getElementById('addr_select') ? document.getElementById('addr_select').value : null; if (parseBtn && fileSelected && addressesAvailable && addrValue) { parseBtn.disabled = false; parseBtn.classList.remove('text-gray-400', 'cursor-not-allowed', 'bg-gray-100', 'dark:bg-[#151515]'); parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90'); } }
+    async function saveSettings() { const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; const formData = new FormData(); formData.append('cookies', document.getElementById('in_cookies').value); formData.append('csrf', document.getElementById('in_csrf').value); formData.append('inventory', document.getElementById('in_inventory').value); const arActive = document.getElementById('autoRenewActive'); formData.append('auto_renew', arActive ? arActive.checked : false); try { const res = await fetch('/api/automation/save', { method: 'POST', body: formData }); if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } else showNotification("SAVE FAILED", 'error'); } catch (e) { showNotification("ERROR SAVING", 'error'); } btn.innerText = original; }
+    async function confirmOrder(batchId) { showNotification('STARTING CONFIRMATION...', 'processing'); try { const res = await fetch('/api/automation/confirm', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ batch_id: batchId }) }); const data = await res.json(); if (res.ok) { if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); } showNotification(data.message, 'success'); } else { showNotification(data.error, 'error'); } setTimeout(loadAutomationHistory, 1000); } catch(e) { showNotification('FAILED TO START', 'error'); } }
     function changeAutoPage(delta) { autoCurrentPage += delta; loadAutomationHistory(); }
 
-    // --- UPDATED TABLE LOGIC (FIXED COLORS FOR LIGHT MODE) ---
     async function loadAutomationHistory() {
         const tbody = document.getElementById('automation-history-body');
         if(!tbody) return; 
@@ -403,32 +243,24 @@
             let html = '';
             let readyCount = 0, partialCount = 0;
             
-            // --- NEW: FETCH BALANCE REAL-TIME WITH PULSE ANIMATION ---
             const userRes = await fetch('/api/user');
             const userData = await userRes.json();
             const balElem = document.getElementById('wallet-balance');
             if (balElem && userData.balance !== undefined) {
                 const newBalance = '$' + parseFloat(userData.balance).toFixed(2);
-                
-                // If balance actually changed, trigger a "Cooler" animation
                 if (balElem.innerText !== newBalance && balElem.innerText !== '$...') {
                     balElem.innerText = newBalance;
                     balElem.classList.add('text-green-500', 'scale-110', 'glow-ping');
-                    setTimeout(() => {
-                        balElem.classList.remove('text-green-500', 'scale-110', 'glow-ping');
-                    }, 800);
-                } else {
-                    balElem.innerText = newBalance;
-                }
+                    setTimeout(() => { balElem.classList.remove('text-green-500', 'scale-110', 'glow-ping'); }, 800);
+                } else { balElem.innerText = newBalance; }
             }
 
             json.data.forEach(b => {
                 let statusBadge = '', actionBtn = '', labelClass = '';
-                
                 if (b.is_expired) {
                     labelClass = 'text-gray-500 border border-gray-500/20';
                     statusBadge = '<span class="text-gray-500 font-bold font-mono uppercase text-[9px]">EXPIRED</span>';
-                    actionBtn = `<button disabled class="px-3 py-1.5 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-gray-300 dark:border-[#333] font-mono">WINDOW EXPIRED</button>`;
+                    actionBtn = `<button disabled class="px-3 py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono">WINDOW EXPIRED</button>`;
                 }
                 else if (b.status === 'CONFIRMED') {
                     readyCount++;
@@ -443,7 +275,6 @@
                 } 
                 else if (b.status === 'COMPLETED' || b.status === 'READY') {
                     readyCount++;
-                    // FIXED: Replaced 'text-white' with visible colors for light mode
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono">CONFIRM SHIPMENT</button>`;
@@ -457,7 +288,7 @@
                 else {
                     labelClass = 'text-red-600 dark:text-red-400 border-red-500/20';
                     statusBadge = `<span class="text-red-600 dark:text-red-400 font-bold font-mono uppercase text-[9px]">${b.status}</span>`;
-                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 border border-red-500/20 text-red-600 dark:text-red-400 font-bold uppercase text-[8px] hover:bg-red-500/10 transition-all font-mono">RETRY</button>`;
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 border border-red-500/20 text-red-500 font-bold uppercase text-[8px] hover:bg-red-500/10 transition-all font-mono">RETRY</button>`;
                 }
 
                 html += `
@@ -485,7 +316,6 @@
         } catch(e) {}
     }
     
-    // Heartbeat Init
     if(wasSubscribed) { 
         loadAutomationHistory(); 
         loadDropdown(); 
@@ -495,13 +325,11 @@
 </script>
 
 <style>
-/* New "Cooler" Hacker Pulse Animation */
 @keyframes glowPing {
     0% { filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0)); }
     50% { filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.8)); }
     100% { filter: drop-shadow(0 0 0px rgba(34, 197, 94, 0)); }
 }
-
 .glow-ping {
     animation: glowPing 0.8s ease-in-out;
     text-shadow: 0 0 5px rgba(34, 197, 94, 0.5);

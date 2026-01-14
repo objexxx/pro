@@ -1,114 +1,151 @@
-<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6">
-    <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4 gap-4">
+<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6 space-y-6 animate-in fade-in duration-500">
+    <div class="flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-6 gap-6">
         <div>
             <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Bulk History</h2>
-            <p class="text-[10px] text-gray-500 font-mono mt-1">ARCHIVE RETENTION: 30 DAYS // ENCRYPTION ENABLED</p>
+            <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Archive Retention: 30 Days // Encryption Enabled</p>
         </div>
         
-        <div class="flex gap-3 w-full md:w-auto">
-            <div class="relative flex-1 md:w-72">
-                <input type="text" id="historySearch" placeholder="SEARCH BATCH ID OR FILE..." 
-                       oninput="debounceSearch()"
-                       class="w-full pl-3 pr-10 py-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase focus:border-black dark:focus:border-white outline-none transition-all shadow-sm">
-                <div class="absolute right-3 top-3 text-gray-400">
+        <div class="flex flex-col md:flex-row gap-3 items-center">
+            <div class="relative group">
+                <input type="text" id="historySearchInput" placeholder="SEARCH BATCH ID OR FILE..." 
+                    class="w-full md:w-80 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">
+                <div class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                </div>
-            </div>
-
-            <div class="relative">
-                <button onclick="document.getElementById('filterMenu').classList.toggle('hidden')" class="h-full px-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] hover:border-black dark:hover:border-white transition-all text-black dark:text-white shadow-sm flex items-center gap-2">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-                    <span class="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">Filter</span>
-                </button>
-                <div id="filterMenu" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-2xl z-50 py-2">
-                    <p class="px-4 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-1">Sort Direction</p>
-                    <button onclick="applyFilter('recent')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Recent -> Oldest</button>
-                    <button onclick="applyFilter('oldest')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Oldest -> Recent</button>
-                    <div class="h-[1px] bg-gray-100 dark:bg-[#1E1E1E] my-2 mx-2"></div>
-                    <p class="px-4 py-1 text-[8px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-1">Volume Ordering</p>
-                    <button onclick="applyFilter('high')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Qty: High -> Low</button>
-                    <button onclick="applyFilter('low')" class="w-full text-left px-4 py-2 text-xs font-mono hover:bg-gray-50 dark:hover:bg-[#111] text-gray-500 hover:text-black dark:hover:text-white transition-colors uppercase">Qty: Low -> High</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="flex-1 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden">
-        <div class="flex-1 overflow-y-auto overflow-x-auto">
-            <table class="w-full text-left border-collapse min-w-[900px]">
-                <thead class="bg-gray-50 dark:bg-[#050505] sticky top-0 z-10 border-b border-gray-200 dark:border-[#1E1E1E]">
+    <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden flex flex-col flex-1">
+        <div class="flex-1 overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left border-collapse min-w-[1000px]">
+                <thead class="bg-gray-50 dark:bg-[#050505] border-b border-gray-200 dark:border-[#1E1E1E] sticky top-0 z-10">
                     <tr>
-                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Batch Identity</th>
-                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Generation Date</th>
-                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest text-center">Volume</th>
-                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Protocol</th>
-                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest">Process State</th>
-                        <th class="px-6 py-4 text-[9px] font-bold text-gray-400 uppercase tracking-widest text-right">Data Export</th>
+                        <th class="px-8 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Batch Identity</th>
+                        <th class="px-8 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Generation Date</th>
+                        <th class="px-8 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Volume</th>
+                        <th class="px-8 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Protocol</th>
+                        <th class="px-8 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-center font-mono">Process State</th>
+                        <th class="px-8 py-4 text-[9px] font-bold text-gray-500 uppercase tracking-widest text-right font-mono">Data Export</th>
                     </tr>
                 </thead>
-                <tbody id="history-table-body" class="divide-y divide-gray-50 dark:divide-[#151515] text-[10px] font-mono">
+                <tbody id="history-body-content" class="divide-y divide-gray-100 dark:divide-[#151515] text-[10px] font-mono">
                     </tbody>
             </table>
         </div>
 
-        <div class="p-5 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
-            <span id="pageInfo" class="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider">SECURE_PAGE 1 OF 1</span>
+        <div class="p-5 border-t border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505] flex justify-between items-center">
+            <span id="history_page_label" class="text-[9px] font-mono font-bold text-gray-400 uppercase tracking-[0.2em]">Secure_Page 1 of 1</span>
             <div class="flex gap-2">
-                <button onclick="changePage(-1)" id="prevBtn" disabled class="px-4 py-2 border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-black transition-all shadow-sm">< Prev</button>
-                <button onclick="changePage(1)" id="nextBtn" disabled class="px-4 py-2 border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-bold uppercase text-gray-400 disabled:opacity-30 hover:bg-white dark:hover:bg-black transition-all shadow-sm">Next ></button>
+                <button onclick="changeHistoryPage(-1)" id="btnPrevHistory" disabled class="px-5 py-2 border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] text-[9px] font-bold uppercase text-black dark:text-white hover:bg-gray-100 dark:hover:bg-[#111] disabled:opacity-30 transition-all font-mono">Prev</button>
+                <button onclick="changeHistoryPage(1)" id="btnNextHistory" disabled class="px-5 py-2 border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] text-[9px] font-bold uppercase text-black dark:text-white hover:bg-gray-100 dark:hover:bg-[#111] disabled:opacity-30 transition-all font-mono">Next</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // Variables initialized in dashboard.html for global state
-    // We only redefine them if they don't exist
-    if (typeof currentPage === 'undefined') window.currentPage = 1;
-    if (typeof currentSort === 'undefined') window.currentSort = 'recent';
-    if (typeof currentSearch === 'undefined') window.currentSearch = '';
-    let historySearchTimeout = null;
+    // Variables specifically scoped for History module
+    var histCurrentPage = 1;
+    var histSearchTimeout = null;
 
-    function debounceSearch() {
-        clearTimeout(historySearchTimeout);
-        historySearchTimeout = setTimeout(() => {
-            currentSearch = document.getElementById('historySearch').value;
-            currentPage = 1;
-            loadBatchHistory();
-        }, 500);
+    // Search logic
+    const searchInp = document.getElementById('historySearchInput');
+    if(searchInp) {
+        searchInp.addEventListener('input', function() {
+            clearTimeout(histSearchTimeout);
+            histSearchTimeout = setTimeout(() => { histCurrentPage = 1; loadFullHistory(); }, 500);
+        });
     }
 
-    function applyFilter(sortType) {
-        currentSort = sortType;
-        document.getElementById('filterMenu').classList.add('hidden');
-        currentPage = 1;
-        loadBatchHistory();
+    function changeHistoryPage(delta) {
+        histCurrentPage += delta;
+        loadFullHistory();
     }
 
-    function changePage(delta) {
-        currentPage += delta;
-        loadBatchHistory();
-    }
+    async function loadFullHistory() {
+        const targetBody = document.getElementById('history-body-content');
+        if(!targetBody) return;
 
-    async function loadBatchHistory() {
-        if (activeTab !== 'history') return;
+        const sVal = document.getElementById('historySearchInput') ? document.getElementById('historySearchInput').value : '';
 
         try {
-            const query = `?page=${currentPage}&sort=${currentSort}&search=${currentSearch}&limit=10`;
-            const res = await fetch('/api/batches' + query);
-            const json = await res.json();
+            const response = await fetch(`/api/batches?page=${histCurrentPage}&limit=10&search=${sVal}`);
+            const result = await response.json();
             
-            allBatches = json.data;
-            const meta = json.pagination;
+            let rowHtml = '';
 
-            renderHistory();
+            if (result.data && result.data.length > 0) {
+                result.data.forEach(batch => {
+                    let badgeTxt = '';
+                    let colorStyles = '';
 
-            document.getElementById('pageInfo').innerText = `SECURE_PAGE ${meta.current_page} OF ${meta.total_pages || 1}`;
-            document.getElementById('prevBtn').disabled = meta.current_page <= 1;
-            document.getElementById('nextBtn').disabled = meta.current_page >= meta.total_pages;
+                    // Match logic from Automation module
+                    if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
+                        colorStyles = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
+                        badgeTxt = 'COMPLETED';
+                    } 
+                    else if (batch.status === 'PARTIAL') {
+                        colorStyles = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/20 bg-yellow-500/5';
+                        badgeTxt = 'PARTIAL';
+                    } 
+                    else if (batch.status === 'PROCESSING') {
+                        colorStyles = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse';
+                        badgeTxt = 'PROCESSING...';
+                    }
+                    else if (batch.status === 'QUEUED') {
+                        colorStyles = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
+                        badgeTxt = 'QUEUED';
+                    }
+                    else {
+                        colorStyles = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
+                        badgeTxt = 'FAILED';
+                    }
 
-        } catch (err) {
-            console.error("Batch Sync Error:", err);
+                    rowHtml += `
+                    <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors group">
+                        <td class="px-8 py-5">
+                            <p class="text-black dark:text-white font-bold uppercase tracking-wide text-[10px]">${batch.batch_name}</p>
+                            <p class="text-[8px] text-gray-400 font-mono mt-0.5 uppercase">ID: ${batch.batch_id}</p>
+                        </td>
+                        <td class="px-8 py-5 text-center text-gray-500 font-mono text-[9px]">${batch.date}</td>
+                        <td class="px-8 py-5 text-center">
+                            <span class="px-2.5 py-1 border rounded-sm font-bold ${colorStyles}">${batch.success_count} / ${batch.count}</span>
+                        </td>
+                        <td class="px-8 py-5 text-center text-gray-400 font-mono text-[9px] uppercase tracking-tighter">Priority V2</td>
+                        <td class="px-8 py-5 text-center">
+                            <span class="font-black uppercase tracking-widest text-[9px] ${colorStyles.split(' ')[0]}">${badgeTxt}</span>
+                        </td>
+                        <td class="px-8 py-5 text-right font-mono">
+                            <div class="flex justify-end gap-3">
+                                <a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] transition-colors">PDF</a>
+                                <span class="text-gray-300">|</span>
+                                <a href="/api/download/csv/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] transition-colors">CSV</a>
+                            </div>
+                        </td>
+                    </tr>`;
+                });
+            } else {
+                rowHtml = '<tr><td colspan="6" class="p-16 text-center text-gray-400 font-mono text-[10px] tracking-[0.3em] uppercase">No Transaction Data Found</td></tr>';
+            }
+
+            targetBody.innerHTML = rowHtml;
+            
+            // Handle Pagination Visibility
+            const pInfo = document.getElementById('history_page_label');
+            if (pInfo) pInfo.innerText = `Secure_Page ${result.pagination.current_page} of ${result.pagination.total_pages || 1}`;
+            
+            const pBtn = document.getElementById('btnPrevHistory');
+            const nBtn = document.getElementById('btnNextHistory');
+            if (pBtn) pBtn.disabled = result.pagination.current_page <= 1;
+            if (nBtn) nBtn.disabled = result.pagination.current_page >= result.pagination.total_pages;
+
+        } catch(err) {
+            console.error("Critical Load Error:", err);
+            targetBody.innerHTML = '<tr><td colspan="6" class="p-16 text-center text-red-500 font-mono text-[10px] uppercase">Data Sync Failure</td></tr>';
         }
     }
+
+    // Run immediately
+    loadFullHistory();
 </script>

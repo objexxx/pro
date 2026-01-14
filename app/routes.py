@@ -294,15 +294,6 @@ def api_batches():
     conn = get_db()
     c = conn.cursor()
 
-    # --- REMOVED AGGRESSIVE RESET TO PREVENT OLD ORDERS FROM RESETTING ---
-    # c.execute("""
-    #     UPDATE batches 
-    #     SET status = 'COMPLETED' 
-    #     WHERE status = 'PROCESSING' 
-    #     AND created_at < datetime('now', '-5 minutes')
-    # """)
-    # conn.commit()
-
     c.execute("SELECT batch_id FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC")
     queue_list = [row[0] for row in c.fetchall()]
 
@@ -313,7 +304,6 @@ def api_batches():
         query += " AND (batch_id LIKE ? OR filename LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%"])
     
-    # --- SORTING BY DATE ONLY (NO JUMPING) ---
     query += " ORDER BY"
     
     if sort_by == 'oldest': query += " created_at ASC"
@@ -427,6 +417,10 @@ def automation_purchase():
 @main_bp.route('/api/automation/save', methods=['POST'])
 @login_required
 def automation_save():
+    # --- HARDENED: Prevent settings manipulation without license ---
+    if not current_user.is_subscribed:
+        return jsonify({"error": "LICENSE REQUIRED"}), 403
+        
     cookies = request.form.get('cookies', '')
     # --- TRIM WHITESPACE FROM CSRF ---
     csrf = request.form.get('csrf', '').strip()
@@ -463,7 +457,10 @@ def automation_format():
 @login_required
 @limiter.limit("50 per minute")
 def automation_confirm():
-    if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED"}), 403
+    # --- HARDENED: Strict server-side check ---
+    if not current_user.is_subscribed: 
+        return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
+        
     batch_id = request.json.get('batch_id')
     
     # 1. BATCH-LEVEL LOCKING
@@ -497,31 +494,20 @@ def automation_confirm():
                 success, error = run_confirmation(batch_id, raw_cookies, raw_csrf)
                 
                 conn = sqlite3.connect(db_path, timeout=30); c = conn.cursor()
-                c.execute("SELECT count, success_count FROM batches WHERE batch_id = ?", (batch_id,))
-                cnt_row = c.fetchone()
-                
-                # --- CHECK IF IT RETURNED 'CONFIRMED' STATUS ---
-                # The python script sets it to CONFIRMED on success.
-                # If python script failed/crashed, we fallback to logic below.
-                
-                # We need to read the current status to see if the script set it to CONFIRMED
                 c.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))
                 current_status_row = c.fetchone()
                 current_status = current_status_row[0]
 
                 if current_status != 'CONFIRMED':
-                    # Fallback logic if script didn't set final status
+                    c.execute("SELECT count, success_count FROM batches WHERE batch_id = ?", (batch_id,))
+                    cnt_row = c.fetchone()
                     final_status = 'COMPLETED'
                     if cnt_row and cnt_row[1] > 0:
-                        if cnt_row[1] >= cnt_row[0]: final_status = 'COMPLETED'
-                        else: final_status = 'PARTIAL'
+                        final_status = 'COMPLETED' if cnt_row[1] >= cnt_row[0] else 'PARTIAL'
                     else: final_status = 'FAILED'
-                    
                     c.execute("UPDATE batches SET status = ? WHERE batch_id = ?", (final_status, batch_id))
                     conn.commit()
-                
                 conn.close()
-
             except Exception as e:
                 print(f"[CONFIRM] CRITICAL ERROR: {e}")
             finally:
