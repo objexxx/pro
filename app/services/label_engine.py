@@ -116,6 +116,14 @@ class LabelEngine:
     def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(3000000000, 3999999999))
     def generate_c_number(self): return f"C{random.randint(1000000, 9999999)}"
 
+    # --- NEW: Stamps.com Random IDs ---
+    def generate_stamps_refs(self):
+        # 063S00000 + 5 random digits
+        ref1 = f"063S00000{random.randint(10000, 99999)}"
+        # 7 random digits
+        ref2 = f"{random.randint(1000000, 9999999)}"
+        return ref1, ref2
+
     # --- MAIN PROCESS ---
     def process_batch(self, df, label_type, version, batch_id, db_path, user_id, template_choice="pitney_v2"):
         success_count = 0
@@ -123,26 +131,44 @@ class LabelEngine:
         
         df.columns = [str(c).strip().replace('\ufeff', '') for c in df.columns]
 
-        if not template_choice.endswith('.zpl'): template_choice += ".zpl"
-        zpl_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', template_choice)
+        # --- TEMPLATE LOADING LOGIC ---
+        templates = {}
         
-        if not os.path.exists(zpl_path): raise Exception(f"Template missing: {zpl_path}")
-        with open(zpl_path, 'r', encoding='utf-8') as f: t_content = f.read().strip()
-        
-        if "Weight lbs 0 ozs" in t_content:
-            t_content = t_content.replace("Weight lbs 0 ozs", "{WEIGHT}")
+        # If Stamps V2, pre-load both weight variants
+        if "stamps_v2" in template_choice:
+            base_name = "stamps_v2.zpl"
+            heavy_name = "stamps_v2_2digit.zpl"
+            
+            base_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', base_name)
+            heavy_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', heavy_name)
+            
+            # Load Base (1-digit)
+            if os.path.exists(base_path):
+                with open(base_path, 'r', encoding='utf-8') as f: templates['base'] = f.read().strip()
+            else:
+                templates['base'] = "" 
+                
+            # Load Heavy (2-digit)
+            if os.path.exists(heavy_path):
+                with open(heavy_path, 'r', encoding='utf-8') as f: templates['heavy'] = f.read().strip()
+            else:
+                templates['heavy'] = templates['base']
+                
+        else:
+            # Standard single template loading
+            if not template_choice.endswith('.zpl'): template_choice += ".zpl"
+            zpl_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', template_choice)
+            if not os.path.exists(zpl_path): raise Exception(f"Template missing: {zpl_path}")
+            with open(zpl_path, 'r', encoding='utf-8') as f: templates['default'] = f.read().strip()
 
         now = datetime.now()
         today = now.strftime("%m/%d/%Y")
 
-        # --- BATCH CONSTANT: SEQUENCE CODE ONLY ---
-        # Only the Sequence Code is constant for the whole batch/day.
-        # Mailer ID is purposefully EXCLUDED here so it stays random per label.
+        # --- BATCH CONSTANT: SEQUENCE CODE ---
         ver_str = str(version).strip()
         if "94888" in ver_str:
             batch_seq_code = None
         else:
-            # Deterministic Julian Date (e.g. "013")
             batch_seq_code = now.strftime('%j')
 
         debug_filename = f"zpl_debug_{batch_id}.txt"
@@ -151,7 +177,6 @@ class LabelEngine:
         with open(debug_path, 'w', encoding='utf-8') as dbg:
             dbg.write(f"DEBUG LOG FOR BATCH {batch_id}\n")
             dbg.write(f"Date: {now}\n")
-            dbg.write(f"BATCH SEQ CODE: {batch_seq_code}\n")
             dbg.write("="*50 + "\n\n")
 
         try:
@@ -169,7 +194,6 @@ class LabelEngine:
             def safe_get(key, default=""):
                 val = row.get(key)
                 if pd.isna(val) or str(val).lower() == 'nan': return default
-                # --- SANITIZATION APPLIED HERE ---
                 return self.sanitize_zpl(str(val).strip())
 
             order_id = safe_get('Ref01') 
@@ -188,12 +212,32 @@ class LabelEngine:
             to_s = safe_get('Street1To')
             to_ci= safe_get('CityTo')
             to_st= safe_get('StateTo')
-            to_z = safe_get('ZipTo')    
+            to_z = safe_get('ZipTo')
+            
+            # Parse Weight for Logic
+            try:
+                raw_w = safe_get('Weight', '1')
+                weight_val = float(raw_w)
+            except:
+                weight_val = 1.0
+                raw_w = '1'
 
             while attempts < 3 and not label_generated:
                 try:
                     time.sleep(0.5)
-                    lbl = t_content
+                    
+                    # --- SELECT TEMPLATE BASED ON WEIGHT ---
+                    if "stamps_v2" in template_choice:
+                        # Use heavy template for >= 10lbs, otherwise base
+                        if weight_val >= 10:
+                            lbl = templates['heavy']
+                        else:
+                            lbl = templates['base']
+                    else:
+                        lbl = templates['default']
+                    
+                    if "Weight lbs 0 ozs" in lbl:
+                        lbl = lbl.replace("Weight lbs 0 ozs", "{WEIGHT}")
                     
                     zip_5 = to_z[:5] 
                     
@@ -201,19 +245,18 @@ class LabelEngine:
                     days = self.calculate_transit_days(zone)
                     exp_date = (now + timedelta(days=days)).strftime("%m/%d/%Y")
                     
-                    # --- MAILER ID GENERATED PER LABEL (Restored Randomness) ---
                     mailer_id = self.get_mailer_id(version)
-                    
-                    # --- TRACKING USES BATCH SEQ (Deterministic Suffix) ---
                     trk = self.generate_unique_tracking(version, mailer_id, batch_seq_code)
                     
                     acc, sec = self.generate_random_account_info()
                     cr_route = self.generate_carrier_route(zip_5)
                     if "easypost" in template_choice.lower(): acc = self.generate_c_number() 
 
-                    raw_w = safe_get('Weight', '1')
                     if "easypost" in template_choice.lower(): w_disp = raw_w
                     else: w_disp = f"{raw_w} Lbs 0 ozs"
+                    
+                    if "stamps_v2" in template_choice:
+                        w_disp = raw_w
 
                     sender_block = self.format_address(from_n, from_c, from_s, from_ci, from_st, from_z)
                     receiver_block = self.format_address(to_n, to_c, to_s, to_ci, to_st, to_z)
@@ -226,13 +269,12 @@ class LabelEngine:
                     lbl = lbl.replace("{WEIGHT}", w_disp) 
 
                     lbl = lbl.replace("{ACCOUNT_ID}", acc).replace("{SEC_REF}", sec)
-                    
-                    # INJECT BATCH SEQ (001-365)
                     lbl = lbl.replace("{JULIAN_SEQ}", batch_seq_code if batch_seq_code else "000")
 
                     barcode_val = f"420{zip_5}{trk}"
                     lbl = lbl.replace("{BARCODE_DATA_DM}", barcode_val).replace("{BARCODE_DATA_128}", barcode_val)
                     lbl = lbl.replace("{TRACKING_SPACED}", " ".join([trk[i:i+4] for i in range(0, len(trk), 4)]))
+                    lbl = lbl.replace("{TRACKING_NO_SPACED}", trk)
                     
                     lbl = lbl.replace("{REF1}", sku).replace("{REF2}", order_id)
                     lbl = lbl.replace("{REFS_REORDERED}", f"{order_id} | {desc_val} | {sku}")
@@ -243,16 +285,36 @@ class LabelEngine:
                     lbl = lbl.replace("{C_NUMBER}", acc).replace("{RANDOM_0901}", self.generate_0901_number())
                     lbl = lbl.replace("{SHIP_DATE_YMD_NODASH}", now.strftime("%Y%m%d"))
                     
-                    pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
-                    lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
+                    # --- STAMPS.COM LOGIC ---
+                    if "stamps_v2" in template_choice:
+                        stamps_ref1, stamps_ref2 = self.generate_stamps_refs()
+                        lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1)
+                        lbl = lbl.replace("{STAMPS_REF_2}", stamps_ref2)
+                        
+                        try:
+                            # 4 digit weight format (e.g. 1.0 -> 0100)
+                            w_int = int(weight_val * 100)
+                            w_str = f"{w_int:04d}"
+                        except: w_str = "0100"
+                        
+                        # Strict Stamps PDF417 Format
+                        stamps_pdf_data = f"USPS|PC|PM|Z{zone}|W{w_str}|D{now.strftime('%Y%m%d')}|F{from_z}|T{zip_5}|S{trk}|RCOMM|A{stamps_ref1}|C{stamps_ref2}|N0003|LCO25"
+                        lbl = lbl.replace("{PDF_417_DATA}", stamps_pdf_data)
+                    else:
+                        # Default Format
+                        pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
+                        lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
 
                     with open(debug_path, 'a', encoding='utf-8') as dbg:
                         dbg.write(f"\n--- LABEL {idx + 1} START ---\n")
                         dbg.write(f"MAILER: {mailer_id} | SEQ: {batch_seq_code} | TRACKING: {trk}\n")
-                        dbg.write(lbl)
                         dbg.write(f"\n--- LABEL {idx + 1} END ---\n")
 
-                    res = requests.post("http://api.labelary.com/v1/printers/8dpmm/labels/4x6/", 
+                    # --- LABELARY SIZE LOGIC ---
+                    # 4.5x6.7 for Stamps, 4x6 for others
+                    label_size = "4.5x6.7" if "stamps" in template_choice.lower() else "4x6"
+
+                    res = requests.post(f"http://api.labelary.com/v1/printers/8dpmm/labels/{label_size}/", 
                                         data=lbl.encode('utf-8'), headers={'Accept': 'application/pdf'}, timeout=30)
 
                     if res.status_code == 200:

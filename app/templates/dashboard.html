@@ -45,22 +45,20 @@
         // --- GLOBAL STATE ---
         let allBatches = []; 
         let activeTab = "{{ active_tab|default('purchase') }}";
-        
-        // MEMORY FOR TRACKING CHANGES
         let batchStatusMemory = {}; 
         let batchProgressMemory = {}; 
         let isFirstLoad = true; 
-
-        // SHARED MEMORY FOR AUTOMATION
         window.confirmedSessionIds = window.confirmedSessionIds || [];
         
-        // FILTER STATE
+        // --- PAGE TRACKERS ---
+        window.histCurrentPage = 1;
+        window.autoCurrentPage = 1;
+
         let currentPage = 1;
         let currentSort = 'recent';
         let currentSearch = '';
         let searchTimeout = null;
         
-        // Theme Init
         if (localStorage.getItem('theme') === 'light') { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light'); } 
         else { document.documentElement.classList.add('dark'); document.documentElement.classList.remove('light'); }
 
@@ -88,14 +86,16 @@
             activeTab = tabName; 
             window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
 
-            if (tabName === 'history') {
-                // Rely on the dashboard's load function to sync IDs
-                currentPage = 1; 
-                loadBatchHistory();
+            // History Tab Logic
+            if (tabName === 'history') { 
+                if(typeof window.loadFullHistory === 'function') {
+                    // Reset if needed, or just reload
+                    window.loadFullHistory();
+                }
             }
             if (tabName === 'stats') loadStats();
             if (tabName === 'addresses' && typeof loadAddressList === 'function') loadAddressList();
-            if (tabName === 'automation') {
+            if (tabName === 'automation') { 
                 if(typeof loadDropdown === 'function') loadDropdown();
                 if(typeof loadAutomationHistory === 'function') loadAutomationHistory();
             }
@@ -117,68 +117,93 @@
             }
         }
         
-        async function loadUserData() { 
-            try { 
-                const res = await fetch('/api/user'); 
-                const data = await res.json(); 
-                document.getElementById('wallet-balance').innerText = "$" + data.balance.toFixed(2);
-            } catch(e) {} 
-        }
+        async function loadUserData() { try { const res = await fetch('/api/user'); const data = await res.json(); document.getElementById('wallet-balance').innerText = "$" + data.balance.toFixed(2); } catch(e) {} }
 
-        // --- HISTORY TAB LOGIC (FIXED IDS) ---
-        function debounceSearch() {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                const searchInput = document.getElementById('historySearchInput'); 
-                currentSearch = searchInput ? searchInput.value : '';
-                currentPage = 1;
-                loadBatchHistory();
-            }, 500);
-        }
-
-        function changePage(delta) {
-            currentPage += delta;
-            loadBatchHistory();
-        }
-
-        async function loadBatchHistory() { 
-            if (activeTab !== 'history') return;
-
-            try { 
-                const query = `?page=${currentPage}&sort=${currentSort}&search=${currentSearch}&limit=10`;
-                const res = await fetch('/api/batches' + query);
-                if (!res.ok) throw new Error("API Error");
-                const json = await res.json(); 
-                allBatches = json.data || []; 
-                
-                renderHistory();
-                
-                const pageInfo = document.getElementById('history_page_label'); 
-                if(pageInfo && json.pagination) {
-                    const meta = json.pagination;
-                    pageInfo.innerText = `Secure_Page ${meta.current_page} of ${meta.total_pages}`;
-                    
-                    const pBtn = document.getElementById('btnPrevHistory');
-                    const nBtn = document.getElementById('btnNextHistory');
-                    if(pBtn) pBtn.disabled = meta.current_page <= 1;
-                    if(nBtn) nBtn.disabled = meta.current_page >= meta.total_pages;
+        // --- RESTORED: PURCHASE FUNCTIONS ---
+        function handleFileDisplay(input) {
+            if (input.files && input.files[0]) {
+                const fSpan = document.getElementById('fileName');
+                if(fSpan) {
+                    fSpan.innerText = input.files[0].name;
+                    fSpan.classList.remove('text-green-600', 'dark:text-green-500', 'text-blue-500', 'text-red-500');
+                    fSpan.classList.add('text-black', 'dark:text-white', 'font-bold');
                 }
-            } catch (err) { console.error("History Load Error:", err); } 
+            }
         }
-        
-        // --- NOTIFICATION POLLER (GLOBAL) ---
+
+        async function verifyData() { 
+            const fileInput = document.getElementById('csvUpload'); 
+            if (!fileInput.files[0]) return; 
+            const verifyBtn = document.getElementById('verifyBtn'); const originalText = verifyBtn.innerText;
+            verifyBtn.innerText = "SCANNING..."; 
+            const formData = new FormData(); formData.append('file', fileInput.files[0]); 
+            try { 
+                const res = await fetch('/verify-csv', { method: 'POST', body: formData }); 
+                const data = await res.json(); 
+                verifyBtn.innerText = originalText;
+                if (res.ok && data.count) { 
+                    showNotification(`SCAN COMPLETE: ${data.count} LABELS`, 'success'); 
+                    const confirmBtn = document.getElementById('confirmBtn'); 
+                    confirmBtn.disabled = false; 
+                    confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
+                    confirmBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
+                    confirmBtn.innerText = `EXECUTE ($${data.cost.toFixed(2)})`; 
+                } else { showNotification("ERROR: " + (data.error || "Unknown"), 'error'); } 
+            } catch (error) { showNotification("NETWORK ERROR", 'error'); verifyBtn.innerText = originalText; } 
+        }
+
+        async function handlePurchase() {
+            const btn = document.getElementById('confirmBtn'); 
+            const fileInput = document.getElementById('csvUpload');
+            const formData = new FormData(); 
+            formData.append('file', fileInput.files[0]);
+            formData.append('label_type', document.querySelector('[name="label_type"]').value);
+            formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
+            formData.append('template_choice', document.querySelector('[name="template_choice"]').value);
+            const originalText = btn.innerText; btn.innerText = "PROCESSING...";
+            const res = await fetch('/process', { method: 'POST', body: formData });
+            const data = await res.json();
+            if(data.status === 'success') {
+                showNotification("BATCH SUBMITTED", 'queued'); 
+                loadUserData(); 
+                fileInput.value = ""; 
+                const fSpan = document.getElementById('fileName');
+                if(fSpan) {
+                    fSpan.innerText = "Select .CSV File";
+                    fSpan.classList.remove('text-black', 'dark:text-white', 'font-bold');
+                }
+                btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
+                btn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
+                btn.innerText = "EXECUTE";
+            } else { showNotification("ERROR: " + data.error, 'error'); btn.innerText = originalText; }
+        }
+
+        async function loadStats() { try { const res = await fetch('/api/stats'); const data = await res.json(); document.getElementById('stat-labels').innerText = data.total_labels; document.getElementById('stat-batches').innerText = data.total_batches; } catch(e) {} }
+
+        // --- SMART POLLER ---
         async function pollNotifications() {
             try {
-                // Poll recent batches to check for background changes
-                const res = await fetch('/api/batches?page=1&sort=recent&limit=10');
+                let url = '/api/batches?page=1&sort=recent&limit=10'; // Default
+                
+                if (activeTab === 'history') {
+                    url = `/api/batches?page=${window.histCurrentPage || 1}&sort=recent&limit=10`;
+                } else if (activeTab === 'automation') {
+                    url = `/api/batches?page=${window.autoCurrentPage || 1}&limit=10`;
+                }
+
+                const res = await fetch(url);
                 if (!res.ok) return;
                 const json = await res.json();
                 const notificationBatches = json.data || [];
                 
                 checkStatusChanges(notificationBatches);
                 
-                // If on history tab, FORCE UPDATE the table with new statuses
-                if (activeTab === 'history' && currentPage === 1 && currentSearch === '') {
+                // Refresh views if necessary
+                const isHistoryTab = (activeTab === 'history');
+                const isPageOne = (typeof window.histCurrentPage !== 'undefined' ? window.histCurrentPage === 1 : true);
+                const searchInput = document.getElementById('historySearchInput');
+                const isSearching = (searchInput && searchInput.value.trim() !== '');
+                if (isHistoryTab && isPageOne && !isSearching) {
                     allBatches = notificationBatches;
                     renderHistory();
                 }
@@ -204,16 +229,17 @@
                 const newCount = batch.success_count;
                 const total = batch.count;
 
-                // Detect Completion
                 if (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED') {
-                     let msg = `<span class="text-gray-400 text-[10px]">BATCH COMPLETE</span><br>${name}<br><span class="text-green-500 text-sm">READY: ${newCount} / ${total}</span>`;
-                     showNotification(msg, 'success');
+                     showNotification(`<span class="text-gray-400 text-[10px]">BATCH COMPLETE</span><br>${name}<br><span class="text-green-500 text-sm">READY: ${newCount} / ${total}</span>`, 'success');
+                }
+                else if (newStatus === 'CONFIRMED' && oldStatus !== 'CONFIRMED') {
+                     showNotification(`BATCH CONFIRMED<br><span class="text-green-500 text-sm">UPLOADED: ${newCount} / ${total}</span>`, 'success');
                 }
                 else if (newStatus === 'PROCESSING' && oldStatus !== 'PROCESSING') {
                     showNotification(`${name}<br>STARTED PROCESSING`, 'processing');
                 }
                 else if (newStatus === 'FAILED' && oldStatus !== 'FAILED') {
-                    showNotification(`${name}<br>FAILED`, 'error');
+                    showNotification(`BATCH FAILED (0 SUCCESS)<br><span class="text-[9px] text-red-300 uppercase tracking-wider">Suggestion: Update Cookies/CSRF</span>`, 'error');
                 }
 
                 updateAutomationButtonUI(batch);
@@ -227,9 +253,9 @@
             const btn = document.getElementById(`btn-confirm-${batch.batch_id}`);
             if (btn) {
                 if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
-                    btn.innerText = "CONFIRM SHIPMENT";
+                    btn.innerText = "CONFIRM BATCH"; 
                     btn.disabled = false;
-                    btn.className = "px-4 py-2 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[10px] hover:opacity-80 transition-all shadow-glow";
+                    btn.className = "w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-glow flex items-center justify-center ml-auto";
                     if(typeof confirmOrder === 'function') {
                         btn.onclick = function() { confirmOrder(batch.batch_id); };
                     }
@@ -239,10 +265,15 @@
                     btn.disabled = true;
                     btn.className = "px-4 py-2 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[10px] cursor-not-allowed border border-gray-200 dark:border-[#333]";
                 }
+                // --- ADDED QUEUED STATE ---
+                else if (batch.status === 'QUEUED') {
+                    btn.innerText = `GENERATING...`;
+                    btn.disabled = true;
+                    btn.className = "w-[120px] py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono flex items-center justify-center ml-auto";
+                }
             }
         }
 
-        // --- VISUAL NOTIFICATION RENDERER ---
         function showNotification(message, type = 'success') {
             const container = document.getElementById('notif-container');
             if (container.children.length >= 3) {
@@ -279,177 +310,64 @@
             setTimeout(() => { notif.style.animation = 'fadeOut 0.5s forwards'; setTimeout(() => notif.remove(), 500); }, 4000);
         }
 
-        // --- FILE UPLOAD DISPLAY ---
-        function handleFileDisplay(input) {
-            if (input.files && input.files[0]) {
-                const fSpan = document.getElementById('fileName');
-                if(fSpan) {
-                    fSpan.innerText = input.files[0].name;
-                    fSpan.classList.remove('text-green-600', 'dark:text-green-500', 'text-blue-500', 'text-red-500');
-                    fSpan.classList.add('text-black', 'dark:text-white', 'font-bold');
+        // --- GLOBAL OVERRIDE FOR DASHBOARD CALLS ---
+        async function confirmOrder(batchId) {
+            showNotification('JOB STARTED - MONITORING', 'processing');
+            try {
+                const res = await fetch('/api/automation/confirm', { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ batch_id: batchId }) 
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); }
+                    batchStatusMemory[batchId] = 'PROCESSING';
+                } else {
+                    showNotification(data.error, 'error');
                 }
+            } catch(e) {
+                showNotification('FAILED TO START', 'error');
             }
         }
-
-        // --- PURCHASE LOGIC ---
-        async function verifyData() { 
-            const fileInput = document.getElementById('csvUpload'); 
-            if (!fileInput.files[0]) return; 
-            const verifyBtn = document.getElementById('verifyBtn'); const originalText = verifyBtn.innerText;
-            verifyBtn.innerText = "SCANNING..."; 
-            const formData = new FormData(); formData.append('file', fileInput.files[0]); 
-            try { 
-                const res = await fetch('/verify-csv', { method: 'POST', body: formData }); 
-                const data = await res.json(); 
-                verifyBtn.innerText = originalText;
-                if (res.ok && data.count) { 
-                    showNotification(`SCAN COMPLETE: ${data.count} LABELS`, 'success'); 
-                    const confirmBtn = document.getElementById('confirmBtn'); 
-                    confirmBtn.disabled = false; 
-                    confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
-                    confirmBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
-                    confirmBtn.innerText = `EXECUTE ($${data.cost.toFixed(2)})`; 
-                } else { showNotification("ERROR: " + (data.error || "Unknown"), 'error'); } 
-            } catch (error) { showNotification("NETWORK ERROR", 'error'); verifyBtn.innerText = originalText; } 
-        }
-
-        async function handlePurchase() {
-            const btn = document.getElementById('confirmBtn'); 
-            const fileInput = document.getElementById('csvUpload');
-            const formData = new FormData(); 
-            formData.append('file', fileInput.files[0]);
-            formData.append('label_type', document.querySelector('[name="label_type"]').value);
-            formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
-            formData.append('template_choice', document.querySelector('[name="template_choice"]').value);
-            const originalText = btn.innerText; btn.innerText = "PROCESSING...";
-            const res = await fetch('/process', { method: 'POST', body: formData });
-            const data = await res.json();
-            if(data.status === 'success') {
-                showNotification("BATCH SUBMITTED", 'queued'); 
-                loadUserData(); 
-                // Reset UI
-                fileInput.value = ""; 
-                const fSpan = document.getElementById('fileName');
-                if(fSpan) {
-                    fSpan.innerText = "Select .CSV File";
-                    fSpan.classList.remove('text-black', 'dark:text-white', 'font-bold');
-                }
-                btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
-                btn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
-                btn.innerText = "EXECUTE";
-            } else { showNotification("ERROR: " + data.error, 'error'); btn.innerText = originalText; }
-        }
-
-        async function loadStats() { try { const res = await fetch('/api/stats'); const data = await res.json(); document.getElementById('stat-labels').innerText = data.total_labels; document.getElementById('stat-batches').innerText = data.total_batches; } catch(e) {} }
 
         // --- RENDER HISTORY (FIXED TARGET ID) ---
         function renderHistory() {
             const tableBody = document.getElementById('history-body-content'); 
             if (!tableBody) return; 
-
-            if (allBatches.length === 0) { 
-                tableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-xs text-gray-600 font-mono py-8">> SYSTEM_LOG: NO_DATA_FOUND</td></tr>'; 
-                return; 
-            }
+            if (allBatches.length === 0) { tableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-xs text-gray-600 font-mono py-8">> SYSTEM_LOG: NO_DATA_FOUND</td></tr>'; return; }
             let html = '';
             allBatches.forEach(b => {
-                let labelClass = '';
-                let statusBadge = '';
-                let countText = `${b.success_count} / ${b.count}`;
-                let isProcessing = false;
+                let labelClass = ''; let statusBadge = ''; let countText = `${b.success_count} / ${b.count}`; let isProcessing = false;
+                if (b.status === 'PROCESSING') { isProcessing = true; labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse'; statusBadge = 'PROCESSING...'; }
+                else if (b.status === 'QUEUED') { isProcessing = true; labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5'; statusBadge = 'QUEUED'; }
+                else if (b.status === 'COMPLETED' || b.status === 'CONFIRMED') { labelClass = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5'; statusBadge = 'COMPLETED'; }
+                else if (b.status === 'PARTIAL') { labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/20 bg-yellow-500/5'; statusBadge = 'PARTIAL'; }
+                else { labelClass = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5'; statusBadge = 'FAILED'; }
 
-                if (b.status === 'PROCESSING') {
-                    isProcessing = true;
-                    labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse';
-                    statusBadge = 'PROCESSING...';
-                } else if (b.status === 'QUEUED') {
-                    isProcessing = true;
-                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
-                    statusBadge = 'QUEUED';
-                } else if (b.status === 'COMPLETED' || b.status === 'CONFIRMED') {
-                    labelClass = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
-                    statusBadge = 'COMPLETED';
-                } else if (b.status === 'PARTIAL') {
-                    labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/20 bg-yellow-500/5';
-                    statusBadge = 'PARTIAL';
-                } else {
-                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
-                    statusBadge = 'FAILED';
-                }
-
-                let pdfButton = '';
-                let csvButton = '';
-
-                // --- ALIGNMENT & COLOR FIX ---
-                // Using "flex items-center" on parent AND children to force vertical center
-                // PDF = Blue, CSV = Gray (Original)
-                
+                let pdfButton = ''; let csvButton = '';
                 if (isProcessing) {
-                    pdfButton = `
-                        <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
-                            <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg> 
-                            WAIT
-                        </span>`;
+                    pdfButton = `<span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none"><svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> WAIT</span>`;
                     csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
-                } 
-                else if (b.success_count > 0) {
+                } else if (b.success_count > 0) {
                     pdfButton = `<a href="/api/download/pdf/${b.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
-                    // FIXED: Restored Gray/White hover scheme for CSV
                     csvButton = `<a href="/api/download/csv/${b.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
-                } 
-                else {
+                } else {
                     pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
                     csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
                 }
 
-                html += `
-                <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors group">
-                    <td class="px-8 py-5">
-                        <p class="text-black dark:text-white font-bold uppercase tracking-wide text-[10px]">${b.batch_name}</p>
-                        <p class="text-[8px] text-gray-400 font-mono mt-0.5 uppercase">ID: ${b.batch_id}</p>
-                    </td>
-                    <td class="px-8 py-5 text-center text-gray-500 font-mono text-[9px]">${b.date}</td>
-                    <td class="px-8 py-5 text-center">
-                        <span class="px-2.5 py-1 border rounded-sm font-bold ${labelClass}">${countText}</span>
-                    </td>
-                    <td class="px-8 py-5 text-center text-gray-400 font-mono text-[9px] uppercase tracking-tighter">Priority V2</td>
-                    <td class="px-8 py-5 text-center">
-                        <span class="font-black uppercase tracking-widest text-[9px] ${labelClass.split(' ')[0]}">${statusBadge}</span>
-                    </td>
-                    <td class="px-8 py-5 text-right font-mono">
-                        <div class="flex justify-end items-center gap-3">
-                            ${pdfButton}
-                            <span class="text-gray-300 text-[9px] leading-none select-none">|</span>
-                            ${csvButton}
-                        </div>
-                    </td>
-                </tr>`;
+                html += `<tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors group"><td class="px-8 py-5"><p class="text-black dark:text-white font-bold uppercase tracking-wide text-[10px]">${b.batch_name}</p><p class="text-[8px] text-gray-400 font-mono mt-0.5 uppercase">ID: ${b.batch_id}</p></td><td class="px-8 py-5 text-center text-gray-500 font-mono text-[9px]">${b.date}</td><td class="px-8 py-5 text-center"><span class="px-2.5 py-1 border rounded-sm font-bold ${labelClass}">${countText}</span></td><td class="px-8 py-5 text-center text-gray-400 font-mono text-[9px] uppercase tracking-tighter">Priority V2</td><td class="px-8 py-5 text-center"><span class="font-black uppercase tracking-widest text-[9px] ${labelClass.split(' ')[0]}">${statusBadge}</span></td><td class="px-8 py-5 text-right font-mono"><div class="flex justify-end items-center gap-3">${pdfButton}<span class="text-gray-300 text-[9px] leading-none select-none">|</span>${csvButton}</div></td></tr>`;
             });
             tableBody.innerHTML = html;
         }
 
-        setInterval(() => { 
-            loadUserData(); 
-            pollNotifications(); 
-        }, 3000);
-
-        window.onload = function() { 
-            loadUserData(); 
-            switchTab(activeTab);
-            const csvIn = document.getElementById('csvUpload');
-            if(csvIn) {
-                csvIn.addEventListener('change', function() { handleFileDisplay(this); });
-            }
-        };
+        setInterval(() => { loadUserData(); pollNotifications(); }, 3000);
+        window.onload = function() { loadUserData(); switchTab(activeTab); const csvIn = document.getElementById('csvUpload'); if(csvIn) { csvIn.addEventListener('change', function() { handleFileDisplay(this); }); } };
     </script>
 </head>
 <body class="bg-gray-100 dark:bg-bot-bg text-black dark:text-bot-text h-screen flex overflow-hidden font-sans selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
-    <div id="notif-container" class="fixed bottom-6 right-6 z-50 flex flex-col items-end pointer-events-none">
-        <style>#notif-container > * { pointer-events: auto; }</style>
-    </div>
+    <div id="notif-container" class="fixed bottom-6 right-6 z-50 flex flex-col items-end pointer-events-none"><style>#notif-container > * { pointer-events: auto; }</style></div>
     {% include 'components/sidebar.html' %}
     <main class="flex-1 flex flex-col relative overflow-hidden">
         {% include 'components/topbar.html' %}

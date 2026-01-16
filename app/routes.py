@@ -515,7 +515,9 @@ def automation_confirm():
             
     thread = threading.Thread(target=task, args=(current_app._get_current_object().app_context(),))
     thread.start()
-    return jsonify({"status": "success", "message": "STARTED - SESSION VERIFIED"})
+    
+    # --- FIXED: HONEST RESPONSE ---
+    return jsonify({"status": "success", "message": "JOB STARTED - MONITORING"})
 
 @main_bp.route('/api/debug/reset-stuck')
 @login_required

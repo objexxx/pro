@@ -165,6 +165,7 @@
             </div>
             <h3 class="text-xs font-black text-black dark:text-white uppercase tracking-[0.3em] mb-2 font-mono">Access Restricted</h3>
             <p class="text-[10px] text-gray-500 font-mono uppercase mb-8 leading-relaxed">Automation Suite requires an active integration license. Please select a plan below to continue.</p>
+            
             <div class="grid grid-cols-1 gap-3">
                 <button onclick="buyKey('monthly')" class="w-full py-4 bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase hover:opacity-90 transition-all font-mono shadow-sm">Unlock Monthly Access $29.99</button>
                 <button onclick="buyKey('lifetime')" class="w-full py-4 bg-transparent border border-gray-200 dark:border-white/10 text-black dark:text-white text-[10px] font-black uppercase hover:bg-gray-100 dark:hover:bg-white/5 transition-all font-mono">Unlock Lifetime Suite $499</button>
@@ -181,7 +182,6 @@
     let addressesAvailable = false;
     window.confirmedSessionIds = []; 
 
-    // --- NEW: PURCHASE FUNCTION ---
     async function buyKey(plan) {
         showNotification(`PURCHASING ${plan.toUpperCase()} LICENSE...`, 'processing');
         try {
@@ -195,7 +195,6 @@
                 showNotification(data.message, 'success');
                 setTimeout(() => location.reload(), 1500);
             } else {
-                // This triggers the ERROR: INSUFFICIENT FUNDS notification
                 showNotification(data.error || "PURCHASE FAILED", 'error');
             }
         } catch (e) {
@@ -231,12 +230,43 @@
     function handleFileSelect(input) { if (input.files && input.files[0]) { const name = input.files[0].name; const span = document.getElementById('selectedFileName'); if(span) { span.innerText = name; span.classList.add('text-black', 'dark:text-white', 'font-bold'); } showNotification(name + " STAGED", 'success'); fileSelected = true; checkParseReady(); } }
     function checkParseReady() { const parseBtn = document.getElementById('parseBtn'); const addrValue = document.getElementById('addr_select') ? document.getElementById('addr_select').value : null; if (parseBtn && fileSelected && addressesAvailable && addrValue) { parseBtn.disabled = false; parseBtn.classList.remove('text-gray-400', 'cursor-not-allowed', 'bg-gray-100', 'dark:bg-[#151515]'); parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90'); } }
     async function saveSettings() { const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; const formData = new FormData(); formData.append('cookies', document.getElementById('in_cookies').value); formData.append('csrf', document.getElementById('in_csrf').value); formData.append('inventory', document.getElementById('in_inventory').value); const arActive = document.getElementById('autoRenewActive'); formData.append('auto_renew', arActive ? arActive.checked : false); try { const res = await fetch('/api/automation/save', { method: 'POST', body: formData }); if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } else showNotification("SAVE FAILED", 'error'); } catch (e) { showNotification("ERROR SAVING", 'error'); } btn.innerText = original; }
-    async function confirmOrder(batchId) { showNotification('STARTING CONFIRMATION...', 'processing'); try { const res = await fetch('/api/automation/confirm', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ batch_id: batchId }) }); const data = await res.json(); if (res.ok) { if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); } showNotification(data.message, 'success'); } else { showNotification(data.error, 'error'); } setTimeout(loadAutomationHistory, 1000); } catch(e) { showNotification('FAILED TO START', 'error'); } }
+    
+    // --- UPDATED CONFIRM ORDER: FORCE STATUS ---
+    async function confirmOrder(batchId) { 
+        // FIXED: honest message
+        showNotification('JOB STARTED - MONITORING', 'processing'); 
+        try { 
+            const res = await fetch('/api/automation/confirm', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ batch_id: batchId }) 
+            }); 
+            const data = await res.json(); 
+            if (res.ok) { 
+                if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); } 
+                
+                // CRITICAL: Force the status so the failure is caught later
+                if(typeof window.batchStatusMemory !== 'undefined') {
+                    window.batchStatusMemory[batchId] = 'PROCESSING';
+                }
+            } else { 
+                showNotification(data.error, 'error'); 
+            } 
+            setTimeout(loadAutomationHistory, 1000); 
+        } catch(e) { 
+            showNotification('FAILED TO START', 'error'); 
+        } 
+    }
+    
     function changeAutoPage(delta) { autoCurrentPage += delta; loadAutomationHistory(); }
 
     async function loadAutomationHistory() {
         const tbody = document.getElementById('automation-history-body');
         if(!tbody) return; 
+        
+        // --- PAGE TRACKER UPDATE ---
+        window.autoCurrentPage = autoCurrentPage;
+
         try {
             const res = await fetch(`/api/batches?page=${autoCurrentPage}&limit=10`);
             const json = await res.json();
@@ -260,35 +290,46 @@
                 if (b.is_expired) {
                     labelClass = 'text-gray-500 border border-gray-500/20';
                     statusBadge = '<span class="text-gray-500 font-bold font-mono uppercase text-[9px]">EXPIRED</span>';
-                    actionBtn = `<button disabled class="px-3 py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono">WINDOW EXPIRED</button>`;
+                    actionBtn = `<button disabled class="w-[120px] py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono flex items-center justify-center ml-auto">WINDOW EXPIRED</button>`;
                 }
                 else if (b.status === 'CONFIRMED') {
                     readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border-green-500/30';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">CONFIRMED</span>';
-                    actionBtn = `<button disabled class="px-3 py-1.5 bg-gray-100 dark:bg-[#111] text-green-600 dark:text-green-400 font-bold uppercase text-[8px] cursor-not-allowed border border-green-500/20 font-mono">ALREADY CONFIRMED</button>`;
+                    
+                    actionBtn = `
+                    <button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-gray-100 dark:bg-[#111] text-green-600 dark:text-green-400 font-bold uppercase text-[8px] border border-green-500/20 font-mono transition-all hover:bg-red-500 hover:text-white hover:border-red-500 group/retry flex items-center justify-center ml-auto">
+                        <span class="group-hover/retry:hidden">ALREADY CONFIRMED</span>
+                        <span class="hidden group-hover/retry:inline">FORCE RETRY</span>
+                    </button>`;
                 }
                 else if (b.status === 'PROCESSING') {
                     labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/30';
                     statusBadge = '<span class="text-blue-600 dark:text-blue-400 font-bold font-mono animate-pulse uppercase text-[9px]">PROCESSING...</span>';
-                    actionBtn = `<span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span>`;
-                } 
+                    actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
+                }
+                // --- ADDED QUEUED STATE ---
+                else if (b.status === 'QUEUED') {
+                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
+                    statusBadge = '<span class="text-gray-500 font-bold font-mono animate-pulse uppercase text-[9px]">QUEUED</span>';
+                    actionBtn = `<button disabled class="w-[120px] py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono flex items-center justify-center ml-auto">GENERATING...</button>`;
+                }
                 else if (b.status === 'COMPLETED' || b.status === 'READY') {
                     readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
-                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono">CONFIRM SHIPMENT</button>`;
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM BATCH</button>`;
                 } 
                 else if (b.status === 'PARTIAL') {
                     partialCount++;
                     labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30';
                     statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold font-mono uppercase text-[9px]">PARTIAL</span>';
-                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono">CONFIRM REMAINING</button>`;
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM REMAINING</button>`;
                 }
                 else {
                     labelClass = 'text-red-600 dark:text-red-400 border-red-500/20';
                     statusBadge = `<span class="text-red-600 dark:text-red-400 font-bold font-mono uppercase text-[9px]">${b.status}</span>`;
-                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="px-3 py-1.5 border border-red-500/20 text-red-500 font-bold uppercase text-[8px] hover:bg-red-500/10 transition-all font-mono">RETRY</button>`;
+                    actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 border border-red-500/20 text-red-500 font-bold uppercase text-[8px] hover:bg-red-500/10 transition-all font-mono flex items-center justify-center ml-auto">RETRY</button>`;
                 }
 
                 html += `

@@ -21,7 +21,7 @@ if project_root not in sys.path:
 # --- CONFIGURATION ---
 DB_PATH = os.path.join(project_root, 'app', 'instance', 'labellab.db')
 UPLOADS_FOLDER = os.path.join(project_root, 'data', 'uploads')
-HISTORY_FILE = os.path.join(project_root, 'data', 'sent_tracking_history.json') # <--- NEW MEMORY FILE
+HISTORY_FILE = os.path.join(project_root, 'data', 'sent_tracking_history.json')
 BASE_URL = "https://sellercentral.amazon.com/orders-api"
 
 # --- HISTORY MANAGER ---
@@ -297,6 +297,7 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                 
                 if not item_code or not address_id:
                     print(f"[AMAZON BOT] Failed to get Order Info for {order_id}")
+                    # DO NOT increment success_count if we failed to get order info
                     continue
 
                 # --- TRIPLE CHECK LOGIC ---
@@ -340,7 +341,7 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
 
                     if confirmed:
                         confirmed_in_group += 1
-                        save_to_history(tn) # <--- SAVE TO PERMANENT MEMORY
+                        save_to_history(tn) 
                         print(f"[AMAZON BOT] -> SUCCESS: Added {tn}")
                         time.sleep(2.0) 
                     else:
@@ -355,8 +356,13 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
 
         print(f"[AMAZON BOT] FINISHED BATCH {batch_id}. Total Confirmed Rows: {success_count}")
         
-        # --- UPDATE: Set to CONFIRMED so UI locks the button ---
-        set_batch_status(batch_id, 'CONFIRMED')
+        # --- FIXED: Only set to CONFIRMED if we actually succeeded ---
+        # This prevents locking the button on total failure
+        if success_count > 0:
+            set_batch_status(batch_id, 'CONFIRMED')
+        else:
+            print("[AMAZON BOT] Batch Failed (0 success). Setting status to FAILED.")
+            set_batch_status(batch_id, 'FAILED')
         
         return True, "Batch Processed"
 
@@ -366,16 +372,16 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
         set_batch_status(batch_id, 'FAILED')
         return False, str(e)
 
-# --- ENTRY POINT (THREADED) ---
+# --- ENTRY POINT (DIRECT CALL - NO INNER THREAD) ---
 def run_thread(batch_id, cookies, csrf):
     target_txt_path = get_file_from_db(batch_id)
     if target_txt_path:
         process_logic(batch_id, target_txt_path, cookies, csrf)
 
 def run_confirmation(batch_id=None, cookies=None, csrf=None, *args, **kwargs):
-    t = threading.Thread(target=run_thread, args=(batch_id, cookies, csrf))
-    t.start()
-    return True, "Background Process Started"
+    # FIXED: Run directly since routes.py already handles the threading
+    run_thread(batch_id, cookies, csrf)
+    return True, "Process Completed"
 
 if __name__ == "__main__":
     pass
