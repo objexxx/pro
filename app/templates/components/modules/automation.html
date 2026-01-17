@@ -307,17 +307,12 @@
                     labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/30';
                     statusBadge = '<span class="text-blue-600 dark:text-blue-400 font-bold font-mono animate-pulse uppercase text-[9px]">PROCESSING...</span>';
                     actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
-                }
-                // --- ADDED QUEUED STATE ---
-                else if (b.status === 'QUEUED') {
-                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
-                    statusBadge = '<span class="text-gray-500 font-bold font-mono animate-pulse uppercase text-[9px]">QUEUED</span>';
-                    actionBtn = `<button disabled class="w-[120px] py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono flex items-center justify-center ml-auto">GENERATING...</button>`;
-                }
+                } 
                 else if (b.status === 'COMPLETED' || b.status === 'READY') {
                     readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
+                    // --- CHANGED TO CONFIRM BATCH ---
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM BATCH</button>`;
                 } 
                 else if (b.status === 'PARTIAL') {

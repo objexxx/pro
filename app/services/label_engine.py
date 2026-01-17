@@ -14,13 +14,9 @@ import pandas as pd
 class LabelEngine:
     def __init__(self):
         self.mode = "production"
+        self.debug_mode = False 
 
-    # --- SECURITY FIX: ZPL SANITIZATION ---
     def sanitize_zpl(self, text):
-        """
-        Removes ZPL control characters (^ and ~) to prevent injection attacks.
-        Example: "Company^XA" becomes "CompanyXA"
-        """
         if not text: return ""
         return str(text).replace("^", "").replace("~", "")
 
@@ -31,11 +27,9 @@ class LabelEngine:
         try:
             with open(json_path, 'r') as f:
                 data = json.load(f)
-            # Robust Check
             ver_str = str(version).strip()
             if "94888" in ver_str: mids = data.get('ids_94888', [])
             else: mids = data.get('ids_95055', [])
-            
             if not mids: mids = data.get('mailer_ids', default_ids)
             return str(random.choice(mids)).strip()
         except: return random.choice(default_ids)
@@ -48,18 +42,13 @@ class LabelEngine:
     def generate_unique_tracking(self, version, mailer_id, seq_code=None):
         stc = "9505"
         ver_str = str(version).strip()
-        
         if "94888" in ver_str:
             stc = "94888"
             serial = f"{random.randint(1000000, 9999999)}"
         elif seq_code:
-            # --- FORCE DETERMINISTIC SERIAL (e.g. 013xxxxx) ---
-            # Prefix: Julian Date (3 digits)
-            # Suffix: Random 5 digits
             suffix = f"{random.randint(0, 99999):05d}"
             serial = f"{seq_code}{suffix}"
         else:
-            # Fallback
             serial = f"{random.randint(0, 99999999):08d}"
         
         body = f"{stc}{mailer_id}{serial}"
@@ -99,63 +88,42 @@ class LabelEngine:
     def format_address(self, name, company, street, city, state, zip_val):
         def clean(val):
             if not val or str(val).lower() == 'nan': return ""
-            # Apply Sanitization here as well for safety
             return self.sanitize_zpl(str(val).strip())
-            
         parts = []
         if clean(name): parts.append(clean(name))
         if clean(company): parts.append(clean(company))
         if clean(street): parts.append(clean(street))
-        
         csz = f"{clean(city)} {clean(state)} {clean(zip_val)}".strip()
         if csz: parts.append(csz)
-        
         return "\\&".join(parts)
 
     def generate_0901_number(self): return f"090100000{random.randint(1000, 9999)}"
     def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(3000000000, 3999999999))
     def generate_c_number(self): return f"C{random.randint(1000000, 9999999)}"
 
-    # --- NEW: Stamps.com Random IDs ---
     def generate_stamps_refs(self):
-        # 063S00000 + 5 random digits
         ref1 = f"063S00000{random.randint(10000, 99999)}"
-        # 7 random digits
         ref2 = f"{random.randint(1000000, 9999999)}"
         return ref1, ref2
 
-    # --- MAIN PROCESS ---
     def process_batch(self, df, label_type, version, batch_id, db_path, user_id, template_choice="pitney_v2"):
         success_count = 0
         merger = PdfWriter()
-        
         df.columns = [str(c).strip().replace('\ufeff', '') for c in df.columns]
 
-        # --- TEMPLATE LOADING LOGIC ---
         templates = {}
-        
-        # If Stamps V2, pre-load both weight variants
         if "stamps_v2" in template_choice:
             base_name = "stamps_v2.zpl"
             heavy_name = "stamps_v2_2digit.zpl"
-            
             base_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', base_name)
             heavy_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', heavy_name)
-            
-            # Load Base (1-digit)
             if os.path.exists(base_path):
                 with open(base_path, 'r', encoding='utf-8') as f: templates['base'] = f.read().strip()
-            else:
-                templates['base'] = "" 
-                
-            # Load Heavy (2-digit)
+            else: templates['base'] = "" 
             if os.path.exists(heavy_path):
                 with open(heavy_path, 'r', encoding='utf-8') as f: templates['heavy'] = f.read().strip()
-            else:
-                templates['heavy'] = templates['base']
-                
+            else: templates['heavy'] = templates['base']
         else:
-            # Standard single template loading
             if not template_choice.endswith('.zpl'): template_choice += ".zpl"
             zpl_path = os.path.join(current_app.config['DATA_FOLDER'], 'zpl_templates', template_choice)
             if not os.path.exists(zpl_path): raise Exception(f"Template missing: {zpl_path}")
@@ -163,25 +131,18 @@ class LabelEngine:
 
         now = datetime.now()
         today = now.strftime("%m/%d/%Y")
-
-        # --- BATCH CONSTANT: SEQUENCE CODE ---
         ver_str = str(version).strip()
-        if "94888" in ver_str:
-            batch_seq_code = None
-        else:
-            batch_seq_code = now.strftime('%j')
+        batch_seq_code = None if "94888" in ver_str else now.strftime('%j')
 
         debug_filename = f"zpl_debug_{batch_id}.txt"
         debug_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', debug_filename)
         
-        with open(debug_path, 'w', encoding='utf-8') as dbg:
-            dbg.write(f"DEBUG LOG FOR BATCH {batch_id}\n")
-            dbg.write(f"Date: {now}\n")
-            dbg.write("="*50 + "\n\n")
+        if self.debug_mode:
+            with open(debug_path, 'w', encoding='utf-8') as dbg:
+                dbg.write(f"DEBUG LOG FOR BATCH {batch_id}\nDate: {now}\n" + "="*50 + "\n\n")
 
         try:
-            conn = sqlite3.connect(db_path, timeout=10)
-            c = conn.cursor()
+            conn = sqlite3.connect(db_path, timeout=10); c = conn.cursor()
             try: c.execute("ALTER TABLE history ADD COLUMN ref02 TEXT"); conn.commit()
             except: pass
             conn.close()
@@ -196,122 +157,80 @@ class LabelEngine:
                 if pd.isna(val) or str(val).lower() == 'nan': return default
                 return self.sanitize_zpl(str(val).strip())
 
-            order_id = safe_get('Ref01') 
-            sku = safe_get('Ref02') 
-            desc_val = safe_get('Description')
+            order_id = safe_get('Ref01'); sku = safe_get('Ref02'); desc_val = safe_get('Description')
+            from_n = safe_get('FromName'); from_c = safe_get('CompanyFrom'); from_s = safe_get('Street1From')
+            from_ci= safe_get('CityFrom'); from_st= safe_get('StateFrom'); from_z = safe_get('PostalCodeFrom')
+            to_n = safe_get('ToName'); to_c = safe_get('Company2'); to_s = safe_get('Street1To')
+            to_ci= safe_get('CityTo'); to_st= safe_get('StateTo'); to_z = safe_get('ZipTo')
             
-            from_n = safe_get('FromName')
-            from_c = safe_get('CompanyFrom')
-            from_s = safe_get('Street1From')
-            from_ci= safe_get('CityFrom')
-            from_st= safe_get('StateFrom')
-            from_z = safe_get('PostalCodeFrom')
-
-            to_n = safe_get('ToName')
-            to_c = safe_get('Company2') 
-            to_s = safe_get('Street1To')
-            to_ci= safe_get('CityTo')
-            to_st= safe_get('StateTo')
-            to_z = safe_get('ZipTo')
-            
-            # Parse Weight for Logic
             try:
                 raw_w = safe_get('Weight', '1')
                 weight_val = float(raw_w)
-            except:
-                weight_val = 1.0
-                raw_w = '1'
+            except: weight_val = 1.0; raw_w = '1'
 
             while attempts < 3 and not label_generated:
                 try:
-                    time.sleep(0.5)
+                    # OPTIMIZED SPEED: 0.35s is safe for 3 req/s limit
+                    time.sleep(0.35)
                     
-                    # --- SELECT TEMPLATE BASED ON WEIGHT ---
                     if "stamps_v2" in template_choice:
-                        # Use heavy template for >= 10lbs, otherwise base
-                        if weight_val >= 10:
-                            lbl = templates['heavy']
-                        else:
-                            lbl = templates['base']
+                        lbl = templates['heavy'] if weight_val >= 10 else templates['base']
                     else:
                         lbl = templates['default']
                     
-                    if "Weight lbs 0 ozs" in lbl:
-                        lbl = lbl.replace("Weight lbs 0 ozs", "{WEIGHT}")
+                    if "Weight lbs 0 ozs" in lbl: lbl = lbl.replace("Weight lbs 0 ozs", "{WEIGHT}")
                     
                     zip_5 = to_z[:5] 
-                    
                     zone = self.calculate_zone(from_st, to_st)
                     days = self.calculate_transit_days(zone)
                     exp_date = (now + timedelta(days=days)).strftime("%m/%d/%Y")
-                    
                     mailer_id = self.get_mailer_id(version)
                     trk = self.generate_unique_tracking(version, mailer_id, batch_seq_code)
-                    
                     acc, sec = self.generate_random_account_info()
                     cr_route = self.generate_carrier_route(zip_5)
-                    if "easypost" in template_choice.lower(): acc = self.generate_c_number() 
-
-                    if "easypost" in template_choice.lower(): w_disp = raw_w
-                    else: w_disp = f"{raw_w} Lbs 0 ozs"
                     
-                    if "stamps_v2" in template_choice:
-                        w_disp = raw_w
+                    if "easypost" in template_choice.lower(): acc = self.generate_c_number() 
+                    
+                    if "stamps_v2" in template_choice: w_disp = raw_w
+                    elif "easypost" in template_choice.lower(): w_disp = raw_w
+                    else: w_disp = f"{raw_w} Lbs 0 ozs"
 
                     sender_block = self.format_address(from_n, from_c, from_s, from_ci, from_st, from_z)
                     receiver_block = self.format_address(to_n, to_c, to_s, to_ci, to_st, to_z)
 
-                    lbl = lbl.replace("{SENDER_BLOCK}", sender_block)
-                    lbl = lbl.replace("{RECEIVER_BLOCK}", receiver_block)
-                    
+                    lbl = lbl.replace("{SENDER_BLOCK}", sender_block).replace("{RECEIVER_BLOCK}", receiver_block)
                     lbl = lbl.replace("{SHIP_DATE}", today).replace("{EXPECTED_DATE}", exp_date).replace("{ZONE_ID}", zone)
-                    lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5)
-                    lbl = lbl.replace("{WEIGHT}", w_disp) 
-
-                    lbl = lbl.replace("{ACCOUNT_ID}", acc).replace("{SEC_REF}", sec)
-                    lbl = lbl.replace("{JULIAN_SEQ}", batch_seq_code if batch_seq_code else "000")
+                    lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5).replace("{WEIGHT}", w_disp) 
+                    lbl = lbl.replace("{ACCOUNT_ID}", acc).replace("{SEC_REF}", sec).replace("{JULIAN_SEQ}", batch_seq_code if batch_seq_code else "000")
 
                     barcode_val = f"420{zip_5}{trk}"
                     lbl = lbl.replace("{BARCODE_DATA_DM}", barcode_val).replace("{BARCODE_DATA_128}", barcode_val)
                     lbl = lbl.replace("{TRACKING_SPACED}", " ".join([trk[i:i+4] for i in range(0, len(trk), 4)]))
                     lbl = lbl.replace("{TRACKING_NO_SPACED}", trk)
                     
-                    lbl = lbl.replace("{REF1}", sku).replace("{REF2}", order_id)
+                    lbl = lbl.replace("{REF1}", sku).replace("{REF2}", order_id).replace("{DESC}", desc_val)
                     lbl = lbl.replace("{REFS_REORDERED}", f"{order_id} | {desc_val} | {sku}")
-                    lbl = lbl.replace("{DESC}", desc_val)
-                    
-                    lbl = lbl.replace("{CARRIER_ROUTE}", cr_route)
-                    lbl = lbl.replace("{SHIP_DATE_YMD}", now.strftime("%Y-%m-%d"))
+                    lbl = lbl.replace("{CARRIER_ROUTE}", cr_route).replace("{SHIP_DATE_YMD}", now.strftime("%Y-%m-%d"))
                     lbl = lbl.replace("{C_NUMBER}", acc).replace("{RANDOM_0901}", self.generate_0901_number())
                     lbl = lbl.replace("{SHIP_DATE_YMD_NODASH}", now.strftime("%Y%m%d"))
                     
-                    # --- STAMPS.COM LOGIC ---
                     if "stamps_v2" in template_choice:
                         stamps_ref1, stamps_ref2 = self.generate_stamps_refs()
-                        lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1)
-                        lbl = lbl.replace("{STAMPS_REF_2}", stamps_ref2)
+                        lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1).replace("{STAMPS_REF_2}", stamps_ref2)
                         
-                        try:
-                            # 4 digit weight format (e.g. 1.0 -> 0100)
-                            w_int = int(weight_val * 100)
-                            w_str = f"{w_int:04d}"
+                        try: w_str = f"{int(weight_val * 100):04d}"
                         except: w_str = "0100"
                         
-                        # Strict Stamps PDF417 Format
                         stamps_pdf_data = f"USPS|PC|PM|Z{zone}|W{w_str}|D{now.strftime('%Y%m%d')}|F{from_z}|T{zip_5}|S{trk}|RCOMM|A{stamps_ref1}|C{stamps_ref2}|N0003|LCO25"
                         lbl = lbl.replace("{PDF_417_DATA}", stamps_pdf_data)
                     else:
-                        # Default Format
                         pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
                         lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
 
-                    with open(debug_path, 'a', encoding='utf-8') as dbg:
-                        dbg.write(f"\n--- LABEL {idx + 1} START ---\n")
-                        dbg.write(f"MAILER: {mailer_id} | SEQ: {batch_seq_code} | TRACKING: {trk}\n")
-                        dbg.write(f"\n--- LABEL {idx + 1} END ---\n")
+                    if self.debug_mode:
+                        with open(debug_path, 'a', encoding='utf-8') as dbg:
+                            dbg.write(f"\n--- LABEL {idx + 1} ---\nTRACKING: {trk}\nPDF_DATA: {stamps_pdf_data if 'stamps' in template_choice else pdf_data}\n")
 
-                    # --- LABELARY SIZE LOGIC ---
-                    # 4.5x6.7 for Stamps, 4x6 for others
                     label_size = "4.5x6.7" if "stamps" in template_choice.lower() else "4x6"
 
                     res = requests.post(f"http://api.labelary.com/v1/printers/8dpmm/labels/{label_size}/", 
@@ -322,42 +241,28 @@ class LabelEngine:
                         success_count += 1
                         label_generated = True 
                         try:
-                            conn = sqlite3.connect(db_path, timeout=10)
-                            c = conn.cursor()
+                            conn = sqlite3.connect(db_path, timeout=10); c = conn.cursor()
                             c.execute("UPDATE batches SET success_count = success_count + 1 WHERE batch_id = ?", (batch_id,))
-                            c.execute("""
-                                INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                batch_id, user_id, sku, trk, "COMPLETED", 
-                                from_n, to_n, 
-                                f"{to_s} {to_ci} {to_st} {to_z}", 
-                                version, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
-                                order_id 
-                            ))
-                            conn.commit()
-                            conn.close()
-                        except Exception as e: print(f"DB Error: {e}")
+                            c.execute("INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                                      (batch_id, user_id, sku, trk, "COMPLETED", from_n, to_n, f"{to_s} {to_ci} {to_st} {to_z}", version, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), order_id))
+                            conn.commit(); conn.close()
+                        except: pass
                     else: attempts += 1
-                except Exception as e: attempts += 1
+                except: attempts += 1
 
             if not label_generated:
                 try:
-                    conn = sqlite3.connect(db_path, timeout=10)
-                    c = conn.cursor()
+                    conn = sqlite3.connect(db_path, timeout=10); c = conn.cursor()
                     c.execute("INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                               (batch_id, user_id, "FAILED", "FAILED", "FAILED", from_n, to_n, "Error", version, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-                    conn.commit()
-                    conn.close()
+                    conn.commit(); conn.close()
                 except: pass
 
         try:
-            conn = sqlite3.connect(db_path, timeout=10)
-            c = conn.cursor()
+            conn = sqlite3.connect(db_path, timeout=10); c = conn.cursor()
             final_status = "COMPLETED" if success_count > 0 else "FAILED"
             c.execute("UPDATE batches SET status = ? WHERE batch_id = ?", (final_status, batch_id))
-            conn.commit()
-            conn.close()
+            conn.commit(); conn.close()
         except Exception as e: print(f"Status Update Error: {e}")
 
         final_pdf = io.BytesIO()

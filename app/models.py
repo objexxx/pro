@@ -5,11 +5,12 @@ from flask_login import UserMixin
 from datetime import datetime
 
 def get_db():
-    # 30 second timeout prevents locking
     return sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
 
 class User(UserMixin):
-    def __init__(self, id, username, email, balance, price_per_label, is_admin, is_banned, api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, inventory_json):
+    def __init__(self, id, username, email, balance, price_per_label, is_admin, is_banned, api_key, 
+                 subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, 
+                 inventory_json, default_label_type, default_version, default_template):
         self.id = id
         self.username = username
         self.email = email
@@ -25,6 +26,11 @@ class User(UserMixin):
         self.auth_url = auth_url
         self.auth_file_path = auth_file_path
         self.inventory_json = inventory_json
+        
+        # New Defaults
+        self.default_label_type = default_label_type or 'priority'
+        self.default_version = default_version or '95055'
+        self.default_template = default_template or 'pitney_v2'
 
     @property
     def is_subscribed(self):
@@ -38,7 +44,12 @@ class User(UserMixin):
     def get(user_id):
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT id, username, email, balance, price_per_label, is_admin, is_banned, api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, inventory_json FROM users WHERE id = ?", (user_id,))
+        c.execute("""
+            SELECT id, username, email, balance, price_per_label, is_admin, is_banned, api_key, 
+                   subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, 
+                   inventory_json, default_label_type, default_version, default_template 
+            FROM users WHERE id = ?
+        """, (user_id,))
         data = c.fetchone()
         conn.close()
         if data: return User(*data)
@@ -48,7 +59,15 @@ class User(UserMixin):
     def get_by_username(username):
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT id, username, email, password_hash, balance, price_per_label, is_admin, is_banned, api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, inventory_json FROM users WHERE username = ?", (username,))
+        # Note: This query returns raw tuple including password_hash, which is handled in login route
+        # We don't use the User class constructor here directly in login route logic usually
+        # But for consistency in models, we typically only use this for checking auth
+        c.execute("""
+            SELECT id, username, email, password_hash, balance, price_per_label, is_admin, is_banned, 
+                   api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, 
+                   auth_file_path, inventory_json, default_label_type, default_version, default_template 
+            FROM users WHERE username = ?
+        """, (username,))
         data = c.fetchone()
         conn.close()
         return data
@@ -102,5 +121,13 @@ class User(UserMixin):
         c = conn.cursor()
         c.execute("UPDATE users SET auth_cookies = ?, auth_csrf = ?, auth_file_path = ?, inventory_json = ?, auto_renew = ? WHERE id = ?", 
                   (cookies, csrf, filename, inventory, int(auto_renew), self.id))
+        conn.commit()
+        conn.close()
+        
+    def update_defaults(self, l_type, ver, tmpl):
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("UPDATE users SET default_label_type = ?, default_version = ?, default_template = ? WHERE id = ?", 
+                  (l_type, ver, tmpl, self.id))
         conn.commit()
         conn.close()

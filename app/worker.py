@@ -7,8 +7,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 from flask import current_app
 
-# Note: LabelEngine import is moved INSIDE process_queue to prevent circular errors
-
 def get_worker_price(db_path, user_id, label_type, version):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -44,11 +42,13 @@ def check_auto_renewals(app):
 def cleanup_old_data(app):
     try:
         with app.app_context():
-            # USE UTC
+            # 30-Day Retention Policy
             cutoff = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
             db_path = current_app.config['DB_PATH']
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
+            
+            # 1. Clean Files
             c.execute("SELECT batch_id, filename FROM batches WHERE created_at < ?", (cutoff,))
             rows = c.fetchall()
             if rows:
@@ -57,18 +57,21 @@ def cleanup_old_data(app):
                         os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"))
                         os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname))
                     except: pass
-                c.execute("DELETE FROM batches WHERE created_at < ?", (cutoff,))
-                c.execute("DELETE FROM history WHERE created_at < ?", (cutoff,))
-                conn.commit()
+            
+            # 2. Clean Database
+            c.execute("DELETE FROM batches WHERE created_at < ?", (cutoff,))
+            c.execute("DELETE FROM history WHERE created_at < ?", (cutoff,))
+            # Privacy: Delete old IP logs
+            c.execute("DELETE FROM login_history WHERE created_at < ?", (cutoff,))
+            
+            conn.commit()
             conn.close()
     except: pass
 
-# --- NEW QUEUE ALGORITHM ---
 def select_weighted_batch(cursor):
     """
-    1. Group all QUEUED items by User.
-    2. Pick the oldest batch for each user (Candidates).
-    3. Weighted random selection favoring smaller counts.
+    Weighted Round-Robin Selection:
+    Prioritizes small batches to keep the queue moving, but ensures everyone gets a turn.
     """
     cursor.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED'")
     all_queued = cursor.fetchall()
@@ -76,7 +79,7 @@ def select_weighted_batch(cursor):
     if not all_queued:
         return None
 
-    # Step 1: Group by User ID to ensure Round Robin
+    # Step 1: Group by User
     user_queues = {}
     for row in all_queued:
         uid = row[1]
@@ -84,62 +87,64 @@ def select_weighted_batch(cursor):
             user_queues[uid] = []
         user_queues[uid].append(row)
 
-    # Step 2: Identify Candidates (Oldest Batch Per User)
+    # Step 2: Pick Oldest Batch per User
     candidates = []
     for uid in user_queues:
-        # Sort by created_at (index 7) ascending -> First in, First out per user
         user_queues[uid].sort(key=lambda x: x[7])
         candidates.append(user_queues[uid][0])
 
-    # Step 3: Weighted Selection (Small Orders = Higher Weight)
+    # Step 3: Weighted Selection
     weights = []
     for batch in candidates:
         count = batch[3]
-        
-        # Weighting Logic:
-        # < 5 labels   = 100 weight (Very High Priority)
-        # < 20 labels  = 50 weight
-        # < 100 labels = 20 weight
-        # > 100 labels = 5 weight (Low Priority, but technically still has a chance)
-        if count <= 5:
-            w = 100
-        elif count <= 20:
-            w = 50
-        elif count <= 100:
-            w = 20
-        else:
-            w = 5
+        if count <= 5: w = 100
+        elif count <= 20: w = 50
+        elif count <= 100: w = 20
+        else: w = 5
         weights.append(w)
 
-    # Pick one winner based on weights
     winner = random.choices(candidates, weights=weights, k=1)[0]
     return winner
 
 def process_queue(app):
     print(">> WORKER: Started (Weighted Round-Robin Mode).")
-    # --- LAZY IMPORT TO FIX CIRCULAR ERROR ---
+    # Lazy import to prevent circular dependency
     from .services.label_engine import LabelEngine
     
     last_cleanup = time.time()
     
     while True:
         try:
-            if time.time() - last_cleanup > 3600:
-                check_auto_renewals(app)
-                cleanup_old_data(app)
-                last_cleanup = time.time()
-
             with app.app_context():
                 db_path = current_app.config['DB_PATH']
                 conn = sqlite3.connect(db_path, timeout=30)
                 c = conn.cursor()
 
-                # Lock Check (Prevent parallel processing collisions)
+                # --- ADMIN HEARTBEAT ---
+                now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (now_str,))
+                conn.commit()
+
+                # --- ADMIN PAUSE CHECK ---
+                c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
+                paused_row = c.fetchone()
+                if paused_row and paused_row[0] == '1':
+                    conn.close()
+                    time.sleep(2)
+                    continue
+
+                # --- CLEANUP TASK ---
+                if time.time() - last_cleanup > 3600:
+                    check_auto_renewals(app)
+                    cleanup_old_data(app)
+                    last_cleanup = time.time()
+
+                # --- CONCURRENCY LOCK ---
                 c.execute("SELECT count(*) FROM batches WHERE status = 'PROCESSING'")
                 if c.fetchone()[0] > 0:
                     conn.close(); time.sleep(2); continue
 
-                # --- NEW SELECTION LOGIC ---
+                # --- JOB SELECTION ---
                 task = select_weighted_batch(c)
 
                 if task:
@@ -158,7 +163,7 @@ def process_queue(app):
                         df = pd.read_csv(csv_path)
                         engine = LabelEngine()
                         
-                        # --- Pass DB args for Real-Time Updates ---
+                        # Process
                         pdf_bytes, success = engine.process_batch(df, ltype, version, bid, db_path, uid, template)
 
                         if success > 0 and pdf_bytes:
@@ -169,7 +174,7 @@ def process_queue(app):
                         if success == 0: status = 'FAILED'
                         elif success < count: status = 'PARTIAL'
 
-                        # Refund Logic
+                        # Auto-Refund for Failed Labels
                         failed = count - success
                         if failed > 0:
                             refund = failed * price

@@ -1,18 +1,139 @@
-<h2 class="text-lg font-bold text-black dark:text-white uppercase tracking-wider mb-6">Live Statistics</h2>
-<div class="grid grid-cols-3 gap-6">
-    <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 relative overflow-hidden">
-        <div class="absolute top-0 right-0 p-2 opacity-10 text-6xl font-black text-black dark:text-white -mt-2 -mr-2">#</div>
-        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Total Labels</p>
-        <p id="stat-labels" class="text-4xl font-mono font-bold text-black dark:text-white mt-4">0</p>
+<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6 space-y-6 animate-in fade-in duration-500">
+    
+    <div class="flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-6 gap-4">
+        <div>
+            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Live Analytics</h2>
+            <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Shipment Lifecycle & Delivery Performance</p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <div class="px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-500 text-[10px] font-bold uppercase tracking-widest font-mono flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></div>
+                Development Mode
+            </div>
+        </div>
     </div>
-    <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 relative overflow-hidden">
-        <div class="absolute top-0 right-0 p-2 opacity-10 text-6xl font-black text-green-500 -mt-2 -mr-2">%</div>
-        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Success Rate</p>
-        <p class="text-4xl font-mono font-bold text-green-600 dark:text-green-500 mt-4">100%</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative overflow-hidden group">
+            <div class="absolute top-0 right-0 p-3 opacity-5 text-6xl font-black text-black dark:text-white rotate-12 -mt-3 -mr-3 transition-transform group-hover:scale-110">#</div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Total Generated</p>
+            <p id="stat-labels" class="text-4xl font-mono font-bold text-black dark:text-white">0</p>
+            <div class="mt-4 h-1 w-full bg-gray-100 dark:bg-[#151515] overflow-hidden">
+                <div class="h-full bg-black dark:bg-white w-full"></div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative overflow-hidden group">
+            <div class="absolute top-0 right-0 p-3 opacity-5 text-6xl font-black text-purple-500 rotate-12 -mt-3 -mr-3 transition-transform group-hover:scale-110">B</div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Total Batches</p>
+            <p id="stat-batches" class="text-4xl font-mono font-bold text-purple-600 dark:text-purple-500">0</p>
+            <div class="mt-4 h-1 w-full bg-gray-100 dark:bg-[#151515] overflow-hidden">
+                <div class="h-full bg-purple-500 w-full"></div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative overflow-hidden opacity-60">
+            <div class="absolute top-0 right-0 p-3 opacity-5 text-6xl font-black text-blue-500 rotate-12 -mt-3 -mr-3">✈</div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Active / In-Transit</p>
+            <p class="text-4xl font-mono font-bold text-blue-600 dark:text-blue-500">--</p>
+            <div class="mt-4 flex items-center gap-2">
+                <span class="text-[9px] font-mono uppercase bg-gray-100 dark:bg-[#151515] px-2 py-1 text-gray-500 border border-gray-200 dark:border-[#222]">USPS API Pending</span>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 shadow-glow relative overflow-hidden opacity-60">
+            <div class="absolute top-0 right-0 p-3 opacity-5 text-6xl font-black text-red-500 rotate-12 -mt-3 -mr-3">!</div>
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Delivery Exceptions</p>
+            <p class="text-3xl font-mono font-bold text-red-600 dark:text-red-500">--</p>
+            <div class="mt-4 flex items-center gap-2">
+                <span class="text-[9px] font-mono uppercase bg-gray-100 dark:bg-[#151515] px-2 py-1 text-gray-500 border border-gray-200 dark:border-[#222]">Monitoring Inactive</span>
+            </div>
+        </div>
     </div>
-    <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-6 relative overflow-hidden">
-        <div class="absolute top-0 right-0 p-2 opacity-10 text-6xl font-black text-purple-500 -mt-2 -mr-2">B</div>
-        <p class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Batches</p>
-        <p id="stat-batches" class="text-4xl font-mono font-bold text-purple-600 dark:text-purple-500 mt-4">0</p>
+
+    <div class="flex-1 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow flex flex-col relative overflow-hidden min-h-[500px]">
+        
+        <div class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/60 dark:bg-black/60 backdrop-blur-sm">
+            <div class="bg-black dark:bg-white text-white dark:text-black px-10 py-5 shadow-2xl border border-white/10 flex flex-col items-center">
+                <h3 class="text-sm font-mono font-bold uppercase tracking-[0.2em] mb-2">Module Under Construction</h3>
+                <p class="text-[10px] font-mono uppercase tracking-widest opacity-70">Integration of USPS Scanning API In Progress</p>
+            </div>
+            
+            <div class="mt-10 grid grid-cols-3 gap-12 text-center opacity-80">
+                <div class="group cursor-default">
+                    <div class="w-12 h-12 border-2 border-gray-400 border-dashed rounded-full flex items-center justify-center mx-auto mb-4 group-hover:border-black dark:group-hover:border-white transition-colors">
+                        <svg class="w-5 h-5 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.2-2.85.577-4.147l.104-.199c.176-.331.387-.648.627-.928m0 0a7.5 7.5 0 0110.518 0M9 10h.01M15 10h.01"></path></svg>
+                    </div>
+                    <p class="text-[9px] font-bold uppercase tracking-widest text-black dark:text-white">Scan Events</p>
+                </div>
+                <div class="group cursor-default">
+                    <div class="w-12 h-12 border-2 border-gray-400 border-dashed rounded-full flex items-center justify-center mx-auto mb-4 group-hover:border-black dark:group-hover:border-white transition-colors">
+                        <svg class="w-5 h-5 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </div>
+                    <p class="text-[9px] font-bold uppercase tracking-widest text-black dark:text-white">Real-Time Loc</p>
+                </div>
+                <div class="group cursor-default">
+                    <div class="w-12 h-12 border-2 border-gray-400 border-dashed rounded-full flex items-center justify-center mx-auto mb-4 group-hover:border-black dark:group-hover:border-white transition-colors">
+                        <svg class="w-5 h-5 text-gray-500 group-hover:text-black dark:group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                    <p class="text-[9px] font-bold uppercase tracking-widest text-black dark:text-white">Auto-Confirm</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-5 border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505] flex justify-between items-center opacity-30 pointer-events-none">
+            <h3 class="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Recent Shipment Events</h3>
+            <div class="flex gap-2">
+                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span class="w-2 h-2 rounded-full bg-green-500"></span>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-hidden p-6 opacity-20 pointer-events-none select-none filter blur-[1px]">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="text-[9px] font-bold text-gray-500 border-b border-gray-200 dark:border-[#1E1E1E] font-mono">
+                        <th class="py-4 uppercase tracking-widest">Tracking ID</th>
+                        <th class="py-4 uppercase tracking-widest">Recipient</th>
+                        <th class="py-4 uppercase tracking-widest">Carrier Status</th>
+                        <th class="py-4 uppercase tracking-widest">Last Location</th>
+                        <th class="py-4 uppercase tracking-widest text-right">Est. Delivery</th>
+                    </tr>
+                </thead>
+                <tbody class="font-mono text-[10px] text-black dark:text-white">
+                    <tr class="border-b border-gray-100 dark:border-[#151515]">
+                        <td class="py-5">9400 1000 0000 0000 0000 01</td>
+                        <td class="py-5">John Doe</td>
+                        <td class="py-5"><span class="px-2.5 py-1 bg-green-500/10 text-green-600 dark:text-green-500 border border-green-500/20 font-bold rounded-sm">DELIVERED</span></td>
+                        <td class="py-5">LAS VEGAS, NV</td>
+                        <td class="py-5 text-right">01/15/2026</td>
+                    </tr>
+                    <tr class="border-b border-gray-100 dark:border-[#151515]">
+                        <td class="py-5">9400 1000 0000 0000 0000 02</td>
+                        <td class="py-5">Jane Smith</td>
+                        <td class="py-5"><span class="px-2.5 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-500 border border-blue-500/20 font-bold rounded-sm">IN TRANSIT</span></td>
+                        <td class="py-5">DENVER, CO</td>
+                        <td class="py-5 text-right">01/17/2026</td>
+                    </tr>
+                    <tr class="border-b border-gray-100 dark:border-[#151515]">
+                        <td class="py-5">9400 1000 0000 0000 0000 03</td>
+                        <td class="py-5">Alice Wonderland</td>
+                        <td class="py-5"><span class="px-2.5 py-1 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border border-yellow-500/20 font-bold rounded-sm">PRE-SHIPMENT</span></td>
+                        <td class="py-5">UNKNOWN</td>
+                        <td class="py-5 text-right">--/--/----</td>
+                    </tr>
+                    <tr>
+                        <td class="py-5">9400 1000 0000 0000 0000 04</td>
+                        <td class="py-5">Bob Builder</td>
+                        <td class="py-5"><span class="px-2.5 py-1 bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20 font-bold rounded-sm">EXCEPTION</span></td>
+                        <td class="py-5">CHICAGO, IL</td>
+                        <td class="py-5 text-right">DELAYED</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>

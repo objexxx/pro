@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>GOD MODE // SYSTEM CORE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: { colors: { admin: { bg: '#050505', card: '#0A0A0A', border: '#333', red: '#ff3333' } },
+                fontFamily: { mono: ['JetBrains Mono', 'monospace'] } }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #050505; color: #e5e5e5; font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: #333; }
+        .animate-blink { animation: blink 2s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .tab-btn { opacity: 0.5; transition: all 0.2s; border-bottom: 2px solid transparent; }
+        .tab-btn.active { opacity: 1; color: white; border-bottom: 2px solid #ff3333; }
+        /* Using standard CSS hidden to avoid Tailwind conflicts */
+        .my-hidden { display: none !important; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden selection:bg-red-900 selection:text-white">
+
+    <header class="h-16 border-b border-red-900/30 bg-[#080808] flex justify-between items-center px-8 shadow-2xl z-50">
+        <div class="flex items-center gap-4">
+            <div class="w-3 h-3 bg-red-600 rounded-none shadow-[0_0_10px_#ff3333] animate-pulse"></div>
+            <h1 class="text-xl font-bold text-red-600 tracking-[0.3em] uppercase">System Controller</h1>
+            <span class="px-2 py-0.5 bg-red-900/10 border border-red-900/40 text-[10px] text-red-400 font-bold">ROOT ACCESS</span>
+        </div>
+        <div class="flex gap-6 text-[10px] font-bold tracking-widest text-gray-500">
+            <div class="flex flex-col items-end"><span>WORKER LATENCY</span><span class="text-white" id="hb-display">-- ms</span></div>
+            <a href="{{ url_for('main.logout') }}" class="border border-gray-800 hover:border-red-600 hover:text-red-500 px-4 py-2 transition-all">TERMINATE</a>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <aside class="w-64 bg-[#080808] border-r border-gray-800 flex flex-col p-4 gap-4 overflow-y-auto">
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A] relative overflow-hidden group">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Worker State</p>
+                <div class="flex justify-between items-end">
+                    <span id="worker-state" class="text-xl font-bold text-white">ONLINE</span>
+                    <button id="btn-pause" onclick="toggleWorker()" class="text-[10px] border border-white/20 hover:bg-white hover:text-black px-2 py-1 transition-all">PAUSE</button>
+                </div>
+                <div class="mt-4 h-0.5 w-full bg-gray-900"><div id="hb-bar" class="h-full bg-green-500 w-full animate-blink"></div></div>
+            </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Global Queue</p>
+                <span id="queue-count" class="text-3xl font-bold text-white">0</span>
+            </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">30D Revenue</p>
+                <span id="rev-30d" class="text-2xl font-bold text-green-500">$0.00</span>
+            </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Lifetime Rev</p>
+                <span id="rev-life" class="text-2xl font-bold text-blue-500">$0.00</span>
+            </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Failures (24h)</p>
+                <span id="error-count" class="text-xl font-bold text-red-500">0</span>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col bg-[#050505] min-w-0">
+            <div class="flex border-b border-gray-800 bg-[#0C0C0C] px-4">
+                <button onclick="switchTab('queue')" id="btn-queue" class="tab-btn active px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Live Queue</button>
+                <button onclick="switchTab('history')" id="btn-history" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Global History</button>
+                <button onclick="switchTab('tracking')" id="btn-tracking" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">All Tracking</button>
+                <button onclick="switchTab('users')" id="btn-users" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">User Database</button>
+            </div>
+
+            <div class="flex-1 relative overflow-hidden">
+                
+                <div id="tab-queue-content" class="absolute inset-0 flex flex-col p-6 overflow-auto">
+                    <table class="w-full text-left text-[10px] border border-gray-800">
+                        <thead class="bg-[#111] text-gray-500 sticky top-0">
+                            <tr><th class="p-4">BATCH ID</th><th class="p-4">USER</th><th class="p-4">DATE</th><th class="p-4 text-center">SIZE</th><th class="p-4 text-center">STATUS</th></tr>
+                        </thead>
+                        <tbody id="live-queue-body" class="divide-y divide-gray-800 text-gray-300 bg-[#0A0A0A]"></tbody>
+                    </table>
+                </div>
+
+                <div id="tab-history-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-hidden">
+                    <div class="flex justify-between mb-4">
+                        <input type="text" id="hist-search" onkeypress="if(event.key==='Enter') fetchHistory()" class="bg-black border border-gray-700 p-2 text-xs text-white w-64 focus:border-red-500 outline-none" placeholder="Search Batch ID...">
+                    </div>
+                    <div class="flex-1 overflow-auto border border-gray-800">
+                        <table class="w-full text-left text-[10px]">
+                            <thead class="bg-[#111] text-gray-500 sticky top-0">
+                                <tr>
+                                    <th class="p-4 font-normal">BATCH ID</th>
+                                    <th class="p-4 font-normal">USERNAME</th>
+                                    <th class="p-4 font-normal">DATE (UTC)</th>
+                                    <th class="p-4 font-normal text-center">SIZE</th>
+                                    <th class="p-4 font-normal text-center">VALUE</th>
+                                    <th class="p-4 font-normal text-center">STATUS</th>
+                                    <th class="p-4 font-normal text-right">ACTION</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-body" class="divide-y divide-gray-800 text-gray-400 bg-[#0A0A0A]"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-between items-center pt-4">
+                        <span id="hist-page-info" class="text-[10px] text-gray-500 uppercase font-bold">PAGE 1</span>
+                        <div class="flex gap-2">
+                            <button onclick="changeHistPage(-1)" class="px-4 py-2 border border-gray-700 hover:bg-white hover:text-black text-[9px] uppercase font-bold transition-all">PREV</button>
+                            <button onclick="changeHistPage(1)" class="px-4 py-2 border border-gray-700 hover:bg-white hover:text-black text-[9px] uppercase font-bold transition-all">NEXT</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="tab-tracking-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-hidden">
+                    <div class="flex justify-between items-center border border-gray-800 bg-[#0A0A0A] p-4 mb-4">
+                        <div class="flex items-center gap-4 w-full max-w-lg">
+                            <input type="text" id="track-search" onkeypress="if(event.key==='Enter') fetchTracking()" class="flex-1 bg-black border border-gray-700 p-2 text-xs text-white focus:border-blue-500 outline-none" placeholder="Search Tracking ID or Username...">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <select id="export-days" class="bg-black border border-gray-700 p-2 text-xs text-white outline-none">
+                                <option value="1">Last 24 Hours</option>
+                                <option value="7">Last 7 Days</option>
+                                <option value="30">Last 30 Days</option>
+                            </select>
+                            <button onclick="exportCsv()" class="px-4 py-2 bg-white text-black text-[9px] font-bold uppercase hover:bg-gray-200">EXPORT CSV</button>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-auto border border-gray-800">
+                        <table class="w-full text-left text-[10px]">
+                            <thead class="bg-[#111] text-gray-500 sticky top-0">
+                                <tr>
+                                    <th class="p-4 font-normal">TRACKING ID</th>
+                                    <th class="p-4 font-normal">USERNAME</th>
+                                    <th class="p-4 font-normal text-right">DATE GENERATED</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tracking-body" class="divide-y divide-gray-800 text-gray-300 bg-[#0A0A0A]">
+                                <tr><td colspan="3" class="p-8 text-center text-gray-600">ENTER SEARCH TERM OR PRESS ENTER TO LOAD ALL</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="tab-users-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-auto">
+                    <div class="grid grid-cols-2 gap-8 h-full">
+                        <div class="border border-gray-800 bg-[#0A0A0A] p-6 h-fit">
+                            <h3 class="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4">Find User</h3>
+                            <input type="text" id="user-search" oninput="searchUsers()" class="w-full bg-black border border-gray-700 p-3 text-xs text-white focus:border-blue-500 outline-none placeholder-gray-600 mb-4" placeholder="SEARCH USERNAME...">
+                            <div id="user-results" class="hidden border border-gray-700 max-h-40 overflow-y-auto mb-4 bg-[#111]"></div>
+                            
+                            <div id="selected-user-panel" class="hidden space-y-4 pt-4 border-t border-gray-800">
+                                <div class="flex justify-between text-[10px] text-gray-400"><span>USER:</span> <span id="sel-username" class="text-white font-bold"></span></div>
+                                <div class="flex justify-between text-[10px] text-gray-400"><span>IP ADDR:</span> <span id="sel-ip" class="text-red-500 font-mono"></span></div>
+                                <div class="flex justify-between text-[10px] text-gray-400"><span>BALANCE:</span> <span id="sel-balance" class="text-green-500 font-bold"></span></div>
+                                
+                                <div class="pt-2">
+                                    <label class="text-[9px] font-bold text-blue-400 uppercase">Manage Funds</label>
+                                    <div class="flex gap-2 mt-1">
+                                        <input type="number" id="balance-adj-amount" placeholder="0.00" class="flex-1 bg-black border border-gray-700 p-2 text-xs text-white focus:border-green-500 outline-none">
+                                        <button onclick="userAction('update_balance', {amount: 1})" class="bg-green-600 hover:bg-green-500 text-white px-3 text-[9px] font-bold uppercase">ADD</button>
+                                        <button onclick="userAction('update_balance', {amount: -1})" class="bg-red-600 hover:bg-red-500 text-white px-3 text-[9px] font-bold uppercase">SUB</button>
+                                    </div>
+                                </div>
+                                <button onclick="userAction('reset_pass')" class="w-full py-3 border border-red-900/50 text-red-500 hover:bg-red-900/20 text-[9px] font-bold uppercase transition-all">SET NEW PASSWORD</button>
+                            </div>
+                        </div>
+
+                        <div id="pricing-panel" class="hidden border border-gray-800 bg-[#0A0A0A] p-6 h-fit">
+                            <h3 class="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4">Configuration</h3>
+                            <div class="space-y-3">
+                                <div class="flex items-center gap-2"><span class="w-16 text-[9px] text-gray-500 uppercase">Priority</span><input type="number" id="price-priority" step="0.01" class="flex-1 bg-black border border-gray-700 p-1 text-xs text-white outline-none"><button onclick="userAction('update_price', {type:'priority'})" class="bg-blue-600 text-white px-2 py-1 text-[8px] font-bold uppercase">SET</button></div>
+                                <div class="flex items-center gap-2"><span class="w-16 text-[9px] text-gray-500 uppercase">Ground</span><input type="number" id="price-ground" step="0.01" class="flex-1 bg-black border border-gray-700 p-1 text-xs text-white outline-none"><button onclick="userAction('update_price', {type:'ground'})" class="bg-blue-600 text-white px-2 py-1 text-[8px] font-bold uppercase">SET</button></div>
+                                <div class="flex items-center gap-2"><span class="w-16 text-[9px] text-gray-500 uppercase">Express</span><input type="number" id="price-express" step="0.01" class="flex-1 bg-black border border-gray-700 p-1 text-xs text-white outline-none"><button onclick="userAction('update_price', {type:'express'})" class="bg-blue-600 text-white px-2 py-1 text-[8px] font-bold uppercase">SET</button></div>
+                            </div>
+                            <div class="mt-6 pt-6 border-t border-gray-800">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span id="sub-status-badge" class="text-[9px] font-bold uppercase px-2 py-0.5 border border-gray-700 text-gray-500">NO LICENSE</span>
+                                    <button id="btn-revoke-sub" onclick="userAction('revoke_sub')" class="text-red-500 hover:text-white text-[8px] font-bold uppercase hidden border border-red-900/50 px-2 py-1">REVOKE LICENSE</button>
+                                </div>
+                                <span id="sub-end-date" class="text-[8px] text-gray-600 font-mono"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let isWorkerPaused = false;
+        let selectedUserId = null;
+        let currentTab = 'queue';
+        let histPage = 1, trackPage = 1;
+
+        function switchTab(t) {
+            ['queue','history','tracking','users'].forEach(x => {
+                document.getElementById('tab-'+x+'-content').classList.add('my-hidden');
+                document.getElementById('btn-'+x).classList.remove('active');
+            });
+            document.getElementById('tab-'+t+'-content').classList.remove('my-hidden');
+            document.getElementById('btn-'+t).classList.add('active');
+            currentTab = t;
+            if(t==='queue') fetchQueue();
+            if(t==='history') fetchHistory();
+            if(t==='tracking') fetchTracking();
+        }
+
+        async function fetchSystemState() {
+            try {
+                const res = await fetch('/admin/api/system/health');
+                const data = await res.json();
+                const statusEl = document.getElementById('worker-state');
+                const barEl = document.getElementById('hb-bar');
+                if (data.worker_status === 'PAUSED') {
+                    statusEl.innerText = "PAUSED"; statusEl.classList.replace('text-white', 'text-yellow-500');
+                    barEl.classList.replace('bg-green-500', 'bg-yellow-500'); document.getElementById('btn-pause').innerText = "RESUME";
+                    isWorkerPaused = true;
+                } else {
+                    statusEl.innerText = "ONLINE"; statusEl.classList.replace('text-yellow-500', 'text-white');
+                    barEl.classList.replace('bg-yellow-500', 'bg-green-500'); document.getElementById('btn-pause').innerText = "PAUSE";
+                    isWorkerPaused = false;
+                }
+                document.getElementById('queue-count').innerText = data.queue_depth;
+                document.getElementById('error-count').innerText = data.errors_24h;
+                document.getElementById('rev-30d').innerText = "$" + parseFloat(data.revenue_30d).toFixed(2);
+                document.getElementById('rev-life').innerText = "$" + parseFloat(data.revenue_lifetime).toFixed(2);
+                const last = new Date(data.last_heartbeat + " UTC");
+                const diff = Math.round((new Date() - last) / 1000);
+                document.getElementById('hb-display').innerText = (isNaN(diff) ? "--" : diff) + "s ago";
+            } catch(e) {}
+        }
+
+        async function fetchQueue() {
+            if(currentTab !== 'queue') return;
+            const res = await fetch('/admin/api/jobs/live');
+            const data = await res.json();
+            const tbody = document.getElementById('live-queue-body');
+            if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-600">IDLE</td></tr>'; return; }
+            let html = '';
+            data.forEach(job => {
+                html += `<tr class="hover:bg-[#111] border-b border-gray-800"><td class="p-4 text-white font-bold">${job.id}</td><td class="p-4 text-gray-400">${job.user}</td><td class="p-4 text-gray-500">${job.date}</td><td class="p-4 text-center font-bold">${job.progress}</td><td class="p-4 text-center text-blue-400">${job.status}</td></tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        async function fetchHistory() {
+            if(currentTab !== 'history') return;
+            const q = document.getElementById('hist-search').value;
+            const res = await fetch(`/admin/api/jobs/history?page=${histPage}&search=${q}`);
+            const json = await res.json();
+            const tbody = document.getElementById('history-body');
+            document.getElementById('hist-page-info').innerText = `PAGE ${json.current_page} OF ${json.total_pages||1}`;
+            let html = '';
+            if(json.data.length===0) html='<tr><td colspan="7" class="p-8 text-center text-gray-600">EMPTY</td></tr>';
+            else json.data.forEach(j => {
+                let btn = j.status==='REFUNDED' ? '<span class="text-red-500 text-[9px] font-bold">REFUNDED</span>' : `<button onclick="refundBatch('${j.id}')" class="text-red-500 hover:text-white border border-red-900/50 hover:bg-red-900/20 px-2 py-1 text-[9px] font-bold">REFUND</button>`;
+                html+=`<tr class="hover:bg-[#111] border-b border-gray-800"><td class="p-4 text-white">${j.id}</td><td class="p-4 text-gray-400 font-bold">${j.user}</td><td class="p-4 text-gray-500">${j.date}</td><td class="p-4 text-center">${j.progress}</td><td class="p-4 text-center text-green-500">$${j.value.toFixed(2)}</td><td class="p-4 text-center text-[9px]">${j.status}</td><td class="p-4 text-right">${btn}</td></tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        async function fetchTracking() {
+            if(currentTab !== 'tracking') return;
+            const q = document.getElementById('track-search').value;
+            const res = await fetch(`/admin/api/tracking/list?page=${trackPage}&search=${q}`);
+            const json = await res.json();
+            const tbody = document.getElementById('tracking-body');
+            let html = '';
+            if(json.data.length===0) html='<tr><td colspan="3" class="p-8 text-center text-gray-600">NO DATA FOUND</td></tr>';
+            else json.data.forEach(r => {
+                html+=`<tr class="hover:bg-[#111] border-b border-gray-800"><td class="p-4 text-white font-mono">${r.tracking}</td><td class="p-4 text-gray-400 font-bold">${r.user}</td><td class="p-4 text-right text-gray-500">${r.date}</td></tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        function exportCsv() {
+            const d = document.getElementById('export-days').value;
+            window.location.href = `/admin/api/tracking/export?days=${d}`;
+        }
+
+        async function refundBatch(bid) {
+            if(!confirm(`REFUND BATCH ${bid}? This cannot be undone.`)) return;
+            const reason = prompt("Enter Reason for Refund Log:");
+            if(!reason) return;
+            const res = await fetch('/admin/api/jobs/action', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({batch_id:bid, action:'refund', reason: reason})
+            });
+            if(res.ok) { alert("Refunded."); fetchHistory(); }
+        }
+
+        function changeHistPage(d) { histPage += d; if(histPage<1) histPage=1; fetchHistory(); }
+
+        async function toggleWorker() {
+            const action = isWorkerPaused ? 'resume' : 'pause';
+            await fetch('/admin/api/queue/control', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action})});
+            fetchSystemState();
+        }
+
+        let userSearchTimeout;
+        async function searchUsers() {
+            const q = document.getElementById('user-search').value;
+            const div = document.getElementById('user-results');
+            if(q.length<1) { div.classList.add('hidden'); return; }
+            clearTimeout(userSearchTimeout);
+            userSearchTimeout = setTimeout(async()=>{
+                const res = await fetch(`/admin/api/users/search?q=${q}`);
+                const users = await res.json();
+                let html=''; users.forEach(u=>{ html+=`<div onclick="loadUser('${u.id}','${u.username}','${u.balance}')" class="p-2 hover:bg-blue-900/30 cursor-pointer border-b border-gray-800 text-xs text-gray-300">${u.username}</div>`});
+                div.innerHTML=html; div.classList.remove('hidden');
+            },300);
+        }
+
+        async function loadUser(id, name, bal) {
+            selectedUserId = id;
+            document.getElementById('sel-username').innerText = name;
+            document.getElementById('sel-balance').innerText = '$'+parseFloat(bal).toFixed(2);
+            document.getElementById('user-results').classList.add('hidden');
+            document.getElementById('selected-user-panel').classList.remove('hidden');
+            document.getElementById('pricing-panel').classList.remove('hidden');
+            
+            const res = await fetch(`/admin/api/users/details/${id}`);
+            const d = await res.json();
+            document.getElementById('sel-ip').innerText = d.ip;
+            document.getElementById('price-priority').value = d.prices.priority;
+            document.getElementById('price-ground').value = d.prices.ground;
+            document.getElementById('price-express').value = d.prices.express;
+            
+            const badge = document.getElementById('sub-status-badge');
+            const rev = document.getElementById('btn-revoke-sub');
+            if(d.subscription.is_active) {
+                badge.innerText = "ACTIVE"; badge.className = "text-[9px] font-bold uppercase px-2 py-0.5 border border-green-500 text-green-500 bg-green-900/20";
+                rev.classList.remove('hidden'); document.getElementById('sub-end-date').innerText = d.subscription.end_date;
+            } else {
+                badge.innerText = "NO LICENSE"; badge.className = "text-[9px] font-bold uppercase px-2 py-0.5 border border-gray-600 text-gray-500";
+                rev.classList.add('hidden'); document.getElementById('sub-end-date').innerText = "";
+            }
+        }
+
+        async function userAction(act, extra={}) {
+            if(!selectedUserId) return;
+            let payload = {action:act, user_id:selectedUserId, ...extra};
+            
+            if(act === 'update_balance') {
+                const amtVal = parseFloat(document.getElementById('balance-adj-amount').value);
+                const reason = prompt("Reason for Balance Change:");
+                if(!reason) return;
+                payload.amount = amtVal * extra.amount;
+                payload.reason = reason;
+            }
+            if(act === 'update_price') {
+                payload.price = document.getElementById('price-'+extra.type).value;
+                payload.label_type = extra.type;
+            }
+            if(act === 'reset_pass') {
+                const newPass = prompt("Enter new password for this user:");
+                if(!newPass) return;
+                payload.new_password = newPass;
+            }
+            if(act === 'revoke_sub' && !confirm("Revoke license?")) return;
+
+            const res = await fetch('/admin/api/users/action', {
+                method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+            });
+            if(res.ok) { 
+                alert("Done."); 
+                if(act==='update_balance') {
+                    const r = await res.json();
+                    document.getElementById('sel-balance').innerText = '$' + parseFloat(r.new_balance || 0).toFixed(2);
+                    document.getElementById('balance-adj-amount').value = '';
+                }
+            }
+        }
+
+        setInterval(() => { fetchSystemState(); if(currentTab==='queue') fetchJobs(); }, 2000);
+        fetchSystemState(); fetchJobs();
+    </script>
+</body>
+</html>

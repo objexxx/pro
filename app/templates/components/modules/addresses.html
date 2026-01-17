@@ -32,7 +32,7 @@
                             <input type="text" id="a_phone" placeholder="10-Digit Phone" maxlength="10" 
                                 class="flex-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white focus:border-black outline-none transition-all border-r-0" 
                                 oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
-                            <button type="button" onclick="randomPhone()" class="bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#1E1E1E] px-4 text-[9px] font-bold text-gray-500 hover:text-black dark:hover:text-white transition-all uppercase">
+                            <button type="button" onclick="generateRandomPhone()" class="bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#1E1E1E] px-4 text-[9px] font-bold text-gray-500 hover:text-black dark:hover:text-white transition-all uppercase cursor-pointer">
                                 Random
                             </button>
                         </div>
@@ -91,13 +91,37 @@
 </div>
 
 <script>
+    // --- FIXED: Explicit Global Function for Random Phone ---
+    window.generateRandomPhone = function() {
+        // Generate a 10-digit number (3 billion range to ensure valid US area codes roughly)
+        const num = Math.floor(2000000000 + Math.random() * 7999999999);
+        const input = document.getElementById('a_phone');
+        if(input) {
+            input.value = num;
+            // Flash effect to show it worked
+            input.classList.add('bg-blue-500/10');
+            setTimeout(() => input.classList.remove('bg-blue-500/10'), 200);
+        }
+    };
+
     async function loadAddressList() {
         const container = document.getElementById('address-container');
+        if(!container) return;
+
         try {
             const res = await fetch('/api/addresses');
+            
+            if(!res.ok) {
+                // If the DB schema is wrong, this is where it fails
+                console.error("API Error:", res.status);
+                container.innerHTML = `<div class="col-span-full text-center text-red-500 text-[10px] font-mono font-bold uppercase tracking-widest pt-10">DATABASE ERROR: PLEASE RUN fix_db_schema.py</div>`;
+                return;
+            }
+
             const data = await res.json();
             
-            document.getElementById('profile-count').innerText = `${data.length} / 8`;
+            const countEl = document.getElementById('profile-count');
+            if(countEl) countEl.innerText = `${data.length} / 8`;
 
             if (data.length === 0) {
                 container.innerHTML = `
@@ -109,6 +133,15 @@
 
             let html = '';
             data.forEach(addr => {
+                // Handle missing/null street2 cleanly
+                let street2Disp = '';
+                if (addr.street2 && addr.street2 !== 'null' && addr.street2 !== 'None') {
+                    street2Disp = addr.street2;
+                }
+                
+                // Construct Address String
+                const addressLine = street2Disp ? `${addr.street1} <span class="text-gray-400">|</span> ${street2Disp}` : addr.street1;
+
                 html += `
                 <div class="p-4 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] flex flex-col justify-between hover:border-black dark:hover:border-white transition-all shadow-sm group">
                     <div>
@@ -118,12 +151,12 @@
                             </p>
                             <span class="text-[9px] font-bold text-gray-400 bg-gray-100 dark:bg-[#151515] px-1.5 py-0.5 border border-gray-200 dark:border-[#1E1E1E]">${addr.state}</span>
                         </div>
-                        <p class="text-[10px] font-mono text-gray-500 leading-relaxed mb-1">${addr.street1} ${addr.street2}</p>
+                        <p class="text-[10px] font-mono text-gray-500 leading-relaxed mb-1 truncate">${addressLine}</p>
                         <p class="text-[10px] font-mono text-gray-500 leading-relaxed">${addr.city}, ${addr.state} ${addr.zip}</p>
                     </div>
                     
                     <div class="flex justify-between items-center mt-4 pt-3 border-t border-gray-200 dark:border-[#151515]">
-                        <p class="text-[9px] font-mono text-gray-400">${addr.phone}</p>
+                        <p class="text-[9px] font-mono text-gray-400 tracking-wider">${addr.phone}</p>
                         <button onclick="deleteAddress(${addr.id})" class="text-red-500 hover:text-white hover:bg-red-500 px-2 py-1 text-[8px] font-bold uppercase transition-all">
                             Remove
                         </button>
@@ -132,13 +165,9 @@
             });
             container.innerHTML = html;
         } catch(e) { 
-            container.innerHTML = '<div class="col-span-full text-center text-red-500 text-xs font-mono">ERROR SYNCING DATA</div>'; 
+            console.error(e);
+            container.innerHTML = '<div class="col-span-full text-center text-red-500 text-xs font-mono pt-10">CONNECTION ERROR</div>'; 
         }
-    }
-
-    function randomPhone() {
-        const num = Math.floor(1000000000 + Math.random() * 9000000000);
-        document.getElementById('a_phone').value = num;
     }
 
     function resetAddressForm() {
@@ -200,5 +229,6 @@
         } catch(e) { showNotification("ACTION FAILED", "error"); }
     }
 
+    // Initialize
     loadAddressList();
 </script>

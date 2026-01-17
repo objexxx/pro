@@ -1,7 +1,7 @@
 ^XA
 
 // ──── Sender Information ───────────────────────────────
-^FO48,345^AJN,25,28^FB480,3,3,L,0
+^FO48,345^AJN,25,28^FB480,5,3,L,0
 ^FH^FD{SENDER_BLOCK}^FS
 
 // ──── Ship Date & Dimensions ───────────────────────────

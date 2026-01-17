@@ -77,7 +77,7 @@
         }
 
         function switchTab(tabName) {
-            ['view-purchase', 'view-automation', 'view-history', 'view-deposit', 'view-api', 'view-settings', 'view-stats', 'view-addresses'].forEach(id => { 
+            ['view-purchase', 'view-automation', 'view-history', 'view-deposit', 'view-settings', 'view-stats', 'view-addresses'].forEach(id => { 
                 const el = document.getElementById(id); if(el) el.classList.add('hidden-section'); 
             });
             const target = document.getElementById('view-' + tabName); 
@@ -86,10 +86,8 @@
             activeTab = tabName; 
             window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
 
-            // History Tab Logic
             if (tabName === 'history') { 
                 if(typeof window.loadFullHistory === 'function') {
-                    // Reset if needed, or just reload
                     window.loadFullHistory();
                 }
             }
@@ -119,7 +117,6 @@
         
         async function loadUserData() { try { const res = await fetch('/api/user'); const data = await res.json(); document.getElementById('wallet-balance').innerText = "$" + data.balance.toFixed(2); } catch(e) {} }
 
-        // --- RESTORED: PURCHASE FUNCTIONS ---
         function handleFileDisplay(input) {
             if (input.files && input.files[0]) {
                 const fSpan = document.getElementById('fileName');
@@ -180,13 +177,15 @@
 
         async function loadStats() { try { const res = await fetch('/api/stats'); const data = await res.json(); document.getElementById('stat-labels').innerText = data.total_labels; document.getElementById('stat-batches').innerText = data.total_batches; } catch(e) {} }
 
-        // --- SMART POLLER ---
         async function pollNotifications() {
             try {
-                let url = '/api/batches?page=1&sort=recent&limit=10'; // Default
+                let url = '/api/batches?page=1&sort=recent&limit=10'; 
                 
+                const searchInput = document.getElementById('historySearchInput');
+                const searchTerm = searchInput ? searchInput.value.trim() : '';
+
                 if (activeTab === 'history') {
-                    url = `/api/batches?page=${window.histCurrentPage || 1}&sort=recent&limit=10`;
+                    url = `/api/batches?page=${window.histCurrentPage || 1}&sort=recent&limit=10&search=${searchTerm}`;
                 } else if (activeTab === 'automation') {
                     url = `/api/batches?page=${window.autoCurrentPage || 1}&limit=10`;
                 }
@@ -198,12 +197,7 @@
                 
                 checkStatusChanges(notificationBatches);
                 
-                // Refresh views if necessary
-                const isHistoryTab = (activeTab === 'history');
-                const isPageOne = (typeof window.histCurrentPage !== 'undefined' ? window.histCurrentPage === 1 : true);
-                const searchInput = document.getElementById('historySearchInput');
-                const isSearching = (searchInput && searchInput.value.trim() !== '');
-                if (isHistoryTab && isPageOne && !isSearching) {
+                if (activeTab === 'history') {
                     allBatches = notificationBatches;
                     renderHistory();
                 }
@@ -265,7 +259,6 @@
                     btn.disabled = true;
                     btn.className = "px-4 py-2 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[10px] cursor-not-allowed border border-gray-200 dark:border-[#333]";
                 }
-                // --- ADDED QUEUED STATE ---
                 else if (batch.status === 'QUEUED') {
                     btn.innerText = `GENERATING...`;
                     btn.disabled = true;
@@ -310,7 +303,6 @@
             setTimeout(() => { notif.style.animation = 'fadeOut 0.5s forwards'; setTimeout(() => notif.remove(), 500); }, 4000);
         }
 
-        // --- GLOBAL OVERRIDE FOR DASHBOARD CALLS ---
         async function confirmOrder(batchId) {
             showNotification('JOB STARTED - MONITORING', 'processing');
             try {
@@ -331,7 +323,6 @@
             }
         }
 
-        // --- RENDER HISTORY (FIXED TARGET ID) ---
         function renderHistory() {
             const tableBody = document.getElementById('history-body-content'); 
             if (!tableBody) return; 
@@ -375,9 +366,10 @@
             <div id="view-purchase" class="h-full flex items-center justify-center"> {% include 'components/modules/purchase.html' %} </div>
             <div id="view-history" class="hidden-section w-full max-w-6xl mx-auto flex flex-col h-full"> {% include 'components/modules/history.html' %} </div>
             <div id="view-automation" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/automation.html' %} </div>
-            <div id="view-stats" class="hidden-section w-full max-w-4xl mx-auto pt-10"> {% include 'components/modules/stats.html' %} </div>
+            
+            <div id="view-stats" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/stats.html' %} </div>
+            
             <div id="view-deposit" class="hidden-section h-full flex flex-col items-center justify-start pt-10"> {% include 'components/modules/deposit.html' %} </div>
-            <div id="view-api" class="hidden-section h-full flex items-center justify-center"> {% include 'components/modules/api.html' %} </div>
             <div id="view-settings" class="hidden-section h-full flex items-center justify-center"> {% include 'components/modules/settings.html' %} </div>
             <div id="view-addresses" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/addresses.html' %} </div>
         </div>

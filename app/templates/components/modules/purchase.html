@@ -32,14 +32,14 @@
                         <div class="space-y-2">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Service Type</label>
                             <select name="label_type" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
-                                <option value="priority">USPS Priority V2</option>
+                                <option value="priority" {% if user.default_label_type == 'priority' %}selected{% endif %}>USPS Priority V2</option>
                             </select>
                         </div>
                         <div class="space-y-2">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Tracking Version</label>
                             <select name="tracking_version" onchange="updateProtocolBadge(this.value)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
-                                <option value="95055">95055 (Standard)</option>
-                                <option value="94888">94888 (Legacy)</option>
+                                <option value="95055" {% if user.default_version == '95055' %}selected{% endif %}>95055 (Standard)</option>
+                                <option value="94888" {% if user.default_version == '94888' %}selected{% endif %}>94888 (Legacy)</option>
                             </select>
                         </div>
                     </div>
@@ -47,9 +47,9 @@
                     <div class="space-y-2">
                         <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Label Template</label>
                         <select name="template_choice" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
-                            <option value="pitney_v2">Pitney Bowes [V2]</option>
-                            <option value="stamps_v2">Stamps.com [V2]</option>
-                            <option value="easypost_v2">EasyPost [V2]</option>
+                            <option value="pitney_v2" {% if user.default_template == 'pitney_v2' %}selected{% endif %}>Pitney Bowes [V2]</option>
+                            <option value="stamps_v2" {% if user.default_template == 'stamps_v2' %}selected{% endif %}>Stamps.com [V2]</option>
+                            <option value="easypost_v2" {% if user.default_template == 'easypost_v2' %}selected{% endif %}>EasyPost [V2]</option>
                         </select>
                     </div>
 
@@ -86,7 +86,6 @@
 </div>
 
 <script>
-    // UPDATED: Logic to change "Allocating Token" text and badge color
     function updateAllocationStatus(status) {
         const el = document.getElementById('allocation-status');
         el.innerText = status;
@@ -99,7 +98,6 @@
         }
     }
 
-    // UPDATED: Dynamic Protocol IDs
     function updateProtocolBadge(version) {
         const badge = document.getElementById('protocol-badge');
         if (version === '94888') {
@@ -113,7 +111,12 @@
         }
     }
 
-    // Wrappers to keep existing functionality while updating UI
+    // Call on load to set initial badge state based on saved default
+    document.addEventListener("DOMContentLoaded", function() {
+        const savedVersion = document.querySelector('select[name="tracking_version"]').value;
+        updateProtocolBadge(savedVersion);
+    });
+
     function triggerVerification() {
         updateAllocationStatus('ALLOCATED');
         if (typeof verifyData === 'function') verifyData();
