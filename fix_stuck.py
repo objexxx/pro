@@ -1,4 +1,3 @@
-
 import sqlite3
 import os
 
@@ -26,12 +25,12 @@ def reset_stuck_batches():
         for batch in stuck_batches:
             print(f"   - {batch[1]} (ID: {batch[0]})")
 
-        # 2. Reset them to FAILED
+        # 2. Reset them to FAILED so the worker clears them
         c.execute("UPDATE batches SET status = 'FAILED' WHERE status = 'PROCESSING'")
         conn.commit()
         
         print(f"\n✅ Successfully reset {len(stuck_batches)} batches to 'FAILED'.")
-        print("👉 Refresh your dashboard now.")
+        print("👉 The queue is now unblocked.")
         
     except Exception as e:
         print(f"❌ Database Error: {e}")
@@ -39,5 +38,4 @@ def reset_stuck_batches():
         if conn: conn.close()
 
 if __name__ == "__main__":
-
     reset_stuck_batches()

@@ -398,7 +398,7 @@ def automation_format():
 
 @main_bp.route('/api/automation/confirm', methods=['POST'])
 @login_required
-@limiter.limit("50 per minute")
+@limiter.limit("60 per minute")
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
     batch_id = request.json.get('batch_id')

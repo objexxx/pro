@@ -26,7 +26,6 @@ def check_auto_renewals(app):
             db_path = current_app.config['DB_PATH']
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
-            # USE UTC
             now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             c.execute("SELECT id, balance FROM users WHERE auto_renew = 1 AND subscription_end < ?", (now,))
             expired = c.fetchall()
@@ -42,13 +41,11 @@ def check_auto_renewals(app):
 def cleanup_old_data(app):
     try:
         with app.app_context():
-            # 30-Day Retention Policy
             cutoff = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
             db_path = current_app.config['DB_PATH']
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
             
-            # 1. Clean Files
             c.execute("SELECT batch_id, filename FROM batches WHERE created_at < ?", (cutoff,))
             rows = c.fetchall()
             if rows:
@@ -58,10 +55,8 @@ def cleanup_old_data(app):
                         os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname))
                     except: pass
             
-            # 2. Clean Database
             c.execute("DELETE FROM batches WHERE created_at < ?", (cutoff,))
             c.execute("DELETE FROM history WHERE created_at < ?", (cutoff,))
-            # Privacy: Delete old IP logs
             c.execute("DELETE FROM login_history WHERE created_at < ?", (cutoff,))
             
             conn.commit()
@@ -69,31 +64,22 @@ def cleanup_old_data(app):
     except: pass
 
 def select_weighted_batch(cursor):
-    """
-    Weighted Round-Robin Selection:
-    Prioritizes small batches to keep the queue moving, but ensures everyone gets a turn.
-    """
     cursor.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED'")
     all_queued = cursor.fetchall()
     
-    if not all_queued:
-        return None
+    if not all_queued: return None
 
-    # Step 1: Group by User
     user_queues = {}
     for row in all_queued:
         uid = row[1]
-        if uid not in user_queues:
-            user_queues[uid] = []
+        if uid not in user_queues: user_queues[uid] = []
         user_queues[uid].append(row)
 
-    # Step 2: Pick Oldest Batch per User
     candidates = []
     for uid in user_queues:
         user_queues[uid].sort(key=lambda x: x[7])
         candidates.append(user_queues[uid][0])
 
-    # Step 3: Weighted Selection
     weights = []
     for batch in candidates:
         count = batch[3]
@@ -103,14 +89,23 @@ def select_weighted_batch(cursor):
         else: w = 5
         weights.append(w)
 
-    winner = random.choices(candidates, weights=weights, k=1)[0]
-    return winner
+    return random.choices(candidates, weights=weights, k=1)[0]
 
 def process_queue(app):
     print(">> WORKER: Started (Weighted Round-Robin Mode).")
-    # Lazy import to prevent circular dependency
     from .services.label_engine import LabelEngine
     
+    # --- AUTO-FIX STUCK JOBS ON STARTUP ---
+    with app.app_context():
+        try:
+            db_path = current_app.config['DB_PATH']
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            c.execute("UPDATE batches SET status = 'FAILED' WHERE status = 'PROCESSING'")
+            if c.rowcount > 0: print(f">> WORKER: Reset {c.rowcount} stuck batches to FAILED.")
+            conn.commit(); conn.close()
+        except: pass
+
     last_cleanup = time.time()
     
     while True:
@@ -120,31 +115,25 @@ def process_queue(app):
                 conn = sqlite3.connect(db_path, timeout=30)
                 c = conn.cursor()
 
-                # --- ADMIN HEARTBEAT ---
                 now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
                 c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (now_str,))
                 conn.commit()
 
-                # --- ADMIN PAUSE CHECK ---
                 c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
                 paused_row = c.fetchone()
                 if paused_row and paused_row[0] == '1':
-                    conn.close()
-                    time.sleep(2)
-                    continue
+                    conn.close(); time.sleep(2); continue
 
-                # --- CLEANUP TASK ---
                 if time.time() - last_cleanup > 3600:
                     check_auto_renewals(app)
                     cleanup_old_data(app)
                     last_cleanup = time.time()
 
-                # --- CONCURRENCY LOCK ---
+                # Lock check
                 c.execute("SELECT count(*) FROM batches WHERE status = 'PROCESSING'")
                 if c.fetchone()[0] > 0:
                     conn.close(); time.sleep(2); continue
 
-                # --- JOB SELECTION ---
                 task = select_weighted_batch(c)
 
                 if task:
@@ -163,7 +152,6 @@ def process_queue(app):
                         df = pd.read_csv(csv_path)
                         engine = LabelEngine()
                         
-                        # Process
                         pdf_bytes, success = engine.process_batch(df, ltype, version, bid, db_path, uid, template)
 
                         if success > 0 and pdf_bytes:
@@ -174,7 +162,6 @@ def process_queue(app):
                         if success == 0: status = 'FAILED'
                         elif success < count: status = 'PARTIAL'
 
-                        # Auto-Refund for Failed Labels
                         failed = count - success
                         if failed > 0:
                             refund = failed * price
@@ -186,7 +173,6 @@ def process_queue(app):
 
                     except Exception as e:
                         print(f">> CRASH ON BATCH {bid}: {e}")
-                        # Full Refund on Crash
                         refund = count * price
                         c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
                         c.execute("UPDATE batches SET status = 'FAILED', success_count = 0 WHERE batch_id = ?", (bid,))

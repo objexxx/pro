@@ -46,7 +46,6 @@
         let allBatches = []; 
         let activeTab = "{{ active_tab|default('purchase') }}";
         let batchStatusMemory = {}; 
-        let batchProgressMemory = {}; 
         let isFirstLoad = true; 
         window.confirmedSessionIds = window.confirmedSessionIds || [];
         
@@ -54,11 +53,6 @@
         window.histCurrentPage = 1;
         window.autoCurrentPage = 1;
 
-        let currentPage = 1;
-        let currentSort = 'recent';
-        let currentSearch = '';
-        let searchTimeout = null;
-        
         if (localStorage.getItem('theme') === 'light') { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light'); } 
         else { document.documentElement.classList.add('dark'); document.documentElement.classList.remove('light'); }
 
@@ -87,9 +81,7 @@
             window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
 
             if (tabName === 'history') { 
-                if(typeof window.loadFullHistory === 'function') {
-                    window.loadFullHistory();
-                }
+                if(typeof window.loadFullHistory === 'function') window.loadFullHistory();
             }
             if (tabName === 'stats') loadStats();
             if (tabName === 'addresses' && typeof loadAddressList === 'function') loadAddressList();
@@ -179,92 +171,9 @@
 
         async function pollNotifications() {
             try {
-                let url = '/api/batches?page=1&sort=recent&limit=10'; 
-                
-                const searchInput = document.getElementById('historySearchInput');
-                const searchTerm = searchInput ? searchInput.value.trim() : '';
-
-                if (activeTab === 'history') {
-                    url = `/api/batches?page=${window.histCurrentPage || 1}&sort=recent&limit=10&search=${searchTerm}`;
-                } else if (activeTab === 'automation') {
-                    url = `/api/batches?page=${window.autoCurrentPage || 1}&limit=10`;
-                }
-
-                const res = await fetch(url);
-                if (!res.ok) return;
-                const json = await res.json();
-                const notificationBatches = json.data || [];
-                
-                checkStatusChanges(notificationBatches);
-                
-                if (activeTab === 'history') {
-                    allBatches = notificationBatches;
-                    renderHistory();
-                }
+                if (activeTab === 'history') window.loadFullHistory();
+                else if (activeTab === 'automation') window.loadAutomationHistory();
             } catch(e) {}
-        }
-
-        function checkStatusChanges(currentBatches) {
-            if (isFirstLoad) {
-                currentBatches.forEach(b => {
-                    batchStatusMemory[b.batch_id] = b.status;
-                    batchProgressMemory[b.batch_id] = b.success_count;
-                });
-                isFirstLoad = false;
-                currentBatches.forEach(b => updateAutomationButtonUI(b));
-                return;
-            }
-
-            currentBatches.forEach(batch => {
-                const id = batch.batch_id;
-                const name = batch.batch_name;
-                const newStatus = batch.status;
-                const oldStatus = batchStatusMemory[id];
-                const newCount = batch.success_count;
-                const total = batch.count;
-
-                if (newStatus === 'COMPLETED' && oldStatus !== 'COMPLETED') {
-                     showNotification(`<span class="text-gray-400 text-[10px]">BATCH COMPLETE</span><br>${name}<br><span class="text-green-500 text-sm">READY: ${newCount} / ${total}</span>`, 'success');
-                }
-                else if (newStatus === 'CONFIRMED' && oldStatus !== 'CONFIRMED') {
-                     showNotification(`BATCH CONFIRMED<br><span class="text-green-500 text-sm">UPLOADED: ${newCount} / ${total}</span>`, 'success');
-                }
-                else if (newStatus === 'PROCESSING' && oldStatus !== 'PROCESSING') {
-                    showNotification(`${name}<br>STARTED PROCESSING`, 'processing');
-                }
-                else if (newStatus === 'FAILED' && oldStatus !== 'FAILED') {
-                    showNotification(`BATCH FAILED (0 SUCCESS)<br><span class="text-[9px] text-red-300 uppercase tracking-wider">Suggestion: Update Cookies/CSRF</span>`, 'error');
-                }
-
-                updateAutomationButtonUI(batch);
-
-                batchStatusMemory[id] = newStatus;
-                batchProgressMemory[id] = newCount;
-            });
-        }
-
-        function updateAutomationButtonUI(batch) {
-            const btn = document.getElementById(`btn-confirm-${batch.batch_id}`);
-            if (btn) {
-                if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
-                    btn.innerText = "CONFIRM BATCH"; 
-                    btn.disabled = false;
-                    btn.className = "w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-glow flex items-center justify-center ml-auto";
-                    if(typeof confirmOrder === 'function') {
-                        btn.onclick = function() { confirmOrder(batch.batch_id); };
-                    }
-                } 
-                else if (batch.status === 'PROCESSING') {
-                    btn.innerText = `CONFIRMING (${batch.success_count}/${batch.count})...`;
-                    btn.disabled = true;
-                    btn.className = "px-4 py-2 bg-gray-100 dark:bg-[#111] text-gray-500 font-bold uppercase text-[10px] cursor-not-allowed border border-gray-200 dark:border-[#333]";
-                }
-                else if (batch.status === 'QUEUED') {
-                    btn.innerText = `GENERATING...`;
-                    btn.disabled = true;
-                    btn.className = "w-[120px] py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono flex items-center justify-center ml-auto";
-                }
-            }
         }
 
         function showNotification(message, type = 'success') {
@@ -303,56 +212,6 @@
             setTimeout(() => { notif.style.animation = 'fadeOut 0.5s forwards'; setTimeout(() => notif.remove(), 500); }, 4000);
         }
 
-        async function confirmOrder(batchId) {
-            showNotification('JOB STARTED - MONITORING', 'processing');
-            try {
-                const res = await fetch('/api/automation/confirm', { 
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify({ batch_id: batchId }) 
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); }
-                    batchStatusMemory[batchId] = 'PROCESSING';
-                } else {
-                    showNotification(data.error, 'error');
-                }
-            } catch(e) {
-                showNotification('FAILED TO START', 'error');
-            }
-        }
-
-        function renderHistory() {
-            const tableBody = document.getElementById('history-body-content'); 
-            if (!tableBody) return; 
-            if (allBatches.length === 0) { tableBody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-xs text-gray-600 font-mono py-8">> SYSTEM_LOG: NO_DATA_FOUND</td></tr>'; return; }
-            let html = '';
-            allBatches.forEach(b => {
-                let labelClass = ''; let statusBadge = ''; let countText = `${b.success_count} / ${b.count}`; let isProcessing = false;
-                if (b.status === 'PROCESSING') { isProcessing = true; labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse'; statusBadge = 'PROCESSING...'; }
-                else if (b.status === 'QUEUED') { isProcessing = true; labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5'; statusBadge = 'QUEUED'; }
-                else if (b.status === 'COMPLETED' || b.status === 'CONFIRMED') { labelClass = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5'; statusBadge = 'COMPLETED'; }
-                else if (b.status === 'PARTIAL') { labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/20 bg-yellow-500/5'; statusBadge = 'PARTIAL'; }
-                else { labelClass = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5'; statusBadge = 'FAILED'; }
-
-                let pdfButton = ''; let csvButton = '';
-                if (isProcessing) {
-                    pdfButton = `<span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none"><svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> WAIT</span>`;
-                    csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
-                } else if (b.success_count > 0) {
-                    pdfButton = `<a href="/api/download/pdf/${b.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
-                    csvButton = `<a href="/api/download/csv/${b.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
-                } else {
-                    pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
-                    csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
-                }
-
-                html += `<tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors group"><td class="px-8 py-5"><p class="text-black dark:text-white font-bold uppercase tracking-wide text-[10px]">${b.batch_name}</p><p class="text-[8px] text-gray-400 font-mono mt-0.5 uppercase">ID: ${b.batch_id}</p></td><td class="px-8 py-5 text-center text-gray-500 font-mono text-[9px]">${b.date}</td><td class="px-8 py-5 text-center"><span class="px-2.5 py-1 border rounded-sm font-bold ${labelClass}">${countText}</span></td><td class="px-8 py-5 text-center text-gray-400 font-mono text-[9px] uppercase tracking-tighter">Priority V2</td><td class="px-8 py-5 text-center"><span class="font-black uppercase tracking-widest text-[9px] ${labelClass.split(' ')[0]}">${statusBadge}</span></td><td class="px-8 py-5 text-right font-mono"><div class="flex justify-end items-center gap-3">${pdfButton}<span class="text-gray-300 text-[9px] leading-none select-none">|</span>${csvButton}</div></td></tr>`;
-            });
-            tableBody.innerHTML = html;
-        }
-
         setInterval(() => { loadUserData(); pollNotifications(); }, 3000);
         window.onload = function() { loadUserData(); switchTab(activeTab); const csvIn = document.getElementById('csvUpload'); if(csvIn) { csvIn.addEventListener('change', function() { handleFileDisplay(this); }); } };
     </script>
@@ -364,11 +223,143 @@
         {% include 'components/topbar.html' %}
         <div class="flex-1 overflow-y-auto p-8">
             <div id="view-purchase" class="h-full flex items-center justify-center"> {% include 'components/modules/purchase.html' %} </div>
-            <div id="view-history" class="hidden-section w-full max-w-6xl mx-auto flex flex-col h-full"> {% include 'components/modules/history.html' %} </div>
+            
+            <div id="view-history" class="hidden-section w-full max-w-6xl mx-auto flex flex-col h-full"> 
+                {% include 'components/modules/history.html' %} 
+                <script>
+                    window.histCurrentPage = 1;
+                    window.histSearchTimeout = null;
+
+                    const searchInp = document.getElementById('historySearchInput');
+                    if(searchInp) {
+                        searchInp.addEventListener('input', function() {
+                            clearTimeout(window.histSearchTimeout);
+                            window.histSearchTimeout = setTimeout(() => { window.histCurrentPage = 1; window.loadFullHistory(); }, 500);
+                        });
+                    }
+
+                    window.changeHistoryPage = function(delta) {
+                        window.histCurrentPage += delta;
+                        window.loadFullHistory();
+                    }
+
+                    window.loadFullHistory = async function() {
+                        const targetBody = document.getElementById('history-body-content');
+                        if(!targetBody) return;
+
+                        const sVal = document.getElementById('historySearchInput') ? document.getElementById('historySearchInput').value : '';
+
+                        try {
+                            const response = await fetch(`/api/batches?page=${window.histCurrentPage}&limit=10&search=${sVal}`);
+                            const result = await response.json();
+                            
+                            let rowHtml = '';
+
+                            if (result.data && result.data.length > 0) {
+                                result.data.forEach(batch => {
+                                    let badgeTxt = '';
+                                    let colorStyles = '';
+                                    let isProcessing = false;
+                                    let isRefunded = false;
+
+                                    // --- UPDATED STATUS LOGIC TO HANDLE REFUNDED ---
+                                    if (batch.status === 'REFUNDED') {
+                                        isRefunded = true;
+                                        colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
+                                        badgeTxt = 'REFUNDED';
+                                    }
+                                    else if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
+                                        colorStyles = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
+                                        badgeTxt = 'COMPLETED';
+                                    } 
+                                    else if (batch.status === 'PARTIAL') {
+                                        colorStyles = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/20 bg-yellow-500/5';
+                                        badgeTxt = 'PARTIAL';
+                                    } 
+                                    else if (batch.status === 'PROCESSING') {
+                                        isProcessing = true;
+                                        colorStyles = 'text-blue-600 dark:text-blue-400 border-blue-500/20 bg-blue-500/5 animate-pulse';
+                                        badgeTxt = 'PROCESSING...';
+                                    }
+                                    else if (batch.status === 'QUEUED') {
+                                        isProcessing = true;
+                                        colorStyles = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
+                                        badgeTxt = 'QUEUED';
+                                    }
+                                    else {
+                                        colorStyles = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
+                                        badgeTxt = 'FAILED';
+                                    }
+
+                                    // --- UPDATED BUTTON LOGIC TO REVOKE ACCESS ---
+                                    let pdfButton = '';
+                                    let csvButton = '';
+
+                                    if (isRefunded) {
+                                        // Show REVOKED instead of links
+                                        pdfButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
+                                        csvButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
+                                    }
+                                    else if (isProcessing) {
+                                        pdfButton = `<span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none"><svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> WAIT</span>`;
+                                        csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
+                                    } 
+                                    else if (batch.success_count > 0) {
+                                        pdfButton = `<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
+                                        csvButton = `<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
+                                    } 
+                                    else {
+                                        pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
+                                        csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
+                                    }
+
+                                    rowHtml += `
+                                    <tr class="hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors group">
+                                        <td class="px-8 py-5">
+                                            <p class="text-black dark:text-white font-bold uppercase tracking-wide text-[10px]">${batch.batch_name}</p>
+                                            <p class="text-[8px] text-gray-400 font-mono mt-0.5 uppercase">ID: ${batch.batch_id}</p>
+                                        </td>
+                                        <td class="px-8 py-5 text-center text-gray-500 font-mono text-[9px]">${batch.date}</td>
+                                        <td class="px-8 py-5 text-center">
+                                            <span class="px-2.5 py-1 border rounded-sm font-bold ${colorStyles}">${batch.success_count} / ${batch.count}</span>
+                                        </td>
+                                        <td class="px-8 py-5 text-center text-gray-400 font-mono text-[9px] uppercase tracking-tighter">Priority V2</td>
+                                        <td class="px-8 py-5 text-center">
+                                            <span class="font-black uppercase tracking-widest text-[9px] ${colorStyles.split(' ')[0]}">${badgeTxt}</span>
+                                        </td>
+                                        <td class="px-8 py-5 text-right font-mono">
+                                            <div class="flex justify-end items-center gap-3">
+                                                ${pdfButton}
+                                                <span class="text-gray-300 text-[9px] leading-none select-none">|</span>
+                                                ${csvButton}
+                                            </div>
+                                        </td>
+                                    </tr>`;
+                                });
+                            } else {
+                                rowHtml = '<tr><td colspan="6" class="p-16 text-center text-gray-400 font-mono text-[10px] tracking-[0.3em] uppercase">No Transaction Data Found</td></tr>';
+                            }
+
+                            targetBody.innerHTML = rowHtml;
+                            
+                            const pInfo = document.getElementById('history_page_label');
+                            if (pInfo) pInfo.innerText = `Secure_Page ${result.pagination.current_page} of ${result.pagination.total_pages || 1}`;
+                            
+                            const pBtn = document.getElementById('btnPrevHistory');
+                            const nBtn = document.getElementById('btnNextHistory');
+                            if (pBtn) pBtn.disabled = result.pagination.current_page <= 1;
+                            if (nBtn) nBtn.disabled = result.pagination.current_page >= result.pagination.total_pages;
+
+                        } catch(err) {
+                            console.error("Critical Load Error:", err);
+                            targetBody.innerHTML = '<tr><td colspan="6" class="p-16 text-center text-red-500 font-mono text-[10px] uppercase">Data Sync Failure</td></tr>';
+                        }
+                    }
+                </script>
+            </div>
+            
             <div id="view-automation" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/automation.html' %} </div>
-            
             <div id="view-stats" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/stats.html' %} </div>
-            
             <div id="view-deposit" class="hidden-section h-full flex flex-col items-center justify-start pt-10"> {% include 'components/modules/deposit.html' %} </div>
             <div id="view-settings" class="hidden-section h-full flex items-center justify-center"> {% include 'components/modules/settings.html' %} </div>
             <div id="view-addresses" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/addresses.html' %} </div>
