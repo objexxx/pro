@@ -102,16 +102,6 @@ def init_db(db_path):
     for k, v in default_configs:
         c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES (?, ?)", (k, v))
 
-    # Create Admin Account if missing
-    c.execute("SELECT * FROM users WHERE username = 'admin'")
-    if not c.fetchone():
-        hashed = generate_password_hash('admin')
-        admin_key = "sk_live_" + str(uuid.uuid4()).replace('-','')[:24]
-        c.execute("INSERT INTO users (username, email, password_hash, balance, is_admin, api_key, created_at, default_label_type, default_version, default_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  ('admin', 'admin@labellab.io', hashed, 100000.0, 1, admin_key, datetime.now().strftime("%Y-%m-%d"), 'priority', '95055', 'pitney_v2'))
-    conn.commit()
-    conn.close()
-
 @login_manager.user_loader
 def load_user(user_id):
     from .models import User

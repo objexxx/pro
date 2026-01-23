@@ -11,10 +11,16 @@ from pypdf import PdfWriter
 from flask import current_app
 import pandas as pd
 
+def log_debug(message):
+    try:
+        with open("debug_system.txt", "a") as f:
+            f.write(f"[{datetime.now()}] [ENGINE] {message}\n")
+    except: pass
+
 class LabelEngine:
     def __init__(self):
         self.mode = "production"
-        self.debug_mode = False 
+        self.debug_mode = True 
 
     def sanitize_zpl(self, text):
         if not text: return ""
@@ -134,13 +140,6 @@ class LabelEngine:
         ver_str = str(version).strip()
         batch_seq_code = None if "94888" in ver_str else now.strftime('%j')
 
-        debug_filename = f"zpl_debug_{batch_id}.txt"
-        debug_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', debug_filename)
-        
-        if self.debug_mode:
-            with open(debug_path, 'w', encoding='utf-8') as dbg:
-                dbg.write(f"DEBUG LOG FOR BATCH {batch_id}\nDate: {now}\n" + "="*50 + "\n\n")
-
         try:
             conn = sqlite3.connect(db_path, timeout=10); c = conn.cursor()
             try: c.execute("ALTER TABLE history ADD COLUMN ref02 TEXT"); conn.commit()
@@ -161,7 +160,11 @@ class LabelEngine:
             from_n = safe_get('FromName'); from_c = safe_get('CompanyFrom'); from_s = safe_get('Street1From')
             from_ci= safe_get('CityFrom'); from_st= safe_get('StateFrom'); from_z = safe_get('PostalCodeFrom')
             to_n = safe_get('ToName'); to_c = safe_get('Company2'); to_s = safe_get('Street1To')
-            to_ci= safe_get('CityTo'); to_st= safe_get('StateTo'); to_z = safe_get('ZipTo')
+            to_ci= safe_get('CityTo'); to_st= safe_get('StateTo'); 
+            
+            # --- STRICT ZIP COPY (FROM WORKER TEXT) ---
+            raw_to_z = safe_get('ZipTo')
+            zip_5 = raw_to_z[:5] 
             
             try:
                 raw_w = safe_get('Weight', '1')
@@ -179,7 +182,6 @@ class LabelEngine:
                     
                     if "Weight lbs 0 ozs" in lbl: lbl = lbl.replace("Weight lbs 0 ozs", "{WEIGHT}")
                     
-                    zip_5 = to_z[:5] 
                     zone = self.calculate_zone(from_st, to_st)
                     days = self.calculate_transit_days(zone)
                     exp_date = (now + timedelta(days=days)).strftime("%m/%d/%Y")
@@ -202,7 +204,6 @@ class LabelEngine:
                     lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5).replace("{WEIGHT}", w_disp) 
                     lbl = lbl.replace("{ACCOUNT_ID}", acc).replace("{SEC_REF}", sec).replace("{JULIAN_SEQ}", batch_seq_code if batch_seq_code else "000")
 
-                    # --- UPDATED BARCODE LOGIC FOR DATA MATRIX AND GS1-128 ---
                     dm_data = f"_1420{zip_5}_1{trk}"
                     gs1_data = f">;>8420{zip_5}>8{trk}"
                     
@@ -216,6 +217,7 @@ class LabelEngine:
                     lbl = lbl.replace("{C_NUMBER}", acc).replace("{RANDOM_0901}", self.generate_0901_number())
                     lbl = lbl.replace("{SHIP_DATE_YMD_NODASH}", now.strftime("%Y%m%d"))
                     
+                    stamps_pdf_data = ""
                     if "stamps_v2" in template_choice:
                         stamps_ref1, stamps_ref2 = self.generate_stamps_refs()
                         lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1).replace("{STAMPS_REF_2}", stamps_ref2)
@@ -228,10 +230,6 @@ class LabelEngine:
                     else:
                         pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
                         lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
-
-                    if self.debug_mode:
-                        with open(debug_path, 'a', encoding='utf-8') as dbg:
-                            dbg.write(f"\n--- LABEL {idx + 1} ---\nTRACKING: {trk}\nPDF_DATA: {stamps_pdf_data if 'stamps' in template_choice else pdf_data}\n")
 
                     label_size = "4.5x6.7" if "stamps" in template_choice.lower() else "4x6"
 
@@ -249,8 +247,12 @@ class LabelEngine:
                                       (batch_id, user_id, sku, trk, "COMPLETED", from_n, to_n, f"{to_s} {to_ci} {to_st} {to_z}", version, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), order_id))
                             conn.commit(); conn.close()
                         except: pass
-                    else: attempts += 1
-                except: attempts += 1
+                    else:
+                        log_debug(f"Labelary Error Row {idx}: {res.status_code} - {res.text}")
+                        attempts += 1
+                except Exception as e:
+                    log_debug(f"Row {idx} Exception: {e}")
+                    attempts += 1
 
             if not label_generated:
                 try:

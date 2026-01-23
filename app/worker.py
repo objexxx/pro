@@ -7,6 +7,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 from flask import current_app
 
+def log_debug(message):
+    try:
+        with open("debug_system.txt", "a") as f:
+            f.write(f"[{datetime.now()}] [WORKER] {message}\n")
+    except: pass
+
 def get_worker_price(db_path, user_id, label_type, version):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -92,17 +98,16 @@ def select_weighted_batch(cursor):
     return random.choices(candidates, weights=weights, k=1)[0]
 
 def process_queue(app):
-    print(">> WORKER: Started (Weighted Round-Robin Mode).")
+    log_debug("Worker Started (Weighted Round-Robin Mode).")
     from .services.label_engine import LabelEngine
     
-    # --- AUTO-FIX STUCK JOBS ON STARTUP ---
     with app.app_context():
         try:
             db_path = current_app.config['DB_PATH']
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
             c.execute("UPDATE batches SET status = 'FAILED' WHERE status = 'PROCESSING'")
-            if c.rowcount > 0: print(f">> WORKER: Reset {c.rowcount} stuck batches to FAILED.")
+            if c.rowcount > 0: log_debug(f"Reset {c.rowcount} stuck batches to FAILED.")
             conn.commit(); conn.close()
         except: pass
 
@@ -129,7 +134,6 @@ def process_queue(app):
                     cleanup_old_data(app)
                     last_cleanup = time.time()
 
-                # Lock check
                 c.execute("SELECT count(*) FROM batches WHERE status = 'PROCESSING'")
                 if c.fetchone()[0] > 0:
                     conn.close(); time.sleep(2); continue
@@ -138,7 +142,7 @@ def process_queue(app):
 
                 if task:
                     bid, uid, fname, count, template, version, ltype, created_at = task
-                    print(f">> PROCESSING BATCH {bid} (User: {uid}, Count: {count})...")
+                    log_debug(f"Processing Batch {bid} (User: {uid})...")
                     
                     c.execute("UPDATE batches SET status = 'PROCESSING' WHERE batch_id = ?", (bid,))
                     conn.commit()
@@ -149,9 +153,12 @@ def process_queue(app):
                         csv_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname)
                         if not os.path.exists(csv_path): raise Exception("File Missing")
 
-                        df = pd.read_csv(csv_path)
-                        engine = LabelEngine()
+                        # CRITICAL: LOG DATAFRAME HEAD TO SEE ZEROS
+                        df = pd.read_csv(csv_path, dtype=str)
+                        if 'ZipTo' in df.columns:
+                            log_debug(f"Batch {bid} Zip Data (Top 3): {df['ZipTo'].head().tolist()}")
                         
+                        engine = LabelEngine()
                         pdf_bytes, success = engine.process_batch(df, ltype, version, bid, db_path, uid, template)
 
                         if success > 0 and pdf_bytes:
@@ -166,13 +173,14 @@ def process_queue(app):
                         if failed > 0:
                             refund = failed * price
                             c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
-                            print(f">> REFUNDED ${refund} for {failed} failed items.")
+                            log_debug(f"Refunded ${refund} for {failed} failed items.")
 
                         c.execute("UPDATE batches SET status = ?, success_count = ? WHERE batch_id = ?", (status, success, bid))
                         conn.commit()
+                        log_debug(f"Batch {bid} Completed. Success: {success}/{count}")
 
                     except Exception as e:
-                        print(f">> CRASH ON BATCH {bid}: {e}")
+                        log_debug(f"CRASH ON BATCH {bid}: {e}")
                         refund = count * price
                         c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
                         c.execute("UPDATE batches SET status = 'FAILED', success_count = 0 WHERE batch_id = ?", (bid,))

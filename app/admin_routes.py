@@ -10,9 +10,9 @@ from functools import wraps
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash
 
-admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
+# --- 🔒 SECURE URL PREFIX ---
+admin_bp = Blueprint('admin', __name__, url_prefix='/x7k9-p2m4-z8q1')
 
-# --- SECURITY DECORATOR ---
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -21,60 +21,36 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# --- DB HELPER ---
 def get_db():
     return sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
 
-# --- DASHBOARD VIEW ---
 @admin_bp.route('/dashboard')
 @login_required
 @admin_required
 def dashboard():
     return render_template('admin_dashboard.html', user=current_user)
 
-# --- SYSTEM HEALTH ---
 @admin_bp.route('/api/system/health')
 @login_required
 @admin_required
 def system_health():
     conn = get_db(); c = conn.cursor()
-    
-    # Worker Status
     c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
     row = c.fetchone(); is_paused = row and row[0] == '1'
-    
-    # Heartbeat
     c.execute("SELECT value FROM system_config WHERE key='worker_last_heartbeat'")
-    hb = c.fetchone(); last = hb[0] if hb else "UNKNOWN"
-    
-    # Queue Depth (Label Gen) - Fix: Count PROCESSING too
+    hb = c.fetchone(); last = hb[0] if hb else ""
     c.execute("SELECT COUNT(*) FROM batches WHERE status IN ('QUEUED', 'PROCESSING')")
     q = c.fetchone()[0]
-
-    # Active Confirmations
     c.execute("SELECT COUNT(*) FROM batches WHERE status='CONFIRMING'")
     c_active = c.fetchone()[0]
-    
-    # Errors (24h)
     c.execute("SELECT COUNT(*) FROM batches WHERE status='FAILED' AND created_at > datetime('now', '-1 day')")
     err = c.fetchone()[0]
-    
-    # Revenue
     c.execute("SELECT SUM(b.success_count * u.price_per_label) FROM batches b JOIN users u ON b.user_id=u.id WHERE b.status IN ('COMPLETED','PARTIAL')")
     rev_life = c.fetchone()[0] or 0.0
     c.execute("SELECT SUM(b.success_count * u.price_per_label) FROM batches b JOIN users u ON b.user_id=u.id WHERE b.status IN ('COMPLETED','PARTIAL') AND b.created_at > datetime('now', '-30 days')")
     rev_30 = c.fetchone()[0] or 0.0
-
     conn.close()
-    return jsonify({
-        "worker_status": "PAUSED" if is_paused else "ONLINE", 
-        "queue_depth": q, 
-        "active_confirmations": c_active,
-        "errors_24h": err, 
-        "last_heartbeat": last, 
-        "revenue_lifetime": rev_life, 
-        "revenue_30d": rev_30
-    })
+    return jsonify({"worker_status": "PAUSED" if is_paused else "ONLINE", "queue_depth": q, "active_confirmations": c_active, "errors_24h": err, "last_heartbeat": last, "revenue_lifetime": rev_life, "revenue_30d": rev_30})
 
 @admin_bp.route('/api/queue/control', methods=['POST'])
 @login_required
@@ -86,73 +62,44 @@ def queue_control():
     conn.commit(); conn.close()
     return jsonify({"status": "success"})
 
-# --- TAB 1: LIVE QUEUE ---
 @admin_bp.route('/api/jobs/live')
 @login_required
 @admin_required
 def list_live_jobs():
     conn = get_db(); c = conn.cursor()
-    c.execute("""
-        SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status 
-        FROM batches b 
-        JOIN users u ON b.user_id = u.id 
-        WHERE b.status IN ('QUEUED', 'PROCESSING') 
-        ORDER BY b.created_at ASC
-    """)
+    c.execute("SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('QUEUED', 'PROCESSING') ORDER BY b.created_at ASC")
     rows = [{"id":r[0], "user":r[1], "date":r[2], "size":r[3], "progress":r[4], "status":r[5]} for r in c.fetchall()]
     conn.close()
     return jsonify(rows)
 
-# --- TAB 2: LIVE CONFIRMING ---
 @admin_bp.route('/api/jobs/confirming')
 @login_required
 @admin_required
 def list_confirming_jobs():
     conn = get_db(); c = conn.cursor()
-    c.execute("""
-        SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status 
-        FROM batches b 
-        JOIN users u ON b.user_id = u.id 
-        WHERE b.status = 'CONFIRMING' 
-        ORDER BY b.created_at ASC
-    """)
+    c.execute("SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status = 'CONFIRMING' ORDER BY b.created_at ASC")
     rows = [{"id":r[0], "user":r[1], "date":r[2], "size":r[3], "progress":r[4], "status":r[5]} for r in c.fetchall()]
     conn.close()
     return jsonify(rows)
 
-# --- TAB 3: GLOBAL HISTORY ---
 @admin_bp.route('/api/jobs/history')
 @login_required
 @admin_required
 def list_history():
-    page = int(request.args.get('page', 1))
-    limit = 20
-    offset = (page-1)*limit
+    page = int(request.args.get('page', 1)); limit = 20; offset = (page-1)*limit
     search = request.args.get('search', '').strip()
-    
     conn = get_db(); c = conn.cursor()
     query_base = "FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status NOT IN ('QUEUED', 'PROCESSING', 'CONFIRMING')"
     params = []
-    
     if search:
         query_base += " AND (b.batch_id LIKE ? OR u.username LIKE ?)"
         params.extend([f"%{search}%", f"%{search}%"])
-        
-    c.execute(f"SELECT COUNT(*) {query_base}", params)
-    total = c.fetchone()[0]
-    
-    c.execute(f"""
-        SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status, u.price_per_label 
-        {query_base} 
-        ORDER BY b.created_at DESC 
-        LIMIT ? OFFSET ?
-    """, (*params, limit, offset))
-    
+    c.execute(f"SELECT COUNT(*) {query_base}", params); total = c.fetchone()[0]
+    c.execute(f"SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status, u.price_per_label {query_base} ORDER BY b.created_at DESC LIMIT ? OFFSET ?", (*params, limit, offset))
     rows = []
     for r in c.fetchall():
         val = float(r[3]) * float(r[6]) if r[6] else 0.0
         rows.append({"id":r[0], "user":r[1], "date":r[2], "size":r[3], "progress":r[4], "status":r[5], "value": val})
-    
     conn.close()
     return jsonify({"data": rows, "current_page": page, "total_pages": math.ceil(total/limit)})
 
@@ -162,28 +109,21 @@ def list_history():
 def job_action():
     data = request.json; bid = data.get('batch_id'); act = data.get('action')
     conn = get_db(); c = conn.cursor()
-    
-    if act == 'cancel':
-        c.execute("UPDATE batches SET status='FAILED' WHERE batch_id=?", (bid,))
-    elif act == 'retry':
-        c.execute("UPDATE batches SET status='QUEUED' WHERE batch_id=?", (bid,))
+    if act == 'cancel': c.execute("UPDATE batches SET status='FAILED' WHERE batch_id=?", (bid,))
+    elif act == 'retry': c.execute("UPDATE batches SET status='QUEUED' WHERE batch_id=?", (bid,))
     elif act == 'refund':
-        c.execute("SELECT user_id, count, status FROM batches WHERE batch_id=?", (bid,))
-        row = c.fetchone()
+        c.execute("SELECT user_id, count, status FROM batches WHERE batch_id=?", (bid,)); row = c.fetchone()
         if row and row[2] != 'REFUNDED':
             uid, count = row[0], row[1]
-            c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,))
-            p = c.fetchone(); price = p[0] if p else 3.00
+            c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,)); p = c.fetchone(); price = p[0] if p else 3.00
             amt = count * price
             c.execute("UPDATE users SET balance = balance + ? WHERE id=?", (amt, uid))
             c.execute("UPDATE batches SET status='REFUNDED' WHERE batch_id=?", (bid,))
             c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
                       (current_user.id, "REFUND", f"Batch {bid} refunded (${amt}) - {data.get('reason','Manual')}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-            
     conn.commit(); conn.close()
     return jsonify({"status": "success"})
 
-# --- TAB 4: TRACKING ---
 @admin_bp.route('/api/tracking/list')
 @login_required
 @admin_required
@@ -210,27 +150,15 @@ def track_export():
     out = io.StringIO(); w = csv.writer(out); w.writerow(['Tracking ID', 'Username', 'Date UTC']); w.writerows(rows)
     return Response(out.getvalue(), mimetype='text/csv', headers={"Content-disposition": f"attachment; filename=tracking_export_{days}d.csv"})
 
-# --- TAB 5: USERS (UPDATED) ---
 @admin_bp.route('/api/users/search', methods=['GET'])
 @login_required
 @admin_required
 def search_users():
-    q = request.args.get('q', '').strip()
-    conn = get_db(); c = conn.cursor()
-    
-    # Get Total Count
-    c.execute("SELECT COUNT(*) FROM users")
-    total_count = c.fetchone()[0]
-
-    # Get List (Filtered or All)
-    if q:
-        c.execute("SELECT id, username, balance, created_at FROM users WHERE username LIKE ? ORDER BY id DESC LIMIT 50", (f"%{q}%",))
-    else:
-        # If no search, return first 50 users
-        c.execute("SELECT id, username, balance, created_at FROM users ORDER BY id DESC LIMIT 50")
-        
-    rows = [{"id":r[0], "username":r[1], "balance":r[2], "date":r[3]} for r in c.fetchall()]
-    conn.close()
+    q = request.args.get('q', '').strip(); conn = get_db(); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users WHERE is_admin = 0"); total_count = c.fetchone()[0]
+    if q: c.execute("SELECT id, username, balance, created_at FROM users WHERE username LIKE ? AND is_admin = 0 ORDER BY id DESC LIMIT 50", (f"%{q}%",))
+    else: c.execute("SELECT id, username, balance, created_at FROM users WHERE is_admin = 0 ORDER BY id DESC LIMIT 50")
+    rows = [{"id":r[0], "username":r[1], "balance":r[2], "date":r[3]} for r in c.fetchall()]; conn.close()
     return jsonify({"users": rows, "total": total_count})
 
 @admin_bp.route('/api/users/details/<int:uid>', methods=['GET'])
@@ -264,4 +192,41 @@ def user_action():
         conn.commit(); conn.close(); return jsonify({"status": "success", "new_balance": new_bal})
     elif act == 'revoke_sub':
         c.execute("UPDATE users SET subscription_end=NULL, auto_renew=0 WHERE id=?", (uid,))
-    conn.commit(); conn.close(); return jsonify({"status": "success"})
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, "SUB_REVOKE", f"Revoked license User {uid}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+    elif act == 'grant_sub':
+        days = int(data.get('days', 30))
+        new_end = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("UPDATE users SET subscription_end=?, auto_renew=0 WHERE id=?", (new_end, uid))
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, "SUB_GRANT", f"Granted {days} days to User {uid}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit(); conn.close()
+    return jsonify({"status": "success"})
+
+@admin_bp.route('/api/logs', methods=['GET'])
+@login_required
+@admin_required
+def get_logs():
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT id, action, details, created_at FROM admin_audit_log ORDER BY created_at DESC LIMIT 100")
+    rows = [{"id":r[0], "action":r[1], "details":r[2], "date":r[3]} for r in c.fetchall()]
+    conn.close()
+    return jsonify(rows)
+
+@admin_bp.route('/api/automation/config', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def automation_config():
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json
+        for k in ['automation_price_monthly', 'automation_price_lifetime', 'slots_monthly_total', 'slots_lifetime_total']:
+            if k in d: c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)", (k, str(d[k])))
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, "CONFIG_UPDATE", "Updated Automation Pricing/Slots", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit(); conn.close()
+        return jsonify({"status": "success"})
+    c.execute("SELECT key, value FROM system_config WHERE key IN ('automation_price_monthly', 'automation_price_lifetime', 'slots_monthly_total', 'slots_lifetime_total')")
+    data = dict(c.fetchall())
+    conn.close()
+    return jsonify(data)

@@ -2,7 +2,9 @@
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
-    <title>LABELLAB // CONSOLE</title>
+    <title>LabelLab</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
+
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;800&family=Inter:wght@400;600;700;900&family=Poppins:wght@600&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -251,6 +253,7 @@
                         try {
                             const response = await fetch(`/api/batches?page=${window.histCurrentPage}&limit=10&search=${sVal}`);
                             const result = await response.json();
+                            
                             let rowHtml = '';
 
                             if (result.data && result.data.length > 0) {
@@ -260,15 +263,14 @@
                                     let isProcessing = false;
                                     let isRefunded = false;
 
-                                    // --- CRITICAL STATUS LOGIC ---
                                     if (batch.status === 'REFUNDED') {
                                         isRefunded = true;
                                         colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
                                         badgeTxt = 'REFUNDED';
                                     } 
                                     else if (batch.status === 'CONFIRMING') {
-                                        isProcessing = true; // Use pulsing effect
-                                        colorStyles = 'text-purple-400 border-purple-500/30 bg-purple-500/10 animate-pulse';
+                                        isProcessing = true;
+                                        colorStyles = 'text-blue-500 border-blue-500/30 bg-blue-500/10 animate-pulse';
                                         badgeTxt = 'CONFIRMING...';
                                     }
                                     else if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
@@ -294,7 +296,6 @@
                                         badgeTxt = 'FAILED';
                                     }
 
-                                    // --- BUTTON LOGIC ---
                                     let pdfButton = '';
                                     let csvButton = '';
 
@@ -302,8 +303,15 @@
                                         pdfButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
                                         csvButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
                                     }
-                                    else if (isProcessing || batch.status === 'CONFIRMING') {
-                                        pdfButton = `<span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none"><svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> WAIT</span>`;
+                                    else if (isProcessing) {
+                                        pdfButton = `
+                                            <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
+                                                <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg> 
+                                                WAIT
+                                            </span>`;
                                         csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
                                     } 
                                     else if (batch.success_count > 0) {

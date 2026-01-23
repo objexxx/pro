@@ -1,0 +1,6 @@
+[2026-01-23 00:15:44.178131] [WORKER] Worker Started (Weighted Round-Robin Mode).
+[2026-01-23 00:15:50.466528] [WORKER] Worker Started (Weighted Round-Robin Mode).
+[2026-01-23 00:15:58.138332] [ROUTES] Validating Zips (First 5): ['92240-6094', '33324-2426', '80134-6319']
+[2026-01-23 00:15:58.744334] [ROUTES] Processing Upload: 3O-NZK6-UGY9.csv
+[2026-01-23 00:15:58.746904] [ROUTES] Validating Zips (First 5): ['92240-6094', '33324-2426', '80134-6319']
+[2026-01-23 00:15:58.761711] [ROUTES] Batch 128841 Queued Successfully

@@ -24,11 +24,11 @@
             <div class="flex gap-2">
                 <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] min-w-[90px] text-center">
                     <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Monthly</p>
-                    <p id="header_slots_m" class="text-[10px] font-mono font-bold text-black dark:text-white">{{ monthly_left }} / 50</p>
+                    <p id="header_slots_m" class="text-[10px] font-mono font-bold text-black dark:text-white">{{ monthly_left }} LEFT</p>
                 </div>
                 <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] min-w-[90px] text-center">
                     <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Lifetime</p>
-                    <p id="header_slots_l" class="text-[10px] font-mono font-bold text-black dark:text-white">{{ lifetime_left }} / 10</p>
+                    <p id="header_slots_l" class="text-[10px] font-mono font-bold text-black dark:text-white">{{ lifetime_left }} LEFT</p>
                 </div>
             </div>
         </div>
@@ -167,8 +167,12 @@
             <p class="text-[10px] text-gray-500 font-mono uppercase mb-8 leading-relaxed">Automation Suite requires an active integration license. Please select a plan below to continue.</p>
             
             <div class="grid grid-cols-1 gap-3">
-                <button onclick="buyKey('monthly')" class="w-full py-4 bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase hover:opacity-90 transition-all font-mono shadow-sm">Unlock Monthly Access $29.99</button>
-                <button onclick="buyKey('lifetime')" class="w-full py-4 bg-transparent border border-gray-200 dark:border-white/10 text-black dark:text-white text-[10px] font-black uppercase hover:bg-gray-100 dark:hover:bg-white/5 transition-all font-mono">Unlock Lifetime Suite $499</button>
+                <button onclick="buyKey('monthly')" class="w-full py-4 bg-black dark:bg-white text-white dark:text-black text-[10px] font-black uppercase hover:opacity-90 transition-all font-mono shadow-sm">
+                    Unlock Monthly Access $<span id="disp_price_m">{{ price_monthly }}</span>
+                </button>
+                <button onclick="buyKey('lifetime')" class="w-full py-4 bg-transparent border border-gray-200 dark:border-white/10 text-black dark:text-white text-[10px] font-black uppercase hover:bg-gray-100 dark:hover:bg-white/5 transition-all font-mono">
+                    Unlock Lifetime Suite $<span id="disp_price_l">{{ price_lifetime }}</span>
+                </button>
             </div>
         </div>
     </div>
@@ -181,6 +185,25 @@
     let fileSelected = false;
     let addressesAvailable = false;
     window.confirmedSessionIds = []; 
+
+    // --- REAL TIME POLLER FOR CONFIG ---
+    async function syncConfig() {
+        try {
+            const res = await fetch('/api/automation/public_config');
+            const data = await res.json();
+            
+            const elM = document.getElementById('header_slots_m');
+            const elL = document.getElementById('header_slots_l');
+            if(elM) elM.innerText = data.monthly_left + " LEFT";
+            if(elL) elL.innerText = data.lifetime_left + " LEFT";
+
+            const prM = document.getElementById('disp_price_m');
+            const prL = document.getElementById('disp_price_l');
+            if(prM) prM.innerText = data.monthly_price;
+            if(prL) prL.innerText = data.lifetime_price;
+        } catch(e) {}
+    }
+    setInterval(syncConfig, 5000);
 
     async function buyKey(plan) {
         showNotification(`PURCHASING ${plan.toUpperCase()} LICENSE...`, 'processing');
@@ -231,7 +254,6 @@
     function checkParseReady() { const parseBtn = document.getElementById('parseBtn'); const addrValue = document.getElementById('addr_select') ? document.getElementById('addr_select').value : null; if (parseBtn && fileSelected && addressesAvailable && addrValue) { parseBtn.disabled = false; parseBtn.classList.remove('text-gray-400', 'cursor-not-allowed', 'bg-gray-100', 'dark:bg-[#151515]'); parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90'); } }
     async function saveSettings() { const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; const formData = new FormData(); formData.append('cookies', document.getElementById('in_cookies').value); formData.append('csrf', document.getElementById('in_csrf').value); formData.append('inventory', document.getElementById('in_inventory').value); const arActive = document.getElementById('autoRenewActive'); formData.append('auto_renew', arActive ? arActive.checked : false); try { const res = await fetch('/api/automation/save', { method: 'POST', body: formData }); if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } else showNotification("SAVE FAILED", 'error'); } catch (e) { showNotification("ERROR SAVING", 'error'); } btn.innerText = original; }
     
-    // --- UPDATED CONFIRM ORDER: FORCE STATUS ---
     async function confirmOrder(batchId) { 
         showNotification('JOB STARTED - MONITORING', 'processing'); 
         try { 
@@ -243,10 +265,7 @@
             const data = await res.json(); 
             if (res.ok) { 
                 if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); } 
-                
-                if(typeof window.batchStatusMemory !== 'undefined') {
-                    window.batchStatusMemory[batchId] = 'CONFIRMING';
-                }
+                if(typeof window.batchStatusMemory !== 'undefined') window.batchStatusMemory[batchId] = 'CONFIRMING';
             } else { 
                 showNotification(data.error, 'error'); 
             } 
@@ -261,8 +280,6 @@
     async function loadAutomationHistory() {
         const tbody = document.getElementById('automation-history-body');
         if(!tbody) return; 
-        
-        // --- PAGE TRACKER UPDATE ---
         window.autoCurrentPage = autoCurrentPage;
 
         try {
@@ -294,7 +311,6 @@
                     readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border-green-500/30';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">CONFIRMED</span>';
-                    
                     actionBtn = `
                     <button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-gray-100 dark:bg-[#111] text-green-600 dark:text-green-400 font-bold uppercase text-[8px] border border-green-500/20 font-mono transition-all hover:bg-red-500 hover:text-white hover:border-red-500 group/retry flex items-center justify-center ml-auto">
                         <span class="group-hover/retry:hidden">ALREADY CONFIRMED</span>
@@ -306,7 +322,6 @@
                     statusBadge = '<span class="text-blue-600 dark:text-blue-400 font-bold font-mono animate-pulse uppercase text-[9px]">PROCESSING...</span>';
                     actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
                 }
-                // --- NEW BLUE CONFIRMING STATE ---
                 else if (b.status === 'CONFIRMING') {
                     labelClass = 'text-blue-500 border-blue-500/30';
                     statusBadge = '<span class="text-blue-500 font-bold font-mono animate-pulse uppercase text-[9px]">CONFIRMING...</span>';
@@ -316,7 +331,6 @@
                     readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
-                    // --- CHANGED TO CONFIRM BATCH ---
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM BATCH</button>`;
                 } 
                 else if (b.status === 'PARTIAL') {

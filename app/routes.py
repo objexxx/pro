@@ -32,23 +32,47 @@ STRICT_HEADERS = [
 # --- CONCURRENCY LOCKS ---
 ACTIVE_CONFIRMATIONS = set() 
 
+# --- HELPER: SYSTEM LOGGER ---
+def log_debug(message):
+    try:
+        with open("debug_system.txt", "a") as f:
+            f.write(f"[{datetime.now()}] [ROUTES] {message}\n")
+    except: pass
+
 # --- HELPER FUNCTIONS ---
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     current_headers = list(df.columns)
+    
     if current_headers != STRICT_HEADERS:
+        log_debug(f"Header Mismatch. Got: {current_headers}")
         return None, "Format Error: Please use the updated 'Download Format' template."
 
-    order_col = 'No'
-    if order_col in df.columns:
-        if df[order_col].isnull().any() or (df[order_col] == '').any():
-            return None, f"Row Error: Missing Order Number in '{order_col}' column."
+    if 'No' in df.columns:
+        if df['No'].isnull().any() or (df['No'] == '').any():
+            return None, "Row Error: Missing Order Number in 'No' column."
 
     incomplete_rows = df[df['ToName'].isnull() | (df['ToName'].astype(str).str.strip() == '') | 
                           df['Street1To'].isnull() | (df['Street1To'].astype(str).str.strip() == '')]
     if not incomplete_rows.empty:
         first_error_idx = incomplete_rows.index[0] + 2
         return None, f"Row {first_error_idx} Error: Missing required Recipient Information."
+
+    # --- STRICT ZIP VALIDATION ---
+    if 'ZipTo' in df.columns:
+        df['ZipTo'] = df['ZipTo'].astype(str).str.split('.').str[0].str.strip()
+        
+        # LOGGING ZIP SAMPLES FOR DEBUGGING
+        log_debug(f"Validating Zips (First 5): {df['ZipTo'].head().tolist()}")
+
+        short_zips = df[df['ZipTo'].str.len() < 5]
+        if not short_zips.empty:
+            bad_row = short_zips.index[0] + 2
+            bad_val = short_zips.iloc[0]['ZipTo']
+            msg = f"Row {bad_row} Error: Zip Code '{bad_val}' is too short (must be 5 digits)."
+            log_debug(msg)
+            return None, msg
+
     return df, None
 
 def get_system_config():
@@ -77,27 +101,23 @@ def to_est(date_str):
         return est.strftime("%Y-%m-%d %H:%M:%S")
     except: return date_str
 
-# --- AUTH ROUTES ---
 @main_bp.route('/')
 def index():
     if current_user.is_authenticated:
-        if current_user.is_admin:
-            return redirect(url_for('admin.dashboard'))
+        if current_user.is_admin: return redirect(url_for('admin.dashboard'))
         return redirect(url_for('main.purchase'))
     return redirect(url_for('main.login'))
 
 @main_bp.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
 def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
         user_data = User.get_by_username(username)
-        
         if user_data and check_password_hash(user_data[3], password):
             user = User.get(user_data[0]) 
             login_user(user)
-            
-            # --- LOG IP ADDRESS ---
             try:
                 conn = get_db(); c = conn.cursor()
                 ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -106,22 +126,15 @@ def login():
                           (user.id, ip, ua, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                 conn.commit(); conn.close()
             except: pass
-            
-            # --- ADMIN REDIRECT ---
-            if user.is_admin:
-                return redirect(url_for('admin.dashboard'))
-            
+            if user.is_admin: return redirect(url_for('admin.dashboard'))
             return redirect(url_for('main.purchase'))
-            
         return render_template('login.html', error="INVALID CREDENTIALS")
     return render_template('login.html')
 
 @main_bp.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        email = request.form['email']
-        password = request.form['password']
+        username = request.form['username']; email = request.form['email']; password = request.form['password']
         hashed = generate_password_hash(password)
         if User.create(username, email, hashed): return redirect(url_for('main.login'))
         else: return render_template('login.html', mode="register", error="USERNAME TAKEN")
@@ -131,7 +144,6 @@ def register():
 @login_required
 def logout(): logout_user(); return redirect(url_for('main.login'))
 
-# --- DASHBOARD ROUTES ---
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): return redirect(url_for('main.purchase'))
@@ -150,7 +162,9 @@ def automation():
     sys_config = get_system_config()
     monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
-    return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, system_status="OPERATIONAL")
+    p_month = sys_config.get('automation_price_monthly', '29.99')
+    p_life = sys_config.get('automation_price_lifetime', '499.00')
+    return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, price_monthly=p_month, price_lifetime=p_life, system_status="OPERATIONAL")
 
 @main_bp.route('/stats')
 @login_required
@@ -168,151 +182,84 @@ def settings(): return render_template('dashboard.html', user=current_user, acti
 @login_required
 def addresses(): return render_template('dashboard.html', user=current_user, active_tab='addresses')
 
-# --- API ENDPOINTS ---
 @main_bp.route('/api/user')
 @login_required
-def api_user():
-    return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
+def api_user(): return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
 
 @main_bp.route('/api/settings/defaults', methods=['POST'])
 @login_required
 def save_defaults():
-    data = request.json
-    l_type = data.get('label_type', 'priority')
-    ver = data.get('version', '95055')
-    tmpl = data.get('template', 'pitney_v2')
-    current_user.update_defaults(l_type, ver, tmpl)
+    data = request.json; current_user.update_defaults(data.get('label_type','priority'), data.get('version','95055'), data.get('template','pitney_v2'))
     return jsonify({"status": "success", "message": "DEFAULTS SAVED"})
 
 @main_bp.route('/api/batches')
 @login_required
 def api_batches():
-    page = int(request.args.get('page', 1))
-    limit = 10
-    offset = (page - 1) * limit
-    search = request.args.get('search', '').strip()
-    sort_by = request.args.get('sort', 'recent')
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT batch_id FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC")
-    queue_list = [row[0] for row in c.fetchall()]
-
-    query = "SELECT * FROM batches WHERE user_id = ?"
-    params = [current_user.id]
-    
-    if search:
-        query += " AND (batch_id LIKE ? OR filename LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
-    
-    query += " ORDER BY"
-    if sort_by == 'oldest': query += " created_at ASC"
-    elif sort_by == 'high': query += " count DESC"
-    else: query += " created_at DESC"
-    
-    c.execute(query.replace("SELECT *", "SELECT COUNT(*)"), params)
-    total_items = c.fetchone()[0]
-    total_pages = math.ceil(total_items / limit)
-    
-    query += " LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
-    
-    c.execute(query, params)
-    rows = c.fetchall()
-    conn.close()
-    
+    page = int(request.args.get('page', 1)); limit = 10; offset = (page-1)*limit
+    search = request.args.get('search', '').strip(); sort_by = request.args.get('sort', 'recent')
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT batch_id FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC"); queue_list = [row[0] for row in c.fetchall()]
+    query = "SELECT * FROM batches WHERE user_id = ?"; params = [current_user.id]
+    if search: query += " AND (batch_id LIKE ? OR filename LIKE ?)"; params.extend([f"%{search}%", f"%{search}%"])
+    query += " ORDER BY created_at ASC" if sort_by == 'oldest' else " ORDER BY count DESC" if sort_by == 'high' else " ORDER BY created_at DESC"
+    c.execute(query.replace("SELECT *", "SELECT COUNT(*)"), params); total_items = c.fetchone()[0]
+    query += " LIMIT ? OFFSET ?"; params.extend([limit, offset])
+    c.execute(query, params); rows = c.fetchall(); conn.close()
     data = []
-    now = datetime.utcnow()
-
     for r in rows:
-        b_id = r[0]
-        full_filename = r[2]
-        status = r[5]
-        utc_date = r[9]
-        clean_name = full_filename.split('_', 1)[1] if '_' in full_filename else full_filename
-        est_date = to_est(utc_date)
-        queue_pos = queue_list.index(b_id) + 1 if status == 'QUEUED' and b_id in queue_list else -1
-
-        is_expired = False
-        try:
-            created_dt = datetime.strptime(utc_date, "%Y-%m-%d %H:%M:%S")
-            age = now - created_dt
-            if age.days >= 7: is_expired = True
+        b_id=r[0]; est_date=to_est(r[9]); is_exp=False
+        try: 
+            if (datetime.utcnow() - datetime.strptime(r[9], "%Y-%m-%d %H:%M:%S")).days >= 7: is_exp = True
         except: pass
-
-        data.append({
-            "batch_id": b_id, 
-            "batch_name": clean_name,
-            "count": r[3], 
-            "success_count": r[4], 
-            "status": status, 
-            "date": est_date,
-            "queue_pos": queue_pos,
-            "is_expired": is_expired
-        })
-    
-    return jsonify({"data": data, "pagination": {"current_page": page, "total_pages": total_pages}})
+        data.append({"batch_id": b_id, "batch_name": r[2].split('_',1)[1] if '_' in r[2] else r[2], "count": r[3], "success_count": r[4], "status": r[5], "date": est_date, "is_expired": is_exp})
+    return jsonify({"data": data, "pagination": {"current_page": page, "total_pages": math.ceil(total_items/limit)}})
 
 @main_bp.route('/api/stats')
 @login_required
 def api_stats():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT SUM(success_count) FROM batches WHERE user_id = ?", (current_user.id,))
-    total = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ?", (current_user.id,))
-    batches = c.fetchone()[0] or 0
-    conn.close()
-    return jsonify({"total_labels": total, "total_batches": batches})
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT SUM(success_count) FROM batches WHERE user_id = ?", (current_user.id,)); total = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ?", (current_user.id,)); batches = c.fetchone()[0] or 0
+    conn.close(); return jsonify({"total_labels": total, "total_batches": batches})
 
 @main_bp.route('/process', methods=['POST'])
 @login_required
-# --- ADJUSTED LIMIT: 30 per minute ---
 @limiter.limit("30 per minute") 
 def process():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
-
-    template_choice = request.form.get('template_choice') or current_user.default_template
-    version_choice = request.form.get('tracking_version') or current_user.default_version
-    label_type = request.form.get('label_type') or current_user.default_label_type
+    
+    log_debug(f"Processing Upload: {file.filename}")
 
     try:
         file.stream.seek(0)
+        # FORCE STRING READ
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e:
+        log_debug(f"CSV Read Fail: {e}")
         return jsonify({"error": f"CSV Read Failed: {str(e)}"}), 400
 
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     
-    price_per_label = get_price(current_user.id, label_type, version_choice, current_user.price_per_label)
-    cost = len(df) * price_per_label
-    
-    if not current_user.update_balance(-cost): 
-        return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
+    price = get_price(current_user.id, request.form.get('label_type'), request.form.get('tracking_version'), current_user.price_per_label)
+    cost = len(df) * price
+    if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
     
     try:
         batch_id = str(random.randint(100000, 999999))
-        original_name = secure_filename(file.filename)
-        if not original_name: original_name = "upload.csv"
-        filename = f"{batch_id}_{original_name}"
-        
-        save_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename)
-        df.to_csv(save_path, index=False)
+        filename = f"{batch_id}_{secure_filename(file.filename)}"
+        df.to_csv(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename), index=False)
         
         conn = get_db(); c = conn.cursor()
-        utc_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        
         c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                  (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', template_choice, version_choice, label_type, utc_now))
-        conn.commit()
-        conn.close()
-        
+                  (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), request.form.get('tracking_version'), request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit(); conn.close()
+        log_debug(f"Batch {batch_id} Queued Successfully")
         return jsonify({"status": "success", "batch_id": batch_id})
-
     except Exception as e:
+        log_debug(f"System Error: {e}")
         current_user.update_balance(cost)
         return jsonify({"error": f"System Error: {str(e)}"}), 500
 
@@ -321,66 +268,61 @@ def process():
 def verify_csv():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
-    try:
-        file.stream.seek(0)
+    try: 
+        file.stream.seek(0); 
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
-    except Exception as e:
-        return jsonify({"error": f"CSV Read Failed: {str(e)}"}), 400
-
+    except Exception as e: return jsonify({"error": f"CSV Read Failed: {str(e)}"}), 400
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
-
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
+
+# ... (Automation routes - KEEP EXISTING) ...
+@main_bp.route('/api/automation/public_config')
+@login_required
+def public_automation_config():
+    sys_config = get_system_config()
+    return jsonify({
+        "monthly_price": sys_config.get('automation_price_monthly', '29.99'),
+        "lifetime_price": sys_config.get('automation_price_lifetime', '499.00'),
+        "monthly_left": int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0)),
+        "lifetime_left": int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
+    })
 
 @main_bp.route('/api/automation/purchase', methods=['POST'])
 @login_required
 def automation_purchase():
-    data = request.json
-    plan = data.get('plan', 'monthly')
+    data = request.json; plan = data.get('plan', 'monthly')
     if current_user.is_subscribed: return jsonify({"error": "ACTIVE SUBSCRIPTION FOUND"}), 400
-    
-    cost = 499.00 if plan == 'lifetime' else 29.99
+    sys_config = get_system_config()
+    p_month = float(sys_config.get('automation_price_monthly', '29.99'))
+    p_life = float(sys_config.get('automation_price_lifetime', '499.00'))
+    cost = p_life if plan == 'lifetime' else p_month
     days = 36500 if plan == 'lifetime' else 30
     key_used = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'
     key_total = 'slots_lifetime_total' if plan == 'lifetime' else 'slots_monthly_total'
-    
     conn = get_db(); c = conn.cursor()
     try:
-        c.execute("SELECT value FROM system_config WHERE key = ?", (key_used,))
-        row = c.fetchone()
-        used = int(row[0]) if row else 0
-        c.execute("SELECT value FROM system_config WHERE key = ?", (key_total,))
-        row = c.fetchone()
-        total = int(row[0]) if row else 50
-        if used >= total:
-            conn.close()
-            return jsonify({"error": f"SOLD OUT: {plan.upper()} KEYS UNAVAILABLE"}), 400
+        c.execute("SELECT value FROM system_config WHERE key = ?", (key_used,)); row = c.fetchone(); used = int(row[0]) if row else 0
+        c.execute("SELECT value FROM system_config WHERE key = ?", (key_total,)); row = c.fetchone(); total = int(row[0]) if row else 50
+        if used >= total: conn.close(); return jsonify({"error": f"SOLD OUT: {plan.upper()} KEYS UNAVAILABLE"}), 400
     except: pass
-
     if current_user.update_balance(-cost):
         current_user.activate_subscription(days, plan != 'lifetime')
-        try:
-            c.execute("UPDATE system_config SET value = ? WHERE key = ?", (str(used + 1), key_used))
-            conn.commit()
+        try: c.execute("UPDATE system_config SET value = ? WHERE key = ?", (str(used + 1), key_used)); conn.commit()
         except: pass
-        conn.close()
-        return jsonify({"status": "success", "message": f"{plan.upper()} LICENSE ACTIVATED"})
-    conn.close()
-    return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
+        conn.close(); return jsonify({"status": "success", "message": f"{plan.upper()} LICENSE ACTIVATED"})
+    conn.close(); return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
 
 @main_bp.route('/api/automation/save', methods=['POST'])
 @login_required
 def automation_save():
     if not current_user.is_subscribed: return jsonify({"error": "LICENSE REQUIRED"}), 403
-    cookies = request.form.get('cookies', '')
-    csrf = request.form.get('csrf', '').strip()
-    inventory = request.form.get('inventory', '')
+    cookies = request.form.get('cookies', ''); csrf = request.form.get('csrf', '').strip(); inventory = request.form.get('inventory', '')
     current_user.update_settings(cookies, csrf, "", inventory, False)
     return jsonify({"status": "success", "message": "SETTINGS SAVED"})
 
 @main_bp.route('/api/automation/format', methods=['POST'])
 @login_required
-# --- ADJUSTED LIMIT: 100 per minute ---
 @limiter.limit("100 per minute")
 def automation_format():
     if not current_user.is_subscribed: return jsonify({"error": "LICENSE REQUIRED"}), 403
@@ -400,40 +342,26 @@ def automation_format():
 
 @main_bp.route('/api/automation/confirm', methods=['POST'])
 @login_required
-# --- ADJUSTED LIMIT: 120 per minute ---
 @limiter.limit("120 per minute")
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
     batch_id = request.json.get('batch_id')
     if batch_id in ACTIVE_CONFIRMATIONS: return jsonify({"error": "THIS BATCH IS ALREADY RUNNING"}), 429
-    
     raw_cookies = current_user.auth_cookies; raw_csrf = current_user.auth_csrf
     if not raw_cookies or len(raw_cookies) < 10: return jsonify({"error": "MISSING COOKIES"}), 400
-    
-    final_cookies, final_csrf = parse_cookies_and_csrf(raw_cookies)
-    real_csrf = final_csrf if final_csrf else raw_csrf
-    
+    final_cookies, final_csrf = parse_cookies_and_csrf(raw_cookies); real_csrf = final_csrf if final_csrf else raw_csrf
     is_valid, msg = validate_session(final_cookies, real_csrf)
     if not is_valid: return jsonify({"error": msg}), 400
-    
-    ACTIVE_CONFIRMATIONS.add(batch_id)
-    db_path = current_app.config['DB_PATH']
-    
+    ACTIVE_CONFIRMATIONS.add(batch_id); db_path = current_app.config['DB_PATH']
     def task(app_context):
         with app_context:
             try:
-                # === CRITICAL FIX: Use 'CONFIRMING' so worker doesn't lock ===
                 conn = sqlite3.connect(db_path, timeout=30); c = conn.cursor()
-                c.execute("UPDATE batches SET status = 'CONFIRMING' WHERE batch_id = ?", (batch_id,))
-                conn.commit(); conn.close()
-                
+                c.execute("UPDATE batches SET status = 'CONFIRMING' WHERE batch_id = ?", (batch_id,)); conn.commit(); conn.close()
                 run_confirmation(batch_id, raw_cookies, raw_csrf)
-                
-            except Exception as e: 
-                print(f"[CONFIRM] CRITICAL ERROR: {e}")
-            finally:
+            except Exception as e: print(f"[CONFIRM] CRITICAL ERROR: {e}")
+            finally: 
                 if batch_id in ACTIVE_CONFIRMATIONS: ACTIVE_CONFIRMATIONS.remove(batch_id)
-    
     thread = threading.Thread(target=task, args=(current_app._get_current_object().app_context(),)); thread.start()
     return jsonify({"status": "success", "message": "JOB STARTED - MONITORING"})
 
@@ -441,24 +369,12 @@ def automation_confirm():
 @login_required
 def download_csv(batch_id):
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
-    batch_row = c.fetchone()
-    
-    if not batch_row: 
-        conn.close()
-        return jsonify({"error": "UNAUTHORIZED"}), 403
-    
-    # *** PATCH: REFUND CHECK ***
-    if batch_row[1] == 'REFUNDED':
-        conn.close()
-        return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
-
+    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
+    if not batch_row: conn.close(); return jsonify({"error": "UNAUTHORIZED"}), 403
+    if batch_row[1] == 'REFUNDED': conn.close(); return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
     download_name = f"{batch_id}.csv"
     if batch_row and batch_row[0] and '_' in batch_row[0]: download_name = batch_row[0].split('_', 1)[1]
-    
-    c.execute("SELECT id, from_name, to_name, tracking, created_at, address_to FROM history WHERE batch_id = ?", (batch_id,))
-    rows = c.fetchall(); conn.close()
-    
+    c.execute("SELECT id, from_name, to_name, tracking, created_at, address_to FROM history WHERE batch_id = ?", (batch_id,)); rows = c.fetchall(); conn.close()
     output = io.StringIO(); writer = csv.writer(output)
     writer.writerow(['No', 'Id', 'ClassService', 'FromName', 'ToName', 'TrackingId', 'TransDate', 'AddressTo'])
     for idx, row in enumerate(rows):
@@ -471,15 +387,9 @@ def download_csv(batch_id):
 @login_required
 def download_pdf(batch_id):
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
-    batch_row = c.fetchone()
-    conn.close()
-    
+    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone(); conn.close()
     if not batch_row: return jsonify({"error": "UNAUTHORIZED ACCESS"}), 403
-    
-    # *** PATCH: REFUND CHECK ***
     if batch_row[1] == 'REFUNDED': return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
-
     clean_name = f"Batch_{batch_id}"
     if batch_row and batch_row[0] and '_' in batch_row[0]: clean_name = os.path.splitext(batch_row[0].split('_', 1)[1])[0]
     return send_from_directory(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs'), f"{batch_id}.pdf", as_attachment=True, download_name=f"{clean_name}_{batch_id}.pdf")
@@ -504,7 +414,7 @@ def get_addresses_list():
 @login_required
 def add_new_address():
     d = request.json; conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM sender_addresses WHERE user_id = ?", (current_user.id,))
+    c.execute("SELECT COUNT(*) FROM sender_addresses WHERE user_id = ?", (current_user.id,)); 
     if c.fetchone()[0] >= 8: conn.close(); return jsonify({"error": "PROFILE LIMIT REACHED (8/8)"}), 400
     c.execute("INSERT INTO sender_addresses (user_id, name, company, street1, street2, city, state, zip, phone) VALUES (?,?,?,?,?,?,?,?,?)", 
               (current_user.id, d['name'], d.get('company',''), d['street1'], d.get('street2', ''), d['city'], d['state'], d['zip'], d['phone']))
@@ -514,12 +424,12 @@ def add_new_address():
 @login_required
 def delete_single_address(id):
     conn = get_db(); c = conn.cursor()
-    c.execute("DELETE FROM sender_addresses WHERE id=? AND user_id=?", (id, current_user.id))
-    conn.commit(); conn.close(); return jsonify({"status":"success"})
+    c.execute("DELETE FROM sender_addresses WHERE id=? AND user_id=?", (id, current_user.id)); conn.commit(); conn.close()
+    return jsonify({"status":"success"})
 
 @main_bp.route('/api/addresses/all', methods=['DELETE'])
 @login_required
 def delete_all_user_addresses():
     conn = get_db(); c = conn.cursor()
-    c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,))
-    conn.commit(); conn.close(); return jsonify({"status":"success"})
+    c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,)); conn.commit(); conn.close()
+    return jsonify({"status":"success"})
