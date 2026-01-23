@@ -233,7 +233,6 @@
     
     // --- UPDATED CONFIRM ORDER: FORCE STATUS ---
     async function confirmOrder(batchId) { 
-        // FIXED: honest message
         showNotification('JOB STARTED - MONITORING', 'processing'); 
         try { 
             const res = await fetch('/api/automation/confirm', { 
@@ -245,9 +244,8 @@
             if (res.ok) { 
                 if (!window.confirmedSessionIds.includes(batchId)) { window.confirmedSessionIds.push(batchId); } 
                 
-                // CRITICAL: Force the status so the failure is caught later
                 if(typeof window.batchStatusMemory !== 'undefined') {
-                    window.batchStatusMemory[batchId] = 'PROCESSING';
+                    window.batchStatusMemory[batchId] = 'CONFIRMING';
                 }
             } else { 
                 showNotification(data.error, 'error'); 
@@ -307,7 +305,13 @@
                     labelClass = 'text-blue-600 dark:text-blue-400 border-blue-500/30';
                     statusBadge = '<span class="text-blue-600 dark:text-blue-400 font-bold font-mono animate-pulse uppercase text-[9px]">PROCESSING...</span>';
                     actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
-                } 
+                }
+                // --- NEW BLUE CONFIRMING STATE ---
+                else if (b.status === 'CONFIRMING') {
+                    labelClass = 'text-blue-500 border-blue-500/30';
+                    statusBadge = '<span class="text-blue-500 font-bold font-mono animate-pulse uppercase text-[9px]">CONFIRMING...</span>';
+                    actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
+                }
                 else if (b.status === 'COMPLETED' || b.status === 'READY') {
                     readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';

@@ -22,7 +22,6 @@ if project_root not in sys.path:
 DB_PATH = os.path.join(project_root, 'app', 'instance', 'labellab.db')
 UPLOADS_FOLDER = os.path.join(project_root, 'data', 'uploads')
 HISTORY_FILE = os.path.join(project_root, 'data', 'sent_tracking_history.json')
-BASE_URL = "https://sellercentral.amazon.com/orders-api"
 
 # --- HISTORY MANAGER ---
 def load_history():
@@ -158,7 +157,7 @@ def validate_session(cookies, csrf):
 
 def get_shipment_order_info(order_id, cookies, csrf):
     url = f"https://sellercentral.amazon.com/orders-api/order/{order_id}"
-    params = {"ts": time.time()} # Cache Buster
+    params = {"ts": time.time()}
     headers = {
         "accept": "application/json",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
@@ -236,7 +235,9 @@ def confirm_shipment_single(order_id, tracking_number, item_code, address_id, co
 def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
     print(f"\n[AMAZON BOT] === STARTING BATCH: {batch_id} ===")
 
-    set_batch_status(batch_id, 'PROCESSING')
+    # === [CRITICAL CHANGE] USE 'CONFIRMING' STATUS TO AVOID BLOCKING LABEL WORKER ===
+    execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
+    set_batch_status(batch_id, 'CONFIRMING')
 
     if not txt_path or not os.path.exists(txt_path):
         set_batch_status(batch_id, 'FAILED')
@@ -255,29 +256,25 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
         return False, "Invalid Cookies Format"
 
     delimiter = detect_delimiter(txt_path)
+    total_confirmed_rows = 0
+    
     try:
         with open(txt_path, mode='r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f, delimiter=delimiter)
             if reader.fieldnames: reader.fieldnames = [h.strip() for h in reader.fieldnames]
             
-            # --- STEP 1: GROUP ROWS ---
             grouped_orders = defaultdict(list)
             original_row_index = 1 
-            
             for row in reader:
                 candidates = [row.get('Ref02'), row.get('Ref01'), row.get('order-id'), row.get('order id')]
                 order_id = next((x for x in candidates if x and len(x) > 15), None)
                 if order_id: grouped_orders[order_id].append(original_row_index)
                 original_row_index += 1
             
-            # --- STEP 2: LOAD LOCAL HISTORY ---
             local_history = load_history()
-            
-            success_count = 0
             
             for order_id, row_indices in grouped_orders.items():
                 
-                # Get Set of CSV Tracking Numbers (Unique for this order)
                 csv_tracking_set = set()
                 for idx in row_indices:
                     tn = tracking_data.get(str(idx))
@@ -287,7 +284,6 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
 
                 print(f"\n[AMAZON BOT] Checking Order: {order_id}")
                 
-                # Fetch Amazon Info
                 item_code, address_id, amazon_tracking_list = get_shipment_order_info(order_id, final_cookie_str, final_csrf)
                 amazon_tracking_set = set(amazon_tracking_list)
 
@@ -296,72 +292,57 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                     return False, "Session Expired Mid-Batch"
                 
                 if not item_code or not address_id:
-                    print(f"[AMAZON BOT] Failed to get Order Info for {order_id}")
-                    # DO NOT increment success_count if we failed to get order info
+                    print(f"[AMAZON BOT] Failed to get Order Info for {order_id}. Skipping.")
                     continue
 
-                # --- TRIPLE CHECK LOGIC ---
-                # 1. Is it on Amazon?
-                # 2. Is it in our Local History (sent previously)?
                 to_upload = []
                 for tn in csv_tracking_set:
-                    if tn in amazon_tracking_set:
-                        # Amazon already has it
-                        continue
-                    if tn in local_history:
-                        print(f"[AMAZON BOT] SKIP: {tn} found in LOCAL history (already sent).")
-                        continue
-                    
+                    if tn in amazon_tracking_set: continue
+                    if tn in local_history: continue
                     to_upload.append(tn)
-
-                print(f"[AMAZON BOT] > Found on Amazon: {len(amazon_tracking_set)}")
-                print(f"[AMAZON BOT] > Needs Upload: {len(to_upload)}")
 
                 if not to_upload:
                     increment_batch_success(batch_id, len(row_indices))
-                    success_count += len(row_indices)
+                    total_confirmed_rows += len(row_indices)
                     continue
 
-                confirmed_in_group = 0
-                
+                group_success = True
                 for tn in to_upload:
                     res = confirm_shipment_single(order_id, tn, item_code, address_id, final_cookie_str, final_csrf)
                     
                     confirmed = False
                     if res and res.status_code == 200:
-                        try:
-                            response_text = res.text
-                            if 'ConfirmShipmentResponseEnum":"Success"' in response_text or "Success" in response_text:
-                                confirmed = True
-                            elif 'ConfirmShipmentResponseEnum":"AlreadyShipped"' in response_text or "AlreadyShipped" in response_text:
-                                confirmed = True
-                        except: pass
-                    elif res and "already confirmed" in res.text.lower():
-                         confirmed = True
-
+                        if 'ConfirmShipmentResponseEnum":"Success"' in res.text or "Success" in res.text: confirmed = True
+                        elif 'ConfirmShipmentResponseEnum":"AlreadyShipped"' in res.text: confirmed = True
+                    
                     if confirmed:
-                        confirmed_in_group += 1
                         save_to_history(tn) 
                         print(f"[AMAZON BOT] -> SUCCESS: Added {tn}")
-                        time.sleep(2.0) 
                     else:
                         print(f"[AMAZON BOT] FAILED to confirm Tracking {tn}")
+                        group_success = False
 
-                # Mark success if we handled the uploads
-                update_db_status(order_id, 'CONFIRMED')
-                increment_batch_success(batch_id, len(row_indices)) 
-                success_count += len(row_indices)
+                    time.sleep(1.5)
 
+                if group_success:
+                    update_db_status(order_id, 'CONFIRMED')
+                    increment_batch_success(batch_id, len(row_indices))
+                    total_confirmed_rows += len(row_indices)
+                
                 time.sleep(0.5)
 
-        print(f"[AMAZON BOT] FINISHED BATCH {batch_id}. Total Confirmed Rows: {success_count}")
+        print(f"[AMAZON BOT] FINISHED BATCH {batch_id}. Total Confirmed: {total_confirmed_rows}")
         
-        # --- FIXED: Only set to CONFIRMED if we actually succeeded ---
-        # This prevents locking the button on total failure
-        if success_count > 0:
+        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+        c.execute("SELECT count FROM batches WHERE batch_id = ?", (batch_id,))
+        total_rows = c.fetchone()[0]
+        conn.close()
+
+        if total_confirmed_rows >= total_rows:
             set_batch_status(batch_id, 'CONFIRMED')
+        elif total_confirmed_rows > 0:
+            set_batch_status(batch_id, 'PARTIAL')
         else:
-            print("[AMAZON BOT] Batch Failed (0 success). Setting status to FAILED.")
             set_batch_status(batch_id, 'FAILED')
         
         return True, "Batch Processed"
@@ -372,14 +353,12 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
         set_batch_status(batch_id, 'FAILED')
         return False, str(e)
 
-# --- ENTRY POINT (DIRECT CALL - NO INNER THREAD) ---
 def run_thread(batch_id, cookies, csrf):
     target_txt_path = get_file_from_db(batch_id)
     if target_txt_path:
         process_logic(batch_id, target_txt_path, cookies, csrf)
 
 def run_confirmation(batch_id=None, cookies=None, csrf=None, *args, **kwargs):
-    # FIXED: Run directly since routes.py already handles the threading
     run_thread(batch_id, cookies, csrf)
     return True, "Process Completed"
 

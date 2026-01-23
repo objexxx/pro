@@ -267,7 +267,8 @@ def api_stats():
 
 @main_bp.route('/process', methods=['POST'])
 @login_required
-@limiter.limit("10 per minute") 
+# --- ADJUSTED LIMIT: 30 per minute ---
+@limiter.limit("30 per minute") 
 def process():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
@@ -379,7 +380,8 @@ def automation_save():
 
 @main_bp.route('/api/automation/format', methods=['POST'])
 @login_required
-@limiter.limit("50 per minute")
+# --- ADJUSTED LIMIT: 100 per minute ---
+@limiter.limit("100 per minute")
 def automation_format():
     if not current_user.is_subscribed: return jsonify({"error": "LICENSE REQUIRED"}), 403
     file = request.files.get('file')
@@ -398,32 +400,40 @@ def automation_format():
 
 @main_bp.route('/api/automation/confirm', methods=['POST'])
 @login_required
-@limiter.limit("60 per minute")
+# --- ADJUSTED LIMIT: 120 per minute ---
+@limiter.limit("120 per minute")
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
     batch_id = request.json.get('batch_id')
     if batch_id in ACTIVE_CONFIRMATIONS: return jsonify({"error": "THIS BATCH IS ALREADY RUNNING"}), 429
+    
     raw_cookies = current_user.auth_cookies; raw_csrf = current_user.auth_csrf
     if not raw_cookies or len(raw_cookies) < 10: return jsonify({"error": "MISSING COOKIES"}), 400
+    
     final_cookies, final_csrf = parse_cookies_and_csrf(raw_cookies)
     real_csrf = final_csrf if final_csrf else raw_csrf
+    
     is_valid, msg = validate_session(final_cookies, real_csrf)
     if not is_valid: return jsonify({"error": msg}), 400
+    
     ACTIVE_CONFIRMATIONS.add(batch_id)
     db_path = current_app.config['DB_PATH']
+    
     def task(app_context):
         with app_context:
             try:
+                # === CRITICAL FIX: Use 'CONFIRMING' so worker doesn't lock ===
                 conn = sqlite3.connect(db_path, timeout=30); c = conn.cursor()
-                c.execute("UPDATE batches SET status = 'PROCESSING' WHERE batch_id = ?", (batch_id,))
+                c.execute("UPDATE batches SET status = 'CONFIRMING' WHERE batch_id = ?", (batch_id,))
                 conn.commit(); conn.close()
+                
                 run_confirmation(batch_id, raw_cookies, raw_csrf)
-                conn = sqlite3.connect(db_path, timeout=30); c = conn.cursor()
-                c.execute("SELECT count, success_count FROM batches WHERE batch_id = ?", (batch_id,))
-                conn.close()
-            except Exception as e: print(f"[CONFIRM] CRITICAL ERROR: {e}")
+                
+            except Exception as e: 
+                print(f"[CONFIRM] CRITICAL ERROR: {e}")
             finally:
                 if batch_id in ACTIVE_CONFIRMATIONS: ACTIVE_CONFIRMATIONS.remove(batch_id)
+    
     thread = threading.Thread(target=task, args=(current_app._get_current_object().app_context(),)); thread.start()
     return jsonify({"status": "success", "message": "JOB STARTED - MONITORING"})
 

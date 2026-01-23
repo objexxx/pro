@@ -78,8 +78,20 @@
                     let badgeTxt = '';
                     let colorStyles = '';
                     let isProcessing = false;
+                    let isRefunded = false;
 
-                    if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
+                    if (batch.status === 'REFUNDED') {
+                        isRefunded = true;
+                        colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
+                        badgeTxt = 'REFUNDED';
+                    }
+                    else if (batch.status === 'CONFIRMING') {
+                        isProcessing = true;
+                        // Blue pulsing style
+                        colorStyles = 'text-blue-500 border-blue-500/30 bg-blue-500/10 animate-pulse';
+                        badgeTxt = 'CONFIRMING...';
+                    }
+                    else if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
                         colorStyles = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
                         badgeTxt = 'COMPLETED';
                     } 
@@ -102,14 +114,16 @@
                         badgeTxt = 'FAILED';
                     }
 
-                    // --- ALIGNMENT & COLOR FIX ---
+                    // --- BUTTON LOGIC ---
                     let pdfButton = '';
                     let csvButton = '';
 
-                    // The "flex items-center" on the parent div + "leading-none" on text 
-                    // ensures vertical centering regardless of content type (text vs svg)
-                    
-                    if (isProcessing) {
+                    if (isRefunded) {
+                        pdfButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
+                        csvButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
+                    }
+                    else if (isProcessing) {
+                        // Shows "WAIT" spinner for both PROCESSING and CONFIRMING
                         pdfButton = `
                             <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
                                 <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -121,7 +135,6 @@
                         csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
                     } 
                     else if (batch.success_count > 0) {
-                        // PDF = Blue, CSV = Gray (Original Scheme)
                         pdfButton = `<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
                         csvButton = `<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
                     } 

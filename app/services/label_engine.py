@@ -170,7 +170,6 @@ class LabelEngine:
 
             while attempts < 3 and not label_generated:
                 try:
-                    # OPTIMIZED SPEED: 0.35s is safe for 3 req/s limit
                     time.sleep(0.35)
                     
                     if "stamps_v2" in template_choice:
@@ -203,8 +202,11 @@ class LabelEngine:
                     lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5).replace("{WEIGHT}", w_disp) 
                     lbl = lbl.replace("{ACCOUNT_ID}", acc).replace("{SEC_REF}", sec).replace("{JULIAN_SEQ}", batch_seq_code if batch_seq_code else "000")
 
-                    barcode_val = f"420{zip_5}{trk}"
-                    lbl = lbl.replace("{BARCODE_DATA_DM}", barcode_val).replace("{BARCODE_DATA_128}", barcode_val)
+                    # --- UPDATED BARCODE LOGIC FOR DATA MATRIX AND GS1-128 ---
+                    dm_data = f"_1420{zip_5}_1{trk}"
+                    gs1_data = f">;>8420{zip_5}>8{trk}"
+                    
+                    lbl = lbl.replace("{BARCODE_DATA_DM}", dm_data).replace("{BARCODE_DATA_128}", gs1_data)
                     lbl = lbl.replace("{TRACKING_SPACED}", " ".join([trk[i:i+4] for i in range(0, len(trk), 4)]))
                     lbl = lbl.replace("{TRACKING_NO_SPACED}", trk)
                     

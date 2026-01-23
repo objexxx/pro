@@ -21,8 +21,8 @@
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .tab-btn { opacity: 0.5; transition: all 0.2s; border-bottom: 2px solid transparent; }
         .tab-btn.active { opacity: 1; color: white; border-bottom: 2px solid #ff3333; }
-        /* Using standard CSS hidden to avoid Tailwind conflicts */
         .my-hidden { display: none !important; }
+        .user-row.active { background-color: #1a1a1a; border-left: 2px solid #ff3333; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden selection:bg-red-900 selection:text-white">
@@ -52,18 +52,18 @@
             </div>
 
             <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
-                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Global Queue</p>
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Label Queue</p>
                 <span id="queue-count" class="text-3xl font-bold text-white">0</span>
+            </div>
+            
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Confirming</p>
+                <span id="active-confirm" class="text-3xl font-bold text-blue-500 animate-pulse">0</span>
             </div>
 
             <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
                 <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">30D Revenue</p>
                 <span id="rev-30d" class="text-2xl font-bold text-green-500">$0.00</span>
-            </div>
-
-            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
-                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Lifetime Rev</p>
-                <span id="rev-life" class="text-2xl font-bold text-blue-500">$0.00</span>
             </div>
 
             <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
@@ -74,7 +74,8 @@
 
         <main class="flex-1 flex flex-col bg-[#050505] min-w-0">
             <div class="flex border-b border-gray-800 bg-[#0C0C0C] px-4">
-                <button onclick="switchTab('queue')" id="btn-queue" class="tab-btn active px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Live Queue</button>
+                <button onclick="switchTab('queue')" id="btn-queue" class="tab-btn active px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Label Queue</button>
+                <button onclick="switchTab('confirming')" id="btn-confirming" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Live Confirming</button>
                 <button onclick="switchTab('history')" id="btn-history" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Global History</button>
                 <button onclick="switchTab('tracking')" id="btn-tracking" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">All Tracking</button>
                 <button onclick="switchTab('users')" id="btn-users" class="tab-btn px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">User Database</button>
@@ -88,6 +89,15 @@
                             <tr><th class="p-4">BATCH ID</th><th class="p-4">USER</th><th class="p-4">DATE</th><th class="p-4 text-center">SIZE</th><th class="p-4 text-center">STATUS</th></tr>
                         </thead>
                         <tbody id="live-queue-body" class="divide-y divide-gray-800 text-gray-300 bg-[#0A0A0A]"></tbody>
+                    </table>
+                </div>
+
+                <div id="tab-confirming-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-auto">
+                    <table class="w-full text-left text-[10px] border border-gray-800">
+                        <thead class="bg-[#111] text-gray-500 sticky top-0">
+                            <tr><th class="p-4">BATCH ID</th><th class="p-4">USER</th><th class="p-4">DATE</th><th class="p-4 text-center">SIZE</th><th class="p-4 text-center">STATUS</th></tr>
+                        </thead>
+                        <tbody id="live-confirming-body" class="divide-y divide-gray-800 text-gray-300 bg-[#0A0A0A]"></tbody>
                     </table>
                 </div>
 
@@ -150,43 +160,69 @@
                     </div>
                 </div>
 
-                <div id="tab-users-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-auto">
-                    <div class="grid grid-cols-2 gap-8 h-full">
-                        <div class="border border-gray-800 bg-[#0A0A0A] p-6 h-fit">
-                            <h3 class="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4">Find User</h3>
-                            <input type="text" id="user-search" oninput="searchUsers()" class="w-full bg-black border border-gray-700 p-3 text-xs text-white focus:border-blue-500 outline-none placeholder-gray-600 mb-4" placeholder="SEARCH USERNAME...">
-                            <div id="user-results" class="hidden border border-gray-700 max-h-40 overflow-y-auto mb-4 bg-[#111]"></div>
-                            
-                            <div id="selected-user-panel" class="hidden space-y-4 pt-4 border-t border-gray-800">
-                                <div class="flex justify-between text-[10px] text-gray-400"><span>USER:</span> <span id="sel-username" class="text-white font-bold"></span></div>
-                                <div class="flex justify-between text-[10px] text-gray-400"><span>IP ADDR:</span> <span id="sel-ip" class="text-red-500 font-mono"></span></div>
-                                <div class="flex justify-between text-[10px] text-gray-400"><span>BALANCE:</span> <span id="sel-balance" class="text-green-500 font-bold"></span></div>
-                                
-                                <div class="pt-2">
-                                    <label class="text-[9px] font-bold text-blue-400 uppercase">Manage Funds</label>
-                                    <div class="flex gap-2 mt-1">
-                                        <input type="number" id="balance-adj-amount" placeholder="0.00" class="flex-1 bg-black border border-gray-700 p-2 text-xs text-white focus:border-green-500 outline-none">
-                                        <button onclick="userAction('update_balance', {amount: 1})" class="bg-green-600 hover:bg-green-500 text-white px-3 text-[9px] font-bold uppercase">ADD</button>
-                                        <button onclick="userAction('update_balance', {amount: -1})" class="bg-red-600 hover:bg-red-500 text-white px-3 text-[9px] font-bold uppercase">SUB</button>
-                                    </div>
+                <div id="tab-users-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-hidden">
+                    <div class="flex flex-col md:flex-row gap-6 h-full">
+                        
+                        <div class="w-full md:w-1/3 flex flex-col border border-gray-800 bg-[#0A0A0A]">
+                            <div class="p-4 border-b border-gray-800 bg-[#080808] flex justify-between items-center">
+                                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">User Directory</h3>
+                                <div class="px-2 py-1 bg-blue-900/20 border border-blue-900/50 text-[9px] text-blue-400 font-bold">
+                                    TOTAL: <span id="total-users-count" class="text-white">--</span>
                                 </div>
-                                <button onclick="userAction('reset_pass')" class="w-full py-3 border border-red-900/50 text-red-500 hover:bg-red-900/20 text-[9px] font-bold uppercase transition-all">SET NEW PASSWORD</button>
+                            </div>
+                            <div class="p-4 border-b border-gray-800">
+                                <input type="text" id="user-search" oninput="searchUsers()" class="w-full bg-black border border-gray-700 p-2 text-xs text-white focus:border-red-500 outline-none placeholder-gray-600" placeholder="Filter users...">
+                            </div>
+                            <div id="user-list-container" class="flex-1 overflow-y-auto custom-scrollbar">
+                                <div class="p-4 text-center text-gray-500 text-[10px]">LOADING...</div>
                             </div>
                         </div>
 
-                        <div id="pricing-panel" class="hidden border border-gray-800 bg-[#0A0A0A] p-6 h-fit">
-                            <h3 class="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4">Configuration</h3>
-                            <div class="space-y-3">
-                                <div class="flex items-center gap-2"><span class="w-16 text-[9px] text-gray-500 uppercase">Priority</span><input type="number" id="price-priority" step="0.01" class="flex-1 bg-black border border-gray-700 p-1 text-xs text-white outline-none"><button onclick="userAction('update_price', {type:'priority'})" class="bg-blue-600 text-white px-2 py-1 text-[8px] font-bold uppercase">SET</button></div>
-                                <div class="flex items-center gap-2"><span class="w-16 text-[9px] text-gray-500 uppercase">Ground</span><input type="number" id="price-ground" step="0.01" class="flex-1 bg-black border border-gray-700 p-1 text-xs text-white outline-none"><button onclick="userAction('update_price', {type:'ground'})" class="bg-blue-600 text-white px-2 py-1 text-[8px] font-bold uppercase">SET</button></div>
-                                <div class="flex items-center gap-2"><span class="w-16 text-[9px] text-gray-500 uppercase">Express</span><input type="number" id="price-express" step="0.01" class="flex-1 bg-black border border-gray-700 p-1 text-xs text-white outline-none"><button onclick="userAction('update_price', {type:'express'})" class="bg-blue-600 text-white px-2 py-1 text-[8px] font-bold uppercase">SET</button></div>
+                        <div class="flex-1 border border-gray-800 bg-[#0A0A0A] flex flex-col relative">
+                            <div id="user-details-empty" class="absolute inset-0 flex flex-col items-center justify-center text-gray-600">
+                                <svg class="w-12 h-12 mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                                <span class="text-[10px] uppercase tracking-widest">Select a user to manage</span>
                             </div>
-                            <div class="mt-6 pt-6 border-t border-gray-800">
-                                <div class="flex justify-between items-center mb-2">
-                                    <span id="sub-status-badge" class="text-[9px] font-bold uppercase px-2 py-0.5 border border-gray-700 text-gray-500">NO LICENSE</span>
-                                    <button id="btn-revoke-sub" onclick="userAction('revoke_sub')" class="text-red-500 hover:text-white text-[8px] font-bold uppercase hidden border border-red-900/50 px-2 py-1">REVOKE LICENSE</button>
+
+                            <div id="user-details-content" class="hidden flex-col h-full p-8 overflow-y-auto">
+                                <div class="flex justify-between items-start mb-8 pb-4 border-b border-gray-800">
+                                    <div>
+                                        <h2 id="sel-username" class="text-2xl font-bold text-white mb-1"></h2>
+                                        <div class="flex gap-4 text-[10px] text-gray-500 font-mono">
+                                            <span>IP: <span id="sel-ip" class="text-gray-300"></span></span>
+                                            <span>SUB: <span id="sel-sub-status" class="text-gray-300"></span></span>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-1">Current Balance</p>
+                                        <p id="sel-balance" class="text-3xl font-bold text-green-500">$0.00</p>
+                                    </div>
                                 </div>
-                                <span id="sub-end-date" class="text-[8px] text-gray-600 font-mono"></span>
+
+                                <div class="grid grid-cols-2 gap-8">
+                                    <div class="space-y-4">
+                                        <h3 class="text-xs font-bold text-blue-500 uppercase tracking-widest">Fund Management</h3>
+                                        <div class="flex gap-2">
+                                            <input type="number" id="balance-adj-amount" placeholder="0.00" class="flex-1 bg-black border border-gray-700 p-2 text-xs text-white outline-none">
+                                            <button onclick="userAction('update_balance', {amount: 1})" class="bg-green-900/30 border border-green-900 text-green-500 hover:bg-green-500 hover:text-white px-3 text-[9px] font-bold uppercase transition-all">ADD</button>
+                                            <button onclick="userAction('update_balance', {amount: -1})" class="bg-red-900/30 border border-red-900 text-red-500 hover:bg-red-500 hover:text-white px-3 text-[9px] font-bold uppercase transition-all">SUB</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-4">
+                                        <h3 class="text-xs font-bold text-blue-500 uppercase tracking-widest">Pricing Config</h3>
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-16 text-[9px] text-gray-500 uppercase">Priority</span>
+                                            <input type="number" id="price-priority" step="0.01" class="flex-1 bg-black border border-gray-700 p-1.5 text-xs text-white outline-none">
+                                            <button onclick="userAction('update_price', {type:'priority'})" class="bg-blue-600 text-white px-2 text-[9px] font-bold uppercase">SET</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mt-8 pt-8 border-t border-gray-800 space-y-4">
+                                    <button onclick="userAction('reset_pass')" class="w-full py-3 border border-gray-700 text-gray-400 hover:text-white hover:border-white text-[10px] font-bold uppercase transition-all">Reset Password</button>
+                                    <button id="btn-revoke-sub" onclick="userAction('revoke_sub')" class="w-full py-3 border border-red-900/50 text-red-500 hover:bg-red-900/10 text-[10px] font-bold uppercase hidden">Revoke Automation License</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -203,44 +239,33 @@
         let histPage = 1, trackPage = 1;
 
         function switchTab(t) {
-            ['queue','history','tracking','users'].forEach(x => {
+            ['queue','confirming','history','tracking','users'].forEach(x => {
                 document.getElementById('tab-'+x+'-content').classList.add('my-hidden');
                 document.getElementById('btn-'+x).classList.remove('active');
             });
             document.getElementById('tab-'+t+'-content').classList.remove('my-hidden');
             document.getElementById('btn-'+t).classList.add('active');
             currentTab = t;
-            if(t==='queue') fetchQueue();
+            if(t==='queue') fetchJobs();
+            if(t==='confirming') fetchConfirming();
             if(t==='history') fetchHistory();
             if(t==='tracking') fetchTracking();
+            if(t==='users') searchUsers();
         }
 
         async function fetchSystemState() {
             try {
                 const res = await fetch('/admin/api/system/health');
                 const data = await res.json();
-                const statusEl = document.getElementById('worker-state');
-                const barEl = document.getElementById('hb-bar');
-                if (data.worker_status === 'PAUSED') {
-                    statusEl.innerText = "PAUSED"; statusEl.classList.replace('text-white', 'text-yellow-500');
-                    barEl.classList.replace('bg-green-500', 'bg-yellow-500'); document.getElementById('btn-pause').innerText = "RESUME";
-                    isWorkerPaused = true;
-                } else {
-                    statusEl.innerText = "ONLINE"; statusEl.classList.replace('text-yellow-500', 'text-white');
-                    barEl.classList.replace('bg-yellow-500', 'bg-green-500'); document.getElementById('btn-pause').innerText = "PAUSE";
-                    isWorkerPaused = false;
-                }
                 document.getElementById('queue-count').innerText = data.queue_depth;
+                document.getElementById('active-confirm').innerText = data.active_confirmations;
                 document.getElementById('error-count').innerText = data.errors_24h;
                 document.getElementById('rev-30d').innerText = "$" + parseFloat(data.revenue_30d).toFixed(2);
                 document.getElementById('rev-life').innerText = "$" + parseFloat(data.revenue_lifetime).toFixed(2);
-                const last = new Date(data.last_heartbeat + " UTC");
-                const diff = Math.round((new Date() - last) / 1000);
-                document.getElementById('hb-display').innerText = (isNaN(diff) ? "--" : diff) + "s ago";
             } catch(e) {}
         }
 
-        async function fetchQueue() {
+        async function fetchJobs() {
             if(currentTab !== 'queue') return;
             const res = await fetch('/admin/api/jobs/live');
             const data = await res.json();
@@ -249,6 +274,19 @@
             let html = '';
             data.forEach(job => {
                 html += `<tr class="hover:bg-[#111] border-b border-gray-800"><td class="p-4 text-white font-bold">${job.id}</td><td class="p-4 text-gray-400">${job.user}</td><td class="p-4 text-gray-500">${job.date}</td><td class="p-4 text-center font-bold">${job.progress}</td><td class="p-4 text-center text-blue-400">${job.status}</td></tr>`;
+            });
+            tbody.innerHTML = html;
+        }
+
+        async function fetchConfirming() {
+            if(currentTab !== 'confirming') return;
+            const res = await fetch('/admin/api/jobs/confirming');
+            const data = await res.json();
+            const tbody = document.getElementById('live-confirming-body');
+            if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-600">IDLE</td></tr>'; return; }
+            let html = '';
+            data.forEach(job => {
+                html += `<tr class="hover:bg-[#111] border-b border-gray-800"><td class="p-4 text-blue-400 font-bold font-mono">${job.id}</td><td class="p-4 text-gray-400">${job.user}</td><td class="p-4 text-gray-500">${job.date}</td><td class="p-4 text-center font-bold">${job.progress} / ${job.size}</td><td class="p-4 text-center text-blue-500 animate-pulse font-bold">CONFIRMING...</td></tr>`;
             });
             tbody.innerHTML = html;
         }
@@ -301,50 +339,68 @@
 
         function changeHistPage(d) { histPage += d; if(histPage<1) histPage=1; fetchHistory(); }
 
-        async function toggleWorker() {
-            const action = isWorkerPaused ? 'resume' : 'pause';
-            await fetch('/admin/api/queue/control', {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action})});
-            fetchSystemState();
-        }
-
         let userSearchTimeout;
         async function searchUsers() {
             const q = document.getElementById('user-search').value;
-            const div = document.getElementById('user-results');
-            if(q.length<1) { div.classList.add('hidden'); return; }
+            const container = document.getElementById('user-list-container');
+            const countLabel = document.getElementById('total-users-count');
+
             clearTimeout(userSearchTimeout);
             userSearchTimeout = setTimeout(async()=>{
                 const res = await fetch(`/admin/api/users/search?q=${q}`);
-                const users = await res.json();
-                let html=''; users.forEach(u=>{ html+=`<div onclick="loadUser('${u.id}','${u.username}','${u.balance}')" class="p-2 hover:bg-blue-900/30 cursor-pointer border-b border-gray-800 text-xs text-gray-300">${u.username}</div>`});
-                div.innerHTML=html; div.classList.remove('hidden');
-            },300);
+                const data = await res.json();
+                
+                countLabel.innerText = data.total;
+
+                if(data.users.length === 0) {
+                    container.innerHTML = '<div class="p-4 text-center text-gray-600 text-[10px] uppercase">No Users Found</div>';
+                    return;
+                }
+
+                let html = '';
+                data.users.forEach(u => {
+                    const activeClass = (selectedUserId == u.id) ? 'active' : '';
+                    html += `
+                    <div onclick="loadUser('${u.id}', '${u.username}', '${u.balance}')" class="user-row p-3 border-b border-gray-800 hover:bg-[#111] cursor-pointer group ${activeClass}">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-gray-300 font-bold group-hover:text-white">${u.username}</span>
+                            <span class="text-[10px] text-green-600 font-mono">$${parseFloat(u.balance).toFixed(2)}</span>
+                        </div>
+                        <div class="text-[9px] text-gray-600 font-mono mt-1">ID: ${u.id} | Joined: ${u.date}</div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+            }, 300);
         }
 
         async function loadUser(id, name, bal) {
             selectedUserId = id;
+            
+            // Highlight selected row
+            document.querySelectorAll('.user-row').forEach(el => el.classList.remove('active'));
+            // Re-render list to apply highlight? Or just do it dynamically... for simplicity re-render is heavy.
+            // Let's just update the view:
+            document.getElementById('user-details-empty').classList.add('hidden');
+            document.getElementById('user-details-content').classList.remove('hidden');
+            document.getElementById('user-details-content').classList.add('flex');
+
             document.getElementById('sel-username').innerText = name;
             document.getElementById('sel-balance').innerText = '$'+parseFloat(bal).toFixed(2);
-            document.getElementById('user-results').classList.add('hidden');
-            document.getElementById('selected-user-panel').classList.remove('hidden');
-            document.getElementById('pricing-panel').classList.remove('hidden');
             
             const res = await fetch(`/admin/api/users/details/${id}`);
             const d = await res.json();
-            document.getElementById('sel-ip').innerText = d.ip;
-            document.getElementById('price-priority').value = d.prices.priority;
-            document.getElementById('price-ground').value = d.prices.ground;
-            document.getElementById('price-express').value = d.prices.express;
             
-            const badge = document.getElementById('sub-status-badge');
+            document.getElementById('sel-ip').innerText = d.ip;
+            document.getElementById('sel-sub-status').innerText = d.subscription.is_active ? "ACTIVE" : "INACTIVE";
+            document.getElementById('sel-sub-status').className = d.subscription.is_active ? "text-green-500 font-bold" : "text-gray-500";
+            
+            document.getElementById('price-priority').value = d.prices.priority;
+            
             const rev = document.getElementById('btn-revoke-sub');
-            if(d.subscription.is_active) {
-                badge.innerText = "ACTIVE"; badge.className = "text-[9px] font-bold uppercase px-2 py-0.5 border border-green-500 text-green-500 bg-green-900/20";
-                rev.classList.remove('hidden'); document.getElementById('sub-end-date').innerText = d.subscription.end_date;
-            } else {
-                badge.innerText = "NO LICENSE"; badge.className = "text-[9px] font-bold uppercase px-2 py-0.5 border border-gray-600 text-gray-500";
-                rev.classList.add('hidden'); document.getElementById('sub-end-date').innerText = "";
-            }
+            if(d.subscription.is_active) rev.classList.remove('hidden'); else rev.classList.add('hidden');
+            
+            // Re-run search to highlight properly (lazy way)
+            searchUsers();
         }
 
         async function userAction(act, extra={}) {
@@ -378,11 +434,12 @@
                     const r = await res.json();
                     document.getElementById('sel-balance').innerText = '$' + parseFloat(r.new_balance || 0).toFixed(2);
                     document.getElementById('balance-adj-amount').value = '';
+                    searchUsers(); // Refresh list to update balance there too
                 }
             }
         }
 
-        setInterval(() => { fetchSystemState(); if(currentTab==='queue') fetchJobs(); }, 2000);
+        setInterval(() => { fetchSystemState(); if(currentTab==='queue') fetchJobs(); if(currentTab==='confirming') fetchConfirming(); }, 2000);
         fetchSystemState(); fetchJobs();
     </script>
 </body>

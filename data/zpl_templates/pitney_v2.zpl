@@ -25,14 +25,14 @@
 ^FO145,635^AJN,25,25^FB380,4,5,L
 ^FH^FD{RECEIVER_BLOCK}^FS
 
-// ──── Data Matrix Barcode ───────────────────────────────
-^FO43,645^BXN,4,200,20,20,5,_,1^FD{BARCODE_DATA_DM}^FS
-^FO690,1110^BXN,4,200,20,20,5,_,1^FD{BARCODE_DATA_DM}^FS
+// ──── Data Matrix Barcode (Updated) ───────────────────────────────
+^FO43,645^BXN,5,200,,,,_^FD{BARCODE_DATA_DM}^FS
+^FO690,1110^BXN,5,200,,,,_^FD{BARCODE_DATA_DM}^FS
 
-// ──── Barcode 128 & Tracking Number ─────────────────────
+// ──── Barcode 128 & Tracking Number (Updated GS1-128) ─────────────────────
 ^BY3,3,130
-^FO85,877
-^BCN,155,N,N,N,D
+^FO75,877
+^BCN,165,N,N,N,N
 ^FD{BARCODE_DATA_128}^FS
 
 ^FO215,1060^A0N,24,30^FD{TRACKING_SPACED}^FS
