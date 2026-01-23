@@ -13,8 +13,8 @@ import pandas as pd
 
 def log_debug(message):
     try:
-        with open("debug_system.txt", "a") as f:
-            f.write(f"[{datetime.now()}] [ENGINE] {message}\n")
+        # FIX: Print to console instead of writing to file to prevent server restarts
+        print(f"[{datetime.now()}] [ENGINE] {message}")
     except: pass
 
 class LabelEngine:
@@ -162,9 +162,8 @@ class LabelEngine:
             to_n = safe_get('ToName'); to_c = safe_get('Company2'); to_s = safe_get('Street1To')
             to_ci= safe_get('CityTo'); to_st= safe_get('StateTo'); 
             
-            # --- STRICT ZIP COPY (FROM WORKER TEXT) ---
-            raw_to_z = safe_get('ZipTo')
-            zip_5 = raw_to_z[:5] 
+            # --- FIX: Changed variable name from 'raw_to_z' to 'to_z' to match usage below ---
+            to_z = safe_get('ZipTo')
             
             try:
                 raw_w = safe_get('Weight', '1')
@@ -181,6 +180,9 @@ class LabelEngine:
                         lbl = templates['default']
                     
                     if "Weight lbs 0 ozs" in lbl: lbl = lbl.replace("Weight lbs 0 ozs", "{WEIGHT}")
+                    
+                    # --- SAFE SLICE ---
+                    zip_5 = to_z[:5] 
                     
                     zone = self.calculate_zone(from_st, to_st)
                     days = self.calculate_transit_days(zone)
@@ -243,6 +245,7 @@ class LabelEngine:
                         try:
                             conn = sqlite3.connect(db_path, timeout=10); c = conn.cursor()
                             c.execute("UPDATE batches SET success_count = success_count + 1 WHERE batch_id = ?", (batch_id,))
+                            # FIXED: This query uses 'to_z', so we must have defined 'to_z' above
                             c.execute("INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                                       (batch_id, user_id, sku, trk, "COMPLETED", from_n, to_n, f"{to_s} {to_ci} {to_st} {to_z}", version, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), order_id))
                             conn.commit(); conn.close()

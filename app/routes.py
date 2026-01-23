@@ -21,7 +21,6 @@ from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf,
 
 main_bp = Blueprint('main', __name__)
 
-# --- STRICT CONFIGURATION ---
 STRICT_HEADERS = [
     'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From', 
     'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To', 
@@ -29,17 +28,12 @@ STRICT_HEADERS = [
     'Width', 'Height', 'Description', 'Ref01', 'Ref02', 'Contains Hazard', 'Shipment Date'
 ]
 
-# --- CONCURRENCY LOCKS ---
 ACTIVE_CONFIRMATIONS = set() 
 
-# --- HELPER: SYSTEM LOGGER ---
+# --- FIX: Print to console ---
 def log_debug(message):
-    try:
-        with open("debug_system.txt", "a") as f:
-            f.write(f"[{datetime.now()}] [ROUTES] {message}\n")
-    except: pass
+    print(f"[{datetime.now()}] [ROUTES] {message}")
 
-# --- HELPER FUNCTIONS ---
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     current_headers = list(df.columns)
@@ -58,11 +52,8 @@ def normalize_dataframe(df):
         first_error_idx = incomplete_rows.index[0] + 2
         return None, f"Row {first_error_idx} Error: Missing required Recipient Information."
 
-    # --- STRICT ZIP VALIDATION ---
     if 'ZipTo' in df.columns:
         df['ZipTo'] = df['ZipTo'].astype(str).str.split('.').str[0].str.strip()
-        
-        # LOGGING ZIP SAMPLES FOR DEBUGGING
         log_debug(f"Validating Zips (First 5): {df['ZipTo'].head().tolist()}")
 
         short_zips = df[df['ZipTo'].str.len() < 5]
@@ -276,7 +267,7 @@ def verify_csv():
     if error_msg: return jsonify({"error": error_msg}), 400
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
 
-# ... (Automation routes - KEEP EXISTING) ...
+# ... (Public Automation Routes) ...
 @main_bp.route('/api/automation/public_config')
 @login_required
 def public_automation_config():

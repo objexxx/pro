@@ -30,8 +30,8 @@
 ^FH^FD{RECEIVER_BLOCK}^FS
 
 // ──── Data Matrix Barcode ───────────────────────────────
-^FO49,732^BXN,5,200,,,,_^FD{BARCODE_DATA_DM}^FS
-^FO753,1200^BXN,5,200,,,,_^FD{BARCODE_DATA_DM}^FS
+^FO49,732^BXN,6,200,,,,_^FD{BARCODE_DATA_DM}^FS
+^FO753,1200^BXN,6,200,,,,_^FD{BARCODE_DATA_DM}^FS
 
 // ──── Barcode 128 & Tracking Number ─────────────────────
 ^BY3,3,150

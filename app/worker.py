@@ -7,11 +7,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 from flask import current_app
 
+# --- FIX: Print to console instead of writing to file ---
 def log_debug(message):
-    try:
-        with open("debug_system.txt", "a") as f:
-            f.write(f"[{datetime.now()}] [WORKER] {message}\n")
-    except: pass
+    print(f"[{datetime.now()}] [WORKER] {message}")
 
 def get_worker_price(db_path, user_id, label_type, version):
     conn = sqlite3.connect(db_path)
@@ -98,7 +96,7 @@ def select_weighted_batch(cursor):
     return random.choices(candidates, weights=weights, k=1)[0]
 
 def process_queue(app):
-    log_debug("Worker Started (Weighted Round-Robin Mode).")
+    log_debug("Started (Safe Mode - No File Write).")
     from .services.label_engine import LabelEngine
     
     with app.app_context():
@@ -153,10 +151,10 @@ def process_queue(app):
                         csv_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname)
                         if not os.path.exists(csv_path): raise Exception("File Missing")
 
-                        # CRITICAL: LOG DATAFRAME HEAD TO SEE ZEROS
+                        # --- FIX: READ AS TEXT ---
                         df = pd.read_csv(csv_path, dtype=str)
                         if 'ZipTo' in df.columns:
-                            log_debug(f"Batch {bid} Zip Data (Top 3): {df['ZipTo'].head().tolist()}")
+                            log_debug(f"Loaded Zips (First 3): {df['ZipTo'].head().tolist()}")
                         
                         engine = LabelEngine()
                         pdf_bytes, success = engine.process_batch(df, ltype, version, bid, db_path, uid, template)
