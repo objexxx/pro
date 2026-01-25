@@ -23,7 +23,6 @@ from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf,
 
 main_bp = Blueprint('main', __name__)
 
-# --- CONFIGURATION ---
 STRICT_HEADERS = [
     'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From', 
     'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To', 
@@ -31,14 +30,13 @@ STRICT_HEADERS = [
     'Width', 'Height', 'Description', 'Ref01', 'Ref02', 'Contains Hazard', 'Shipment Date'
 ]
 
-OXAPAY_KEY = "RUYZRT-PLNM2L-ICWVUP-1WLICH"
+# SECURITY: LOAD FROM ENV
+OXAPAY_KEY = os.getenv('OXAPAY_KEY')
 ACTIVE_CONFIRMATIONS = set() 
 
-# --- HELPER: LOGGING ---
 def log_debug(message):
     print(f"[{datetime.now()}] [ROUTES] {message}")
 
-# --- HELPER: DATAFRAME ---
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     current_headers = list(df.columns)
@@ -93,7 +91,6 @@ def to_est(date_str):
         return est.strftime("%Y-%m-%d %H:%M:%S")
     except: return date_str
 
-# --- AUTH ROUTES ---
 @main_bp.route('/')
 def index():
     if current_user.is_authenticated:
@@ -137,7 +134,6 @@ def register():
 @login_required
 def logout(): logout_user(); return redirect(url_for('main.login'))
 
-# --- DASHBOARD ROUTES ---
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): return redirect(url_for('main.purchase'))
@@ -177,7 +173,6 @@ def settings(): return render_template('dashboard.html', user=current_user, acti
 @login_required
 def addresses(): return render_template('dashboard.html', user=current_user, active_tab='addresses')
 
-# --- API ENDPOINTS ---
 @main_bp.route('/api/user')
 @login_required
 def api_user(): return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
@@ -194,7 +189,6 @@ def api_batches():
     page = int(request.args.get('page', 1)); limit = 10; offset = (page-1)*limit
     search = request.args.get('search', '').strip(); sort_by = request.args.get('sort', 'recent')
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT batch_id FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC"); queue_list = [row[0] for row in c.fetchall()]
     query = "SELECT * FROM batches WHERE user_id = ?"; params = [current_user.id]
     if search: query += " AND (batch_id LIKE ? OR filename LIKE ?)"; params.extend([f"%{search}%", f"%{search}%"])
     query += " ORDER BY created_at ASC" if sort_by == 'oldest' else " ORDER BY count DESC" if sort_by == 'high' else " ORDER BY created_at DESC"
@@ -233,7 +227,7 @@ def process():
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e:
         log_debug(f"CSV Read Fail: {e}")
-        return jsonify({"error": f"CSV Read Failed: {str(e)}"}), 400
+        return jsonify({"error": "CSV Format Error. Please check file encoding."}), 400
 
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
@@ -254,9 +248,9 @@ def process():
         log_debug(f"Batch {batch_id} Queued Successfully")
         return jsonify({"status": "success", "batch_id": batch_id})
     except Exception as e:
-        log_debug(f"System Error: {e}")
+        log_debug(f"[CRITICAL ERROR] {e}") # Log to console
         current_user.update_balance(cost)
-        return jsonify({"error": f"System Error: {str(e)}"}), 500
+        return jsonify({"error": "System Error: Processing failed. Funds refunded."}), 500
 
 @main_bp.route('/verify-csv', methods=['POST'])
 @login_required
@@ -266,15 +260,17 @@ def verify_csv():
     try: 
         file.stream.seek(0)
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
-    except Exception as e: return jsonify({"error": f"CSV Read Failed: {str(e)}"}), 400
+    except Exception as e: return jsonify({"error": "Invalid CSV Format"}), 400
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
 
-# --- OXAPAY SECURE DEPOSIT FLOW ---
-
 def verify_oxapay_payment(track_id):
     try:
+        if not OXAPAY_KEY:
+            print("[CRITICAL] OXAPAY_KEY MISSING")
+            return False, 0.0
+
         url = "https://api.oxapay.com/merchants/inquiry"
         payload = {"merchant": OXAPAY_KEY, "trackId": track_id}
         r = requests.post(url, json=payload, timeout=10)
@@ -292,7 +288,6 @@ def verify_oxapay_payment(track_id):
 @login_required
 def get_deposit_history():
     conn = get_db(); c = conn.cursor()
-    # Auto-fail 'PROCESSING' if > 60 mins old
     try:
         one_hour_ago = (datetime.utcnow() - timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", (one_hour_ago,))
@@ -315,6 +310,8 @@ def get_deposit_history():
 @main_bp.route('/api/deposit/create', methods=['POST'])
 @login_required
 def create_deposit():
+    if not OXAPAY_KEY: return jsonify({"error": "Payment Gateway Configuration Error"}), 503
+
     data = request.json
     usd_amount = float(data.get('amount')) 
     
@@ -352,9 +349,9 @@ def create_deposit():
 
             return jsonify({"status": "success", "pay_link": result.get('payLink')})
         else:
-            return jsonify({"error": result.get('message', 'Gateway Error')}), 400
+            return jsonify({"error": "Gateway Unavailable"}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Connection Error"}), 500
 
 @main_bp.route('/api/deposit/webhook', methods=['POST'])
 def deposit_webhook():
@@ -367,7 +364,6 @@ def deposit_webhook():
         track_id = data.get('trackId')
         
         if status == 'paid' or status == 'confirming':
-            # --- SECURITY ENFORCED ---
             is_valid, verified_amount = verify_oxapay_payment(track_id)
             
             if is_valid: 

@@ -1,15 +1,22 @@
 import os
 import sqlite3
-import threading
-import uuid
-from flask import Flask
+from flask import Flask, request, jsonify, redirect, url_for
 from datetime import datetime
-from werkzeug.security import generate_password_hash
+from dotenv import load_dotenv 
 from .extensions import login_manager, limiter
+
+# Load .env file
+load_dotenv()
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = 'CHANGE_THIS_TO_SUPER_SECRET'
+    
+    # SECURITY: Load Key from .env
+    app.secret_key = os.getenv('SECRET_KEY')
+    if not app.secret_key:
+        print("⚠️  WARNING: SECRET_KEY not found in .env. Using unsafe default.")
+        app.secret_key = 'dev-unsafe-key-change-me'
+
     app.config['VERSION'] = 'v1.0.0' 
     
     app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,12 +41,21 @@ def create_app():
     init_db(app.config['DB_PATH'])
     login_manager.init_app(app)
     login_manager.login_view = 'main.login'
+    
+    # --- CRITICAL FIX FOR 429 LOOP ---
+    @login_manager.unauthorized_handler
+    def unauthorized():
+        # Check if '/api/' exists ANYWHERE in the path (covers Admin API too)
+        if '/api/' in request.path:
+            return jsonify({"error": "Session Expired", "redirect": url_for('main.login')}), 401
+        
+        return redirect(url_for('main.login', next=request.url))
+
     limiter.init_app(app)
 
     from .routes import main_bp
     app.register_blueprint(main_bp)
 
-    # --- ADMIN BLUEPRINT REGISTRATION ---
     from .admin_routes import admin_bp
     app.register_blueprint(admin_bp)
 
@@ -52,7 +68,7 @@ def init_db(db_path):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
-    # Users Table (Includes Default Configs & Subscription)
+    # Core Tables
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT, 
         password_hash TEXT, balance REAL DEFAULT 0.0, price_per_label REAL DEFAULT 3.00, 
@@ -61,46 +77,41 @@ def init_db(db_path):
         auth_csrf TEXT, auth_url TEXT, auth_file_path TEXT, inventory_json TEXT, created_at TEXT,
         default_label_type TEXT DEFAULT 'priority', 
         default_version TEXT DEFAULT '95055', 
-        default_template TEXT DEFAULT 'pitney_v2'
+        default_template TEXT DEFAULT 'pitney_v2',
+        archived_count INTEGER DEFAULT 0
     )''')
     
-    # Sender Addresses Table
     c.execute('''CREATE TABLE IF NOT EXISTS sender_addresses (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 
         name TEXT, company TEXT, phone TEXT, street1 TEXT, street2 TEXT, 
         city TEXT, state TEXT, zip TEXT
     )''')
     
-    # System & Pricing Tables
     c.execute('''CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS user_pricing (user_id INTEGER, label_type TEXT, version TEXT, price REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS batches (batch_id TEXT PRIMARY KEY, user_id INTEGER, filename TEXT, count INTEGER, success_count INTEGER, status TEXT, template TEXT, version TEXT, label_type TEXT, created_at TEXT)''')
-    
-    # History Table (Added ref02 for safety)
     c.execute('''CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id TEXT, user_id INTEGER, ref_id TEXT, tracking TEXT, status TEXT, from_name TEXT, to_name TEXT, address_to TEXT, version TEXT, created_at TEXT, ref02 TEXT)''')
 
-    # --- ADMIN & LOGGING TABLES ---
-    c.execute('''CREATE TABLE IF NOT EXISTS admin_audit_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER, action TEXT, details TEXT, created_at TEXT
-    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS admin_audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER, action TEXT, details TEXT, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS config_history (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, old_value TEXT, new_value TEXT, changed_by TEXT, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS login_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ip_address TEXT, user_agent TEXT, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS deposit_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, currency TEXT, txn_id TEXT, status TEXT, created_at TEXT)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS config_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, old_value TEXT, new_value TEXT, changed_by TEXT, created_at TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS login_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ip_address TEXT, user_agent TEXT, created_at TEXT
-    )''')
+    # Error Logging Table
+    c.execute('''CREATE TABLE IF NOT EXISTS server_errors (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, batch_id TEXT, error_msg TEXT, created_at TEXT)''')
 
-    # Initialize System Config
+    # Defaults
     default_configs = [
         ('slots_monthly_total', '50'), ('slots_monthly_used', '0'),
         ('slots_lifetime_total', '10'), ('slots_lifetime_used', '0'),
         ('system_status', 'OPERATIONAL'), ('worker_paused', '0'),
-        ('worker_last_heartbeat', '')
+        ('worker_last_heartbeat', ''), ('archived_revenue', '0.00')
     ]
     for k, v in default_configs:
         c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES (?, ?)", (k, v))
+        
+    conn.commit()
+    conn.close()
 
 @login_manager.user_loader
 def load_user(user_id):
