@@ -167,7 +167,6 @@ def stats(): return render_template('dashboard.html', user=current_user, active_
 @main_bp.route('/deposit')
 @login_required
 def deposit():
-    # Only renders the page. Data is now fetched via API for real-time updates.
     return render_template('dashboard.html', user=current_user, active_tab='deposit')
 
 @main_bp.route('/settings')
@@ -275,10 +274,6 @@ def verify_csv():
 # --- OXAPAY SECURE DEPOSIT FLOW ---
 
 def verify_oxapay_payment(track_id):
-    """
-    SECURITY: Calls OxaPay API to confirm the transaction is real.
-    Prevents people from faking webhooks.
-    """
     try:
         url = "https://api.oxapay.com/merchants/inquiry"
         payload = {"merchant": OXAPAY_KEY, "trackId": track_id}
@@ -297,15 +292,13 @@ def verify_oxapay_payment(track_id):
 @login_required
 def get_deposit_history():
     conn = get_db(); c = conn.cursor()
-    
-    # 1. Lazy Update: Auto-fail 'PROCESSING' if > 60 mins old
+    # Auto-fail 'PROCESSING' if > 60 mins old
     try:
         one_hour_ago = (datetime.utcnow() - timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", (one_hour_ago,))
         if c.rowcount > 0: conn.commit()
     except: pass
 
-    # 2. Fetch
     c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 20", (current_user.id,))
     data = []
     for r in c.fetchall():
@@ -348,7 +341,6 @@ def create_deposit():
         result = r.json()
         
         if result.get('result') == 100:
-            # SAVE AS PROCESSING IMMEDIATELY
             try:
                 track_id = result.get('trackId')
                 if track_id:
@@ -374,9 +366,10 @@ def deposit_webhook():
         order_id = data.get('orderId')
         track_id = data.get('trackId')
         
-        # --- HANDLE SUCCESS ---
         if status == 'paid' or status == 'confirming':
+            # --- SECURITY ENFORCED ---
             is_valid, verified_amount = verify_oxapay_payment(track_id)
+            
             if is_valid: 
                 parts = order_id.split('_')
                 if len(parts) >= 2:
@@ -388,27 +381,24 @@ def deposit_webhook():
                         existing = c.fetchone()
                         
                         if existing:
-                            if existing[1] != 'PAID': # Prevent double count
+                            if existing[1] != 'PAID': 
                                 user.update_balance(float(parts[3]))
                                 c.execute("UPDATE deposit_history SET status='PAID', currency=? WHERE id=?", (data.get('currency', 'USDT'), existing[0]))
                                 conn.commit()
                                 print(f"[PAYMENT COMPLETE] Updated {track_id}")
                         else:
-                            # Fallback if processing row missing
                             user.update_balance(float(parts[3]))
                             c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
                                       (user_id, float(parts[3]), data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                             conn.commit()
                         conn.close()
             else:
-                print(f"[SECURITY ALERT] Fake webhook: {track_id}")
+                print(f"[SECURITY ALERT] Fake webhook detected: {track_id}")
 
-        # --- HANDLE FAILURE / EXPIRATION ---
         elif status in ['expired', 'failed', 'rejected']:
              conn = get_db(); c = conn.cursor()
              c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),))
              conn.commit(); conn.close()
-             print(f"[PAYMENT FAILED] Updated {track_id} to FAILED")
 
     except Exception as e:
         print(f"[WEBHOOK ERROR] {e}")

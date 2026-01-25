@@ -49,18 +49,35 @@
                 </div>
                 <div class="mt-4 h-0.5 w-full bg-gray-900"><div id="hb-bar" class="h-full bg-green-500 w-full animate-blink"></div></div>
             </div>
+
             <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
                 <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Label Queue</p>
                 <span id="queue-count" class="text-3xl font-bold text-white">0</span>
             </div>
-            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
-                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Confirming</p>
-                <span id="active-confirm" class="text-3xl font-bold text-blue-500 animate-pulse">0</span>
-            </div>
+
             <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
                 <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">30D Revenue</p>
                 <span id="rev-30d" class="text-2xl font-bold text-green-500">$0.00</span>
             </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Est. Next 30d</p>
+                <span id="rev-est-30d" class="text-xl font-bold text-blue-500">$0.00</span>
+                <p class="text-[8px] text-gray-600 mt-1 uppercase">Based on 24h vol</p>
+            </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Lifetime Revenue</p>
+                <span id="rev-life" class="text-xl font-bold text-purple-500">$0.00</span>
+                <p class="text-[8px] text-gray-600 mt-1 uppercase">Includes Archived</p>
+            </div>
+
+            <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Monthly Sub Rev</p>
+                <span id="subs-mrr" class="text-xl font-bold text-yellow-500">$0.00</span>
+                <p class="text-[8px] text-gray-600 mt-1 uppercase"><span id="subs-count" class="text-white font-bold">0</span> Active Slots</p>
+            </div>
+
             <div class="p-4 border border-gray-800 bg-[#0A0A0A]">
                 <p class="text-[9px] text-gray-500 uppercase tracking-widest mb-2">Failures (24h)</p>
                 <span id="error-count" class="text-xl font-bold text-red-500">0</span>
@@ -75,6 +92,7 @@
                 <button onclick="switchTab('tracking')" id="btn-tracking" class="tab-btn px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 whitespace-nowrap">All Tracking</button>
                 <button onclick="switchTab('users')" id="btn-users" class="tab-btn px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 whitespace-nowrap">User Database</button>
                 <button onclick="switchTab('logs')" id="btn-logs" class="tab-btn px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 whitespace-nowrap">Admin Logs</button>
+                <button onclick="switchTab('server_errors')" id="btn-server_errors" class="tab-btn px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-red-500 whitespace-nowrap">Server Errors</button>
                 <button onclick="switchTab('autoconfig')" id="btn-autoconfig" class="tab-btn px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400 whitespace-nowrap">Auto Config</button>
             </div>
 
@@ -222,6 +240,22 @@
                     </table>
                 </div>
 
+                <div id="tab-server_errors-content" class="my-hidden absolute inset-0 flex flex-col p-6 overflow-auto">
+                    <table class="w-full text-left text-[10px] border border-gray-800">
+                        <thead class="bg-[#111] text-gray-500 sticky top-0">
+                            <tr>
+                                <th class="p-4 font-normal text-red-500">TIMESTAMP</th>
+                                <th class="p-4 font-normal text-red-500">SOURCE</th>
+                                <th class="p-4 font-normal text-red-500">BATCH</th>
+                                <th class="p-4 font-normal text-red-500">ERROR MESSAGE</th>
+                            </tr>
+                        </thead>
+                        <tbody id="server-errors-body" class="divide-y divide-gray-800 text-gray-300 bg-[#0A0A0A]">
+                            <tr><td colspan="4" class="p-8 text-center text-gray-600">LOADING ERRORS...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <div id="tab-autoconfig-content" class="my-hidden absolute inset-0 flex items-center justify-center p-6">
                     <div class="w-full max-w-lg bg-[#0A0A0A] border border-gray-800 p-8 shadow-glow">
                         <h3 class="text-sm font-bold text-white uppercase tracking-widest mb-6">Automation Configuration</h3>
@@ -261,7 +295,7 @@
         let histPage = 1, trackPage = 1;
 
         function switchTab(t) {
-            ['queue','confirming','history','tracking','users','logs','autoconfig'].forEach(x => {
+            ['queue','confirming','history','tracking','users','logs','server_errors','autoconfig'].forEach(x => {
                 const el = document.getElementById('tab-'+x+'-content');
                 const btn = document.getElementById('btn-'+x);
                 if(el) el.classList.add('my-hidden');
@@ -276,6 +310,7 @@
             if(t==='tracking') fetchTracking();
             if(t==='users') searchUsers();
             if(t==='logs') fetchLogs();
+            if(t==='server_errors') fetchServerErrors();
             if(t==='autoconfig') fetchAutoConfig();
         }
 
@@ -283,6 +318,8 @@
             try {
                 const res = await fetch(`${API_BASE}/api/system/health`);
                 const data = await res.json();
+                
+                // ... (Worker State Logic remains same) ...
                 const statusEl = document.getElementById('worker-state');
                 const barEl = document.getElementById('hb-bar');
                 if (data.worker_status === 'PAUSED') {
@@ -294,17 +331,23 @@
                     barEl.classList.replace('bg-yellow-500', 'bg-green-500'); document.getElementById('btn-pause').innerText = "PAUSE";
                     isWorkerPaused = false;
                 }
+
+                // Update Stats
                 document.getElementById('queue-count').innerText = data.queue_depth;
-                document.getElementById('active-confirm').innerText = data.active_confirmations;
                 document.getElementById('error-count').innerText = data.errors_24h;
+                
+                // New Revenue Stats
                 document.getElementById('rev-30d').innerText = "$" + parseFloat(data.revenue_30d).toFixed(2);
+                document.getElementById('rev-est-30d').innerText = "$" + parseFloat(data.revenue_est_30d).toFixed(2);
                 document.getElementById('rev-life').innerText = "$" + parseFloat(data.revenue_lifetime).toFixed(2);
+                document.getElementById('subs-mrr').innerText = "$" + parseFloat(data.subs_mrr).toFixed(2);
+                document.getElementById('subs-count').innerText = data.subs_count;
                 
                 if (data.last_heartbeat) {
                     const last = new Date(data.last_heartbeat.replace(' ', 'T') + 'Z');
                     const diff = Math.round((new Date() - last) / 1000);
                     document.getElementById('hb-display').innerText = (diff < 0 ? 0 : diff) + "s ago";
-                } else { document.getElementById('hb-display').innerText = "-- ms"; }
+                }
             } catch(e) {}
         }
 
@@ -378,6 +421,25 @@
                 html += `<tr class="hover:bg-[#111] border-b border-gray-800"><td class="p-4 text-gray-500 font-mono">${l.date}</td><td class="p-4 font-bold ${color}">${l.action}</td><td class="p-4 text-white">${l.details}</td></tr>`;
             });
             tbody.innerHTML = html || '<tr><td colspan="3" class="p-8 text-center text-gray-600">NO LOGS FOUND</td></tr>';
+        }
+
+        // --- NEW: FETCH SERVER ERRORS ---
+        async function fetchServerErrors() {
+            if(currentTab !== 'server_errors') return;
+            const res = await fetch(`${API_BASE}/api/server/errors`);
+            const data = await res.json();
+            const tbody = document.getElementById('server-errors-body');
+            let html = '';
+            data.forEach(e => {
+                html += `
+                <tr class="hover:bg-[#111] border-b border-gray-800 group">
+                    <td class="p-4 text-gray-500 font-mono">${e.date}</td>
+                    <td class="p-4 text-yellow-500 font-bold uppercase text-[10px]">${e.source}</td>
+                    <td class="p-4 text-blue-400 font-mono">${e.batch || '--'}</td>
+                    <td class="p-4 text-white font-mono text-[10px] whitespace-pre-wrap break-all">${e.msg}</td>
+                </tr>`;
+            });
+            tbody.innerHTML = html || '<tr><td colspan="4" class="p-8 text-center text-gray-600">NO SYSTEM ERRORS RECORDED</td></tr>';
         }
 
         async function fetchAutoConfig() {

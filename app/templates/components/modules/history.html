@@ -68,7 +68,7 @@
         const sVal = document.getElementById('historySearchInput') ? document.getElementById('historySearchInput').value : '';
 
         try {
-            const response = await fetch(`/api/batches?page=${histCurrentPage}&limit=10&search=${sVal}`);
+            const response = await fetch(`/api/batches?page=${histCurrentPage}&limit=10&search=${sVal}&t=${Date.now()}`);
             const result = await response.json();
             
             let rowHtml = '';

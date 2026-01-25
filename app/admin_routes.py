@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, request, jsonify, current_app, abo
 from flask_login import login_required, current_user
 import sqlite3
 import json
-import os
 import math
 import csv
 import io
@@ -35,22 +34,60 @@ def dashboard():
 @admin_required
 def system_health():
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
-    row = c.fetchone(); is_paused = row and row[0] == '1'
-    c.execute("SELECT value FROM system_config WHERE key='worker_last_heartbeat'")
-    hb = c.fetchone(); last = hb[0] if hb else ""
+    c.execute("SELECT key, value FROM system_config")
+    config = dict(c.fetchall())
+    is_paused = config.get('worker_paused') == '1'
+    last_beat = config.get('worker_last_heartbeat', '')
+    
     c.execute("SELECT COUNT(*) FROM batches WHERE status IN ('QUEUED', 'PROCESSING')")
     q = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM batches WHERE status='CONFIRMING'")
     c_active = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM batches WHERE status='FAILED' AND created_at > datetime('now', '-1 day')")
-    err = c.fetchone()[0]
-    c.execute("SELECT SUM(b.success_count * u.price_per_label) FROM batches b JOIN users u ON b.user_id=u.id WHERE b.status IN ('COMPLETED','PARTIAL')")
-    rev_life = c.fetchone()[0] or 0.0
-    c.execute("SELECT SUM(b.success_count * u.price_per_label) FROM batches b JOIN users u ON b.user_id=u.id WHERE b.status IN ('COMPLETED','PARTIAL') AND b.created_at > datetime('now', '-30 days')")
+    err_batch = c.fetchone()[0]
+    
+    # Check Server Errors Count
+    c.execute("SELECT COUNT(*) FROM server_errors WHERE created_at > datetime('now', '-1 day')")
+    err_sys = c.fetchone()[0]
+    
+    c.execute("""SELECT SUM(b.success_count * COALESCE(u.price_per_label, 3.00)) FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('COMPLETED','PARTIAL')""")
+    rev_live = c.fetchone()[0] or 0.0
+    rev_arch = float(config.get('archived_revenue', '0.00'))
+    rev_life = rev_live + rev_arch
+    
+    c.execute("""SELECT SUM(b.success_count * COALESCE(u.price_per_label, 3.00)) FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('COMPLETED','PARTIAL') AND b.created_at > datetime('now', '-30 days')""")
     rev_30 = c.fetchone()[0] or 0.0
+    
+    c.execute("""SELECT SUM(b.success_count * COALESCE(u.price_per_label, 3.00)) FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('COMPLETED','PARTIAL') AND b.created_at > datetime('now', '-1 days')""")
+    rev_24h = c.fetchone()[0] or 0.0
+    rev_est_30 = rev_24h * 30
+
+    sub_slots_used = int(config.get('slots_monthly_used', 0))
+    sub_price = float(config.get('automation_price_monthly', 29.99))
+    rev_mrr = sub_slots_used * sub_price
+
     conn.close()
-    return jsonify({"worker_status": "PAUSED" if is_paused else "ONLINE", "queue_depth": q, "active_confirmations": c_active, "errors_24h": err, "last_heartbeat": last, "revenue_lifetime": rev_life, "revenue_30d": rev_30})
+    return jsonify({
+        "worker_status": "PAUSED" if is_paused else "ONLINE", 
+        "queue_depth": q, "active_confirmations": c_active, 
+        "errors_24h": err_batch + err_sys, "last_heartbeat": last_beat, 
+        "revenue_lifetime": rev_life, "revenue_30d": rev_30,
+        "revenue_est_30d": rev_est_30, "subs_mrr": rev_mrr, "subs_count": sub_slots_used
+    })
+
+# --- NEW: SERVER ERROR LOGS ENDPOINT ---
+@admin_bp.route('/api/server/errors')
+@login_required
+@admin_required
+def server_errors():
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT id, source, batch_id, error_msg, created_at FROM server_errors ORDER BY created_at DESC LIMIT 100")
+    rows = [{"id":r[0], "source":r[1], "batch":r[2], "msg":r[3], "date":r[4]} for r in c.fetchall()]
+    conn.close()
+    return jsonify(rows)
+
+# ... (queue_control, list_live_jobs, list_confirming_jobs, list_history, job_action, track_list, track_export, search_users, user_details... KEEP THESE AS IS) ...
+# I will output the UPDATED user_action below
 
 @admin_bp.route('/api/queue/control', methods=['POST'])
 @login_required
@@ -175,11 +212,18 @@ def user_details(uid):
     conn.close()
     return jsonify({"ip": ip[0] if ip else "None", "prices": prices, "subscription": {"is_active": u[1] and datetime.strptime(u[1], "%Y-%m-%d %H:%M:%S") > datetime.utcnow(), "end_date": u[1] or "--", "auto_renew": bool(u[2])}})
 
+# --- UPDATED USER ACTION (FIXES ID DISPLAY) ---
 @admin_bp.route('/api/users/action', methods=['POST'])
 @login_required
 @admin_required
 def user_action():
     data = request.json; act = data.get('action'); uid = data.get('user_id'); conn = get_db(); c = conn.cursor()
+    
+    # FETCH USERNAME FOR LOGGING
+    c.execute("SELECT username FROM users WHERE id = ?", (uid,))
+    u_row = c.fetchone()
+    target_username = u_row[0] if u_row else f"Unknown_ID_{uid}"
+
     if act == 'reset_pass':
         c.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(data.get('new_password')), uid))
     elif act == 'update_price':
@@ -188,18 +232,21 @@ def user_action():
         if l == 'priority': c.execute("UPDATE users SET price_per_label=? WHERE id=?", (p, uid))
     elif act == 'update_balance':
         amt = float(data.get('amount')); c.execute("UPDATE users SET balance = balance + ? WHERE id=?", (amt, uid)); c.execute("SELECT balance FROM users WHERE id=?", (uid,)); new_bal = c.fetchone()[0]
-        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", (current_user.id, "BALANCE_ADJUST", f"User {uid} Amt {amt}: {data.get('reason')}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        # FIXED LOGGING: USES USERNAME
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", (current_user.id, "BALANCE_ADJUST", f"{target_username} Amt {amt}: {data.get('reason')}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit(); conn.close(); return jsonify({"status": "success", "new_balance": new_bal})
     elif act == 'revoke_sub':
         c.execute("UPDATE users SET subscription_end=NULL, auto_renew=0 WHERE id=?", (uid,))
+        # FIXED LOGGING
         c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
-                  (current_user.id, "SUB_REVOKE", f"Revoked license User {uid}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                  (current_user.id, "SUB_REVOKE", f"Revoked {target_username}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
     elif act == 'grant_sub':
         days = int(data.get('days', 30))
         new_end = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE users SET subscription_end=?, auto_renew=0 WHERE id=?", (new_end, uid))
+        # FIXED LOGGING
         c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
-                  (current_user.id, "SUB_GRANT", f"Granted {days} days to User {uid}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                  (current_user.id, "SUB_GRANT", f"Granted {days}d to {target_username}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit(); conn.close()
     return jsonify({"status": "success"})
 

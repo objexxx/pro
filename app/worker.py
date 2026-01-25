@@ -4,12 +4,27 @@ import os
 import threading
 import random
 import pandas as pd
+import csv
 from datetime import datetime, timedelta
 from flask import current_app
 
-# --- FIX: Print to console instead of writing to file ---
+# --- ERROR LOGGING HELPER ---
+def log_server_error(db_path, source, msg, batch_id=None):
+    try:
+        conn = sqlite3.connect(db_path, timeout=10)
+        c = conn.cursor()
+        c.execute("INSERT INTO server_errors (source, batch_id, error_msg, created_at) VALUES (?, ?, ?, ?)", 
+                  (source, batch_id, str(msg), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[META ERROR] Failed to log error: {e}")
+
 def log_debug(message):
     print(f"[{datetime.now()}] [WORKER] {message}")
+
+# ... [get_worker_price, check_auto_renewals, archive_and_purge remain same] ...
+# PASTE THOSE FUNCTIONS HERE IF NEEDED, OR JUST UPDATE THE LOOP BELOW:
 
 def get_worker_price(db_path, user_id, label_type, version):
     conn = sqlite3.connect(db_path)
@@ -42,156 +57,150 @@ def check_auto_renewals(app):
             conn.commit(); conn.close()
     except: pass
 
-def cleanup_old_data(app):
+def archive_and_purge(app):
     try:
         with app.app_context():
-            cutoff = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
             db_path = current_app.config['DB_PATH']
+            cutoff_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
+            c.execute("SELECT batch_id, user_id, success_count FROM batches WHERE created_at < ? AND status IN ('COMPLETED', 'PARTIAL', 'FAILED')", (cutoff_date,))
+            old_batches = c.fetchall()
+            if not old_batches:
+                conn.close(); return
+            batch_ids = [b[0] for b in old_batches]
+            batch_placeholders = ','.join(['?'] * len(batch_ids))
             
-            c.execute("SELECT batch_id, filename FROM batches WHERE created_at < ?", (cutoff,))
-            rows = c.fetchall()
-            if rows:
-                for bid, fname in rows:
-                    try:
-                        os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"))
-                        os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname))
-                    except: pass
+            total_revenue_to_archive = 0.0
+            for bid, uid, count in old_batches:
+                c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,)); res = c.fetchone(); price = res[0] if res else 3.00
+                total_revenue_to_archive += (count * price)
+            c.execute("UPDATE system_config SET value = CAST((CAST(value AS REAL) + ?) AS TEXT) WHERE key = 'archived_revenue'", (total_revenue_to_archive,))
             
-            c.execute("DELETE FROM batches WHERE created_at < ?", (cutoff,))
-            c.execute("DELETE FROM history WHERE created_at < ?", (cutoff,))
-            c.execute("DELETE FROM login_history WHERE created_at < ?", (cutoff,))
+            for bid, _, _ in old_batches:
+                try: os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"))
+                except: pass
             
-            conn.commit()
-            conn.close()
-    except: pass
+            c.execute(f"DELETE FROM history WHERE batch_id IN ({batch_placeholders})", batch_ids)
+            c.execute(f"DELETE FROM batches WHERE batch_id IN ({batch_placeholders})", batch_ids)
+            conn.commit(); conn.execute("VACUUM"); conn.close()
+    except Exception as e:
+        print(f"[ARCHIVE ERROR] {e}")
 
-def select_weighted_batch(cursor):
-    cursor.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED'")
-    all_queued = cursor.fetchall()
-    
-    if not all_queued: return None
+def get_next_batch(db_path, worker_id):
+    conn = sqlite3.connect(db_path, timeout=60)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        c = conn.cursor()
+        c.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1")
+        row = c.fetchone()
+        
+        if row:
+            batch_id = row[0]
+            c.execute("UPDATE batches SET status = 'PROCESSING' WHERE batch_id = ?", (batch_id,))
+            conn.commit(); conn.close()
+            return row
+        else:
+            conn.commit(); conn.close()
+            return None
+    except Exception as e:
+        try: conn.rollback(); conn.close() 
+        except: pass
+        return None
 
-    user_queues = {}
-    for row in all_queued:
-        uid = row[1]
-        if uid not in user_queues: user_queues[uid] = []
-        user_queues[uid].append(row)
-
-    candidates = []
-    for uid in user_queues:
-        user_queues[uid].sort(key=lambda x: x[7])
-        candidates.append(user_queues[uid][0])
-
-    weights = []
-    for batch in candidates:
-        count = batch[3]
-        if count <= 5: w = 100
-        elif count <= 20: w = 50
-        elif count <= 100: w = 20
-        else: w = 5
-        weights.append(w)
-
-    return random.choices(candidates, weights=weights, k=1)[0]
-
-def process_queue(app):
-    log_debug("Started (Safe Mode - No File Write).")
+def worker_loop(app, worker_id):
+    log_debug(f"Worker Thread {worker_id} Started.")
     from .services.label_engine import LabelEngine
     
     with app.app_context():
         try:
             db_path = current_app.config['DB_PATH']
             conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            c.execute("UPDATE batches SET status = 'FAILED' WHERE status = 'PROCESSING'")
-            if c.rowcount > 0: log_debug(f"Reset {c.rowcount} stuck batches to FAILED.")
-            conn.commit(); conn.close()
+            conn.execute("PRAGMA journal_mode=WAL;") 
+            conn.close()
         except: pass
 
-    last_cleanup = time.time()
-    
+    time.sleep(worker_id * 0.5)
+
     while True:
         try:
+            data_folder = ""
+            db_path = ""
+            
             with app.app_context():
+                data_folder = current_app.config['DATA_FOLDER']
                 db_path = current_app.config['DB_PATH']
-                conn = sqlite3.connect(db_path, timeout=30)
+                if worker_id == 1 and int(time.time()) % 3600 < 5:
+                    archive_and_purge(app)
+                    time.sleep(5)
+                conn = sqlite3.connect(db_path)
                 c = conn.cursor()
-
-                now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (now_str,))
-                conn.commit()
-
                 c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
-                paused_row = c.fetchone()
-                if paused_row and paused_row[0] == '1':
-                    conn.close(); time.sleep(2); continue
-
-                if time.time() - last_cleanup > 3600:
-                    check_auto_renewals(app)
-                    cleanup_old_data(app)
-                    last_cleanup = time.time()
-
-                c.execute("SELECT count(*) FROM batches WHERE status = 'PROCESSING'")
-                if c.fetchone()[0] > 0:
-                    conn.close(); time.sleep(2); continue
-
-                task = select_weighted_batch(c)
-
-                if task:
-                    bid, uid, fname, count, template, version, ltype, created_at = task
-                    log_debug(f"Processing Batch {bid} (User: {uid})...")
-                    
-                    c.execute("UPDATE batches SET status = 'PROCESSING' WHERE batch_id = ?", (bid,))
-                    conn.commit()
-
-                    price = get_worker_price(db_path, uid, ltype, version)
-
-                    try:
-                        csv_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname)
-                        if not os.path.exists(csv_path): raise Exception("File Missing")
-
-                        # --- FIX: READ AS TEXT ---
-                        df = pd.read_csv(csv_path, dtype=str)
-                        if 'ZipTo' in df.columns:
-                            log_debug(f"Loaded Zips (First 3): {df['ZipTo'].head().tolist()}")
-                        
-                        engine = LabelEngine()
-                        pdf_bytes, success = engine.process_batch(df, ltype, version, bid, db_path, uid, template)
-
-                        if success > 0 and pdf_bytes:
-                            with open(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"), 'wb') as f:
-                                f.write(pdf_bytes)
-
-                        status = 'COMPLETED'
-                        if success == 0: status = 'FAILED'
-                        elif success < count: status = 'PARTIAL'
-
-                        failed = count - success
-                        if failed > 0:
-                            refund = failed * price
-                            c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
-                            log_debug(f"Refunded ${refund} for {failed} failed items.")
-
-                        c.execute("UPDATE batches SET status = ?, success_count = ? WHERE batch_id = ?", (status, success, bid))
-                        conn.commit()
-                        log_debug(f"Batch {bid} Completed. Success: {success}/{count}")
-
-                    except Exception as e:
-                        log_debug(f"CRASH ON BATCH {bid}: {e}")
-                        refund = count * price
-                        c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
-                        c.execute("UPDATE batches SET status = 'FAILED', success_count = 0 WHERE batch_id = ?", (bid,))
-                        conn.commit()
-                
+                paused = c.fetchone()
                 conn.close()
+                if paused and paused[0] == '1':
+                    time.sleep(5); continue
 
-        except Exception as e:
-            print(f"Worker Loop Error: {e}")
+            task = get_next_batch(db_path, worker_id)
+
+            if task:
+                bid, uid, fname, count, template, version, ltype, created_at = task
+                log_debug(f"[T{worker_id}] Processing {bid}...")
+                
+                price = get_worker_price(db_path, uid, ltype, version)
+
+                try:
+                    csv_path = os.path.join(data_folder, 'uploads', fname)
+                    if not os.path.exists(csv_path): 
+                        raise Exception(f"File {fname} missing")
+
+                    df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
+                    engine = LabelEngine()
+                    # Pass DB path to engine so it can log sub-errors too
+                    pdf_bytes, success = engine.process_batch(
+                        df, ltype, version, bid, db_path, uid, template, data_folder=data_folder
+                    )
+
+                    if success > 0 and pdf_bytes:
+                        with open(os.path.join(data_folder, 'pdfs', f"{bid}.pdf"), 'wb') as f: f.write(pdf_bytes)
+
+                    status = 'COMPLETED'
+                    if success == 0: status = 'FAILED'
+                    elif success < count: status = 'PARTIAL'
+
+                    conn = sqlite3.connect(db_path, timeout=60)
+                    c = conn.cursor()
+                    failed = count - success
+                    if failed > 0:
+                        refund = failed * price
+                        c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
+                        # LOG THIS TO SYSTEM ERROR LOG TOO IF IT WAS A FAILURE
+                        if success == 0:
+                            log_server_error(db_path, f"Worker-{worker_id}", f"Batch {bid} Failed completely. Refunded ${refund}", bid)
+
+                    c.execute("UPDATE batches SET status = ?, success_count = ? WHERE batch_id = ?", (status, success, bid))
+                    conn.commit(); conn.close()
+                    
+                except Exception as e:
+                    # HERE IS THE KEY CHANGE: LOG TO DB
+                    log_server_error(db_path, f"Worker-{worker_id}", f"CRASH: {str(e)}", bid)
+                    
+                    conn = sqlite3.connect(db_path, timeout=60)
+                    c = conn.cursor()
+                    refund = count * price
+                    c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
+                    c.execute("UPDATE batches SET status = 'FAILED', success_count = 0 WHERE batch_id = ?", (bid,))
+                    conn.commit(); conn.close()
+            else:
+                time.sleep(1) 
         
-        time.sleep(2)
+        except Exception as e:
+            # We can't log to DB easily if we don't have db_path context, but print it
+            print(f"[WORKER CRASH] {e}")
+            time.sleep(5)
 
 def start_worker(app):
-    t = threading.Thread(target=process_queue, args=(app,))
-    t.daemon = True
-    t.start()
+    for i in range(2):
+        t = threading.Thread(target=worker_loop, args=(app, i+1))
+        t.daemon = True
+        t.start()
