@@ -22,7 +22,7 @@
 ^FO515,353^AJN,15,15^FB380,4,0,L^FH^FDExpected Delivery Date: {EXPECTED_DATE}^FS
 
 // ──── Receiver Information ───────────────────────────────
-^FO145,635^AJN,25,25^FB380,4,5,L
+^FO145,635^AJN,25,25^FB380,5,5,L
 ^FH^FD{RECEIVER_BLOCK}^FS
 
 // ──── Data Matrix Barcode (Updated) ───────────────────────────────

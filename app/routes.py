@@ -8,6 +8,8 @@ import io
 import math
 import threading
 import time
+import requests
+import json
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, send_from_directory, jsonify, redirect, url_for, current_app, Response
 from flask_login import login_user, login_required, logout_user, current_user
@@ -21,6 +23,7 @@ from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf,
 
 main_bp = Blueprint('main', __name__)
 
+# --- CONFIGURATION ---
 STRICT_HEADERS = [
     'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From', 
     'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To', 
@@ -28,12 +31,14 @@ STRICT_HEADERS = [
     'Width', 'Height', 'Description', 'Ref01', 'Ref02', 'Contains Hazard', 'Shipment Date'
 ]
 
+OXAPAY_KEY = "RUYZRT-PLNM2L-ICWVUP-1WLICH"
 ACTIVE_CONFIRMATIONS = set() 
 
-# --- FIX: Print to console ---
+# --- HELPER: LOGGING ---
 def log_debug(message):
     print(f"[{datetime.now()}] [ROUTES] {message}")
 
+# --- HELPER: DATAFRAME ---
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     current_headers = list(df.columns)
@@ -54,15 +59,11 @@ def normalize_dataframe(df):
 
     if 'ZipTo' in df.columns:
         df['ZipTo'] = df['ZipTo'].astype(str).str.split('.').str[0].str.strip()
-        log_debug(f"Validating Zips (First 5): {df['ZipTo'].head().tolist()}")
-
         short_zips = df[df['ZipTo'].str.len() < 5]
         if not short_zips.empty:
             bad_row = short_zips.index[0] + 2
             bad_val = short_zips.iloc[0]['ZipTo']
-            msg = f"Row {bad_row} Error: Zip Code '{bad_val}' is too short (must be 5 digits)."
-            log_debug(msg)
-            return None, msg
+            return None, f"Row {bad_row} Error: Zip Code '{bad_val}' is too short (must be 5 digits)."
 
     return df, None
 
@@ -92,6 +93,7 @@ def to_est(date_str):
         return est.strftime("%Y-%m-%d %H:%M:%S")
     except: return date_str
 
+# --- AUTH ROUTES ---
 @main_bp.route('/')
 def index():
     if current_user.is_authenticated:
@@ -135,6 +137,7 @@ def register():
 @login_required
 def logout(): logout_user(); return redirect(url_for('main.login'))
 
+# --- DASHBOARD ROUTES ---
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): return redirect(url_for('main.purchase'))
@@ -163,7 +166,9 @@ def stats(): return render_template('dashboard.html', user=current_user, active_
 
 @main_bp.route('/deposit')
 @login_required
-def deposit(): return render_template('dashboard.html', user=current_user, active_tab='deposit')
+def deposit():
+    # Only renders the page. Data is now fetched via API for real-time updates.
+    return render_template('dashboard.html', user=current_user, active_tab='deposit')
 
 @main_bp.route('/settings')
 @login_required
@@ -173,6 +178,7 @@ def settings(): return render_template('dashboard.html', user=current_user, acti
 @login_required
 def addresses(): return render_template('dashboard.html', user=current_user, active_tab='addresses')
 
+# --- API ENDPOINTS ---
 @main_bp.route('/api/user')
 @login_required
 def api_user(): return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
@@ -225,7 +231,6 @@ def process():
 
     try:
         file.stream.seek(0)
-        # FORCE STRING READ
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e:
         log_debug(f"CSV Read Fail: {e}")
@@ -260,14 +265,158 @@ def verify_csv():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
     try: 
-        file.stream.seek(0); 
+        file.stream.seek(0)
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e: return jsonify({"error": f"CSV Read Failed: {str(e)}"}), 400
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
 
-# ... (Public Automation Routes) ...
+# --- OXAPAY SECURE DEPOSIT FLOW ---
+
+def verify_oxapay_payment(track_id):
+    """
+    SECURITY: Calls OxaPay API to confirm the transaction is real.
+    Prevents people from faking webhooks.
+    """
+    try:
+        url = "https://api.oxapay.com/merchants/inquiry"
+        payload = {"merchant": OXAPAY_KEY, "trackId": track_id}
+        r = requests.post(url, json=payload, timeout=10)
+        data = r.json()
+        
+        if data.get('result') == 100:
+            status = data.get('status', '').lower()
+            if status in ['paid', 'complete']:
+                return True, float(data.get('amount')) 
+    except Exception as e:
+        print(f"[SECURITY CHECK FAILED] {e}")
+    return False, 0.0
+
+@main_bp.route('/api/deposit/history', methods=['GET'])
+@login_required
+def get_deposit_history():
+    conn = get_db(); c = conn.cursor()
+    
+    # 1. Lazy Update: Auto-fail 'PROCESSING' if > 60 mins old
+    try:
+        one_hour_ago = (datetime.utcnow() - timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", (one_hour_ago,))
+        if c.rowcount > 0: conn.commit()
+    except: pass
+
+    # 2. Fetch
+    c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 20", (current_user.id,))
+    data = []
+    for r in c.fetchall():
+        data.append({
+            "amount": r[0],
+            "currency": r[1],
+            "txn_id": r[2],
+            "status": r[3],
+            "date": to_est(r[4])
+        })
+    conn.close()
+    return jsonify(data)
+
+@main_bp.route('/api/deposit/create', methods=['POST'])
+@login_required
+def create_deposit():
+    data = request.json
+    usd_amount = float(data.get('amount')) 
+    
+    if usd_amount < 10: return jsonify({"error": "Minimum deposit is $10"}), 400
+
+    url = "https://api.oxapay.com/merchants/request"
+    custom_order_id = f"USER_{current_user.id}_{int(time.time())}_{usd_amount}"
+
+    payload = {
+        "merchant": OXAPAY_KEY,
+        "amount": usd_amount,
+        "currency": "USDT", 
+        "lifeTime": 60, 
+        "feePaidByPayer": 0,
+        "underPaidCover": 2.0, 
+        "callbackUrl": url_for('main.deposit_webhook', _external=True),
+        "returnUrl": url_for('main.purchase', _external=True),
+        "description": f"Deposit ${usd_amount}",
+        "orderId": custom_order_id
+    }
+    
+    try:
+        r = requests.post(url, json=payload)
+        result = r.json()
+        
+        if result.get('result') == 100:
+            # SAVE AS PROCESSING IMMEDIATELY
+            try:
+                track_id = result.get('trackId')
+                if track_id:
+                    conn = get_db(); c = conn.cursor()
+                    c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
+                              (current_user.id, usd_amount, 'USDT', str(track_id), 'PROCESSING', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                    conn.commit(); conn.close()
+            except Exception as e: print(f"[DB ERROR] {e}")
+
+            return jsonify({"status": "success", "pay_link": result.get('payLink')})
+        else:
+            return jsonify({"error": result.get('message', 'Gateway Error')}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@main_bp.route('/api/deposit/webhook', methods=['POST'])
+def deposit_webhook():
+    try:
+        data = request.json
+        print(f"[WEBHOOK RECEIVED] {data}")
+
+        status = data.get('status', '').lower()
+        order_id = data.get('orderId')
+        track_id = data.get('trackId')
+        
+        # --- HANDLE SUCCESS ---
+        if status == 'paid' or status == 'confirming':
+            is_valid, verified_amount = verify_oxapay_payment(track_id)
+            if is_valid: 
+                parts = order_id.split('_')
+                if len(parts) >= 2:
+                    user_id = int(parts[1])
+                    user = User.get(user_id)
+                    if user:
+                        conn = get_db(); c = conn.cursor()
+                        c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
+                        existing = c.fetchone()
+                        
+                        if existing:
+                            if existing[1] != 'PAID': # Prevent double count
+                                user.update_balance(float(parts[3]))
+                                c.execute("UPDATE deposit_history SET status='PAID', currency=? WHERE id=?", (data.get('currency', 'USDT'), existing[0]))
+                                conn.commit()
+                                print(f"[PAYMENT COMPLETE] Updated {track_id}")
+                        else:
+                            # Fallback if processing row missing
+                            user.update_balance(float(parts[3]))
+                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
+                                      (user_id, float(parts[3]), data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                            conn.commit()
+                        conn.close()
+            else:
+                print(f"[SECURITY ALERT] Fake webhook: {track_id}")
+
+        # --- HANDLE FAILURE / EXPIRATION ---
+        elif status in ['expired', 'failed', 'rejected']:
+             conn = get_db(); c = conn.cursor()
+             c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),))
+             conn.commit(); conn.close()
+             print(f"[PAYMENT FAILED] Updated {track_id} to FAILED")
+
+    except Exception as e:
+        print(f"[WEBHOOK ERROR] {e}")
+        return jsonify({"status": "error"}), 500
+
+    return jsonify({"status": "ok"}), 200
+
+# ... (Rest of routes unchanged) ...
 @main_bp.route('/api/automation/public_config')
 @login_required
 def public_automation_config():
