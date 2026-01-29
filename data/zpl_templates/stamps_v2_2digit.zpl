@@ -26,7 +26,7 @@
 ^FO70,651^AJN,33,33^FB480,4,6,L
 ^FH^FDSHIP\&TO:^FS
 
-^FO180,651^AJN,34,34^FB480,5,1,L
+^FO180,651^AJN,34,34^FB780,5,1,L
 ^FH^FD{RECEIVER_BLOCK}^FS
 
 // ──── Data Matrix Barcode ───────────────────────────────

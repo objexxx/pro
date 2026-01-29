@@ -40,7 +40,7 @@
 ^FX ──── RECEIVER ─────────────────────────────
 ^FO159,587
 ^AJN,25,25
-^FB380,5,5,L
+^FB780,5,5,L
 ^FH^FD{RECEIVER_BLOCK}^FS
 
 ^FX ──── DATA MATRIX ──────────────────────────
