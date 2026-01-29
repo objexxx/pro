@@ -70,49 +70,72 @@ class LabelEngine:
     def calculate_transit_days(self, zone): z = int(zone); return 1 if z<=2 else 2 if z==3 else 3 if z<=5 else 4
     def generate_carrier_route(self, zip_code): return f"C{random.randint(1,99):03d}"
     
-    def format_address(self, name, company, street, city, state, zip_val):
+    # --- ADDRESS FORMATTER ---
+    def format_address(self, name, company, street, street2, city, state, zip_val):
         parts = []
         if name and str(name).lower()!='nan': parts.append(self.sanitize_zpl(str(name).strip()))
         if company and str(company).lower()!='nan': parts.append(self.sanitize_zpl(str(company).strip()))
         if street and str(street).lower()!='nan': parts.append(self.sanitize_zpl(str(street).strip()))
+        if street2 and str(street2).lower()!='nan': parts.append(self.sanitize_zpl(str(street2).strip()))
         parts.append(f"{self.sanitize_zpl(str(city))} {self.sanitize_zpl(str(state))} {self.sanitize_zpl(str(zip_val))}".strip())
         return "\\&".join(parts)
 
     def generate_0901_number(self): return f"090100000{random.randint(1000, 9999)}"
-    def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(3000000000, 3999999999))
+    def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(3000000000, 3999999999)) 
     def generate_c_number(self): return f"C{random.randint(1000000, 9999999)}"
     def generate_stamps_refs(self): return f"063S00000{random.randint(10000, 99999)}", f"{random.randint(1000000, 9999999)}"
 
     # --- PROCESSOR ---
     def process_single_label(self, row, version, templates, template_choice, batch_seq_code, now, today, data_folder):
+        # 1. INITIALIZE VARIABLES SAFELY (Prevents 'Not Defined' Crashes)
+        w_text = "1.0 LB" 
+        weight_val = 1.0
+        raw_w = "1"
+        order_id = "UNKNOWN"
+        t_choice = str(template_choice).lower()
+        
         def safe_get(key, default=""):
             val = row.get(key)
             if pd.isna(val) or str(val).lower() == 'nan': return default
             return self.sanitize_zpl(str(val).strip())
 
         try:
+            # --- INPUT PROCESSING (FORCED CAPITALIZATION) ---
             to_z = safe_get('ZipTo')
             if not to_z or len(to_z) < 5: 
                 print(f" > Skipped Row: Invalid Zip '{to_z}'")
                 return None, None
 
-            order_id = safe_get('Ref01'); sku = safe_get('Ref02'); desc_val = safe_get('Description')
-            from_n = safe_get('FromName'); from_c = safe_get('CompanyFrom'); from_s = safe_get('Street1From')
-            from_ci= safe_get('CityFrom'); from_st= safe_get('StateFrom'); from_z = safe_get('PostalCodeFrom')
-            to_n = safe_get('ToName'); to_c = safe_get('Company2'); to_s = safe_get('Street1To')
-            to_ci= safe_get('CityTo'); to_st= safe_get('StateTo'); 
+            # Force Uppercase on EVERYTHING
+            order_id = safe_get('Ref01').upper()
+            sku = safe_get('Ref02').upper()
+            desc_val = safe_get('Description').upper()
+            
+            from_n = safe_get('FromName').upper()
+            from_c = safe_get('CompanyFrom').upper()
+            from_s = safe_get('Street1From').upper()
+            from_s2= safe_get('Street2From').upper()
+            from_ci= safe_get('CityFrom').upper()
+            from_st= safe_get('StateFrom').upper()
+            from_z = safe_get('PostalCodeFrom').upper()
+            
+            to_n = safe_get('ToName').upper()
+            to_c = safe_get('Company2').upper()
+            to_s = safe_get('Street1To').upper()
+            to_s2= safe_get('Street2To').upper()
+            to_ci= safe_get('CityTo').upper()
+            to_st= safe_get('StateTo').upper()
             
             try:
                 raw_w = safe_get('Weight', '1')
                 weight_val = float(raw_w)
             except: weight_val = 1.0; raw_w = '1'
 
-            if "stamps_v2" in template_choice:
+            # --- TEMPLATE SELECTION ---
+            if "stamps_v2" in t_choice:
                 lbl = templates['heavy'] if weight_val >= 10 else templates['base']
             else:
                 lbl = templates['default']
-            
-            if "Weight lbs 0 ozs" in lbl: lbl = lbl.replace("Weight lbs 0 ozs", "{WEIGHT}")
             
             zip_5 = to_z[:5] 
             zone = self.calculate_zone(from_st, to_st)
@@ -123,17 +146,31 @@ class LabelEngine:
             acc, sec = self.generate_random_account_info()
             cr_route = self.generate_carrier_route(zip_5)
             
-            if "easypost" in template_choice.lower(): acc = self.generate_c_number() 
-            if "stamps_v2" in template_choice: w_disp = raw_w
-            elif "easypost" in template_choice.lower(): w_disp = raw_w
-            else: w_disp = f"{raw_w} Lbs 0 ozs"
+            if "easypost" in t_choice: acc = self.generate_c_number() 
 
-            sender_block = self.format_address(from_n, from_c, from_s, from_ci, from_st, from_z)
-            receiver_block = self.format_address(to_n, to_c, to_s, to_ci, to_st, to_z)
+            # --- WEIGHT TEXT LOGIC (ROBUST) ---
+            if "stamps_v2" in t_choice:
+                # SPECIAL STAMPS FORMAT: SPACES FOR R LOGO
+                w_text = f"{weight_val:.1f} LB PRIORITY MAIL      RATE"
+            elif "easypost" in t_choice:
+                w_text = str(raw_w) # Just the number
+            else:
+                w_text = f"{weight_val:.1f} LB" # Pitney Format
 
+            # --- ADDRESS FORMATTING ---
+            sender_block = self.format_address(from_n, from_c, from_s, from_s2, from_ci, from_st, from_z)
+            receiver_block = self.format_address(to_n, to_c, to_s, to_s2, to_ci, to_st, to_z)
+
+            # Common Replacements
             lbl = lbl.replace("{SENDER_BLOCK}", sender_block).replace("{RECEIVER_BLOCK}", receiver_block)
             lbl = lbl.replace("{SHIP_DATE}", today).replace("{EXPECTED_DATE}", exp_date).replace("{ZONE_ID}", zone)
-            lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5).replace("{WEIGHT}", w_disp) 
+            lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5)
+            lbl = lbl.replace("{FROM_ZIP_5}", from_z[:5]) 
+            
+            lbl = lbl.replace("{WEIGHT}", str(raw_w))        
+            lbl = lbl.replace("{WEIGHT_TEXT}", w_text)  
+            lbl = lbl.replace("{WEIGHT_RATE_TEXT}", w_text) 
+            
             lbl = lbl.replace("{ACCOUNT_ID}", acc).replace("{SEC_REF}", sec).replace("{JULIAN_SEQ}", batch_seq_code if batch_seq_code else "000")
 
             dm_data = f"_1420{zip_5}_1{trk}"
@@ -142,52 +179,74 @@ class LabelEngine:
             lbl = lbl.replace("{BARCODE_DATA_DM}", dm_data).replace("{BARCODE_DATA_128}", gs1_data)
             lbl = lbl.replace("{TRACKING_SPACED}", " ".join([trk[i:i+4] for i in range(0, len(trk), 4)]))
             lbl = lbl.replace("{TRACKING_NO_SPACED}", trk)
-            lbl = lbl.replace("{REF1}", sku).replace("{REF2}", order_id).replace("{DESC}", desc_val)
+            
+            # REF Handling
+            lbl = lbl.replace("{REF1}", sku).replace("{REF}", sku)
+            lbl = lbl.replace("{REF2}", order_id).replace("{DESC}", desc_val)
             lbl = lbl.replace("{REFS_REORDERED}", f"{order_id} | {desc_val} | {sku}")
+            
             lbl = lbl.replace("{CARRIER_ROUTE}", cr_route).replace("{SHIP_DATE_YMD}", now.strftime("%Y-%m-%d"))
             lbl = lbl.replace("{C_NUMBER}", acc).replace("{RANDOM_0901}", self.generate_0901_number())
             lbl = lbl.replace("{SHIP_DATE_YMD_NODASH}", now.strftime("%Y%m%d"))
             
-            if "stamps_v2" in template_choice:
-                stamps_ref1, stamps_ref2 = self.generate_stamps_refs()
-                lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1).replace("{STAMPS_REF_2}", stamps_ref2)
-                try: w_str = f"{int(weight_val * 100):04d}"
-                except: w_str = "0100"
-                stamps_pdf_data = f"USPS|PC|PM|Z{zone}|W{w_str}|D{now.strftime('%Y%m%d')}|F{from_z}|T{zip_5}|S{trk}|RCOMM|A{stamps_ref1}|C{stamps_ref2}|N0003|LCO25"
-                lbl = lbl.replace("{PDF_417_DATA}", stamps_pdf_data)
+            # --- PDF 417 BARCODE GENERATION ---
+            if "pitney" in t_choice or "easypost" in t_choice or "stamps" in t_choice:
+                oz4 = f"{int(weight_val * 16):04d}" 
+                ymd = now.strftime("%Y%m%d")
+                check_val = str(random.randint(10000000, 99999999)) 
+                
+                # STAMPS SPECIFIC VARS
+                stamps_ref1 = "063S" + str(random.randint(1000000000, 9999999999))
+                stamps_ref2 = str(random.randint(1000000, 9999999))
+                
+                lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1)
+                lbl = lbl.replace("{STAMPS_REF_2}", stamps_ref2)
+
+                # USE UNIVERSAL FORMAT FOR ALL THREE NOW
+                pdf_acc_val = stamps_ref1 if "stamps" in t_choice else acc
+                
+                universal_pdf = f"USPS|PC|PM|Z{zone}|W{oz4}|D{ymd}|F{from_z[:5]}|T{zip_5}|S{trk}|RCOMM|A{pdf_acc_val}|C{check_val}|N0003|LCO25"
+                lbl = lbl.replace("{PDF_417_DATA}", universal_pdf)
+
             else:
+                # Fallback for old templates
                 pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
                 lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
 
-            label_size = "4.5x6.7" if "stamps" in template_choice.lower() else "4x6"
+            # --- SIZE LOGIC ---
+            label_size = "4x6"
+            if "stamps" in t_choice or "pitney" in t_choice or "easypost" in t_choice: 
+                label_size = "4.8x7.1" 
 
-            # --- API RETRY LOOP ---
+            # --- DEBUG FILE WRITE ---
+            try:
+                debug_file = os.path.join(data_folder, "zpl_debug_log.txt")
+                with open(debug_file, "a", encoding="utf-8") as f:
+                    f.write(f"\n{'='*50}\nTIMESTAMP: {datetime.now()}\nORDER: {order_id} | TEMPLATE: {template_choice}\n{'-'*50}\n{lbl}\n{'='*50}\n")
+            except: pass
+
+            # --- API CALL ---
             attempts = 0
             max_retries = 10
-            
             while attempts < max_retries:
                 try:
                     res = requests.post(f"http://api.labelary.com/v1/printers/8dpmm/labels/{label_size}/", 
                                         data=lbl.encode('utf-8'), headers={'Accept': 'application/pdf'}, timeout=30)
                     
                     if res.status_code == 200:
-                        print(f" > [200 OK] Label Generated for {order_id}")
+                        # print(f" > [200 OK] Label Generated for {order_id}")
                         return res.content, {
                             "tracking": trk, "ref_id": sku, "from_name": from_n, "to_name": to_n,
                             "address_to": f"{to_s} {to_ci} {to_st} {to_z}", "ref02": order_id
                         }
                     elif res.status_code == 429:
-                        wait = (attempts + 1) * 1.5
-                        print(f" > [429 LIMIT] Waiting {wait}s...")
-                        time.sleep(wait)
+                        time.sleep((attempts + 1) * 1.5)
                         attempts += 1
                         continue
                     else:
-                        print(f" > [API ERROR] Code {res.status_code}: {res.text[:50]}")
                         attempts += 1
                         time.sleep(1)
                 except Exception as req_err:
-                    print(f" > [NET ERROR] {req_err}")
                     attempts += 1
                     time.sleep(1)
             
@@ -220,11 +279,9 @@ class LabelEngine:
                 if not template_choice.endswith('.zpl'): template_choice += ".zpl"
                 zpl_path = os.path.join(data_folder, 'zpl_templates', template_choice)
                 if not os.path.exists(zpl_path): 
-                    print(f"[ENGINE ERROR] Template not found: {zpl_path}")
                     raise Exception(f"Template missing: {zpl_path}")
                 with open(zpl_path, 'r', encoding='utf-8') as f: templates['default'] = f.read().strip()
         except Exception as e:
-            print(f"[ENGINE TEMPLATE ERROR] {e}")
             raise e
 
         now = datetime.now()
@@ -234,16 +291,11 @@ class LabelEngine:
 
         success_count = 0
         db_records = []
-
-        # --- LIVE UPDATE CONNECTION ---
-        live_conn = None
-        try:
-            live_conn = sqlite3.connect(db_path, timeout=10)
-            live_conn.execute("PRAGMA journal_mode=WAL;")
-        except Exception as e: 
-            print(f"[ENGINE DEBUG] Live Conn Failed: {e}")
-
-        # SAFETY: MAX 1 THREAD PER BATCH
+        
+        # --- RE-ADDED CHUNKED UPDATES TO FIX 'REAL-TIME' ISSUE SAFELY ---
+        # We perform 1 quick DB write every 5 labels.
+        # This keeps the UI feeling 'live' without locking the DB for every single label.
+        
         with ThreadPoolExecutor(max_workers=1) as executor:
             futures = {executor.submit(self.process_single_label, row, version, templates, template_choice, batch_seq_code, now, today, data_folder): idx for idx, row in df.iterrows()}
             
@@ -259,17 +311,15 @@ class LabelEngine:
                         datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), meta['ref02']
                     ))
 
-                    # --- LIVE UPDATE "FIRE AND FORGET" ---
-                    if live_conn:
+                    # --- SAFE LIVE UPDATE (CHUNKED EVERY 5) ---
+                    if success_count % 5 == 0:
                         try:
-                            live_conn.execute("UPDATE batches SET success_count = ? WHERE batch_id = ?", (success_count, batch_id))
-                            live_conn.commit()
-                        except Exception as e: 
-                            print(f"[ENGINE UPDATE SKIP] Batch {batch_id}: {e}")
-
-        if live_conn:
-            try: live_conn.close()
-            except: pass
+                            # Short timeout to fail fast rather than block
+                            conn = sqlite3.connect(db_path, timeout=1) 
+                            conn.execute("UPDATE batches SET success_count = ? WHERE batch_id = ?", (success_count, batch_id))
+                            conn.commit()
+                            conn.close()
+                        except: pass 
 
         if db_records:
             try:
@@ -277,14 +327,9 @@ class LabelEngine:
                 c = conn.cursor()
                 try: c.execute("ALTER TABLE history ADD COLUMN ref02 TEXT"); conn.commit()
                 except: pass
-                
-                c.executemany("""
-                    INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, db_records)
-                conn.commit()
-                conn.close()
-            except Exception as e: print(f"[ENGINE DB ERROR] {e}")
+                c.executemany("INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", db_records)
+                conn.commit(); conn.close()
+            except: pass
 
         final_pdf = io.BytesIO()
         if success_count > 0: merger.write(final_pdf)

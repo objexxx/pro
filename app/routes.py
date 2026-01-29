@@ -23,6 +23,7 @@ from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf,
 
 main_bp = Blueprint('main', __name__)
 
+# --- CONFIGURATION ---
 STRICT_HEADERS = [
     'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From', 
     'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To', 
@@ -34,9 +35,11 @@ STRICT_HEADERS = [
 OXAPAY_KEY = os.getenv('OXAPAY_KEY')
 ACTIVE_CONFIRMATIONS = set() 
 
+# --- HELPER: LOGGING ---
 def log_debug(message):
     print(f"[{datetime.now()}] [ROUTES] {message}")
 
+# --- HELPER: DATAFRAME ---
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     current_headers = list(df.columns)
@@ -54,6 +57,26 @@ def normalize_dataframe(df):
     if not incomplete_rows.empty:
         first_error_idx = incomplete_rows.index[0] + 2
         return None, f"Row {first_error_idx} Error: Missing required Recipient Information."
+
+    # --- NEW: VALIDATE STATE LENGTH (2 Letters Only) ---
+    if 'StateTo' in df.columns:
+        # Convert to string, strip whitespace, and check length
+        df['StateTo'] = df['StateTo'].astype(str).str.strip().str.upper()
+        bad_states = df[df['StateTo'].str.len() != 2]
+        
+        if not bad_states.empty:
+            bad_row = bad_states.index[0] + 2
+            bad_val = bad_states.iloc[0]['StateTo']
+            return None, f"Row {bad_row} Error: State '{bad_val}' must be a 2-letter code (e.g. 'CA' not 'California')."
+
+    # Also check Sender State if present
+    if 'StateFrom' in df.columns:
+        df['StateFrom'] = df['StateFrom'].astype(str).str.strip().str.upper()
+        bad_from = df[df['StateFrom'].str.len() != 2]
+        if not bad_from.empty:
+             bad_row = bad_from.index[0] + 2
+             bad_val = bad_from.iloc[0]['StateFrom']
+             return None, f"Row {bad_row} Error: Sender State '{bad_val}' must be 2 letters."
 
     if 'ZipTo' in df.columns:
         df['ZipTo'] = df['ZipTo'].astype(str).str.split('.').str[0].str.strip()
@@ -91,6 +114,7 @@ def to_est(date_str):
         return est.strftime("%Y-%m-%d %H:%M:%S")
     except: return date_str
 
+# --- AUTH ROUTES ---
 @main_bp.route('/')
 def index():
     if current_user.is_authenticated:
@@ -134,6 +158,7 @@ def register():
 @login_required
 def logout(): logout_user(); return redirect(url_for('main.login'))
 
+# --- DASHBOARD ROUTES ---
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): return redirect(url_for('main.purchase'))
@@ -173,6 +198,7 @@ def settings(): return render_template('dashboard.html', user=current_user, acti
 @login_required
 def addresses(): return render_template('dashboard.html', user=current_user, active_tab='addresses')
 
+# --- API ENDPOINTS ---
 @main_bp.route('/api/user')
 @login_required
 def api_user(): return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
@@ -227,7 +253,8 @@ def process():
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e:
         log_debug(f"CSV Read Fail: {e}")
-        return jsonify({"error": "CSV Format Error. Please check file encoding."}), 400
+        # SECURITY FIX: Generic error for user
+        return jsonify({"error": "Could not read CSV file. Please ensure it is a valid CSV format."}), 400
 
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
@@ -248,9 +275,10 @@ def process():
         log_debug(f"Batch {batch_id} Queued Successfully")
         return jsonify({"status": "success", "batch_id": batch_id})
     except Exception as e:
-        log_debug(f"[CRITICAL ERROR] {e}") # Log to console
-        current_user.update_balance(cost)
-        return jsonify({"error": "System Error: Processing failed. Funds refunded."}), 500
+        # SECURITY FIX: Log specific error to console, send generic error to user
+        log_debug(f"[CRITICAL ERROR] /process endpoint: {str(e)}")
+        current_user.update_balance(cost) # Refund attempted charge
+        return jsonify({"error": "Internal System Error. Please try again later."}), 500
 
 @main_bp.route('/verify-csv', methods=['POST'])
 @login_required
@@ -264,6 +292,8 @@ def verify_csv():
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
+
+# --- OXAPAY SECURE DEPOSIT FLOW ---
 
 def verify_oxapay_payment(track_id):
     try:
@@ -288,6 +318,7 @@ def verify_oxapay_payment(track_id):
 @login_required
 def get_deposit_history():
     conn = get_db(); c = conn.cursor()
+    # Auto-fail 'PROCESSING' if > 60 mins old
     try:
         one_hour_ago = (datetime.utcnow() - timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", (one_hour_ago,))
@@ -364,6 +395,7 @@ def deposit_webhook():
         track_id = data.get('trackId')
         
         if status == 'paid' or status == 'confirming':
+            # --- SECURITY ENFORCED ---
             is_valid, verified_amount = verify_oxapay_payment(track_id)
             
             if is_valid: 
@@ -397,6 +429,7 @@ def deposit_webhook():
              conn.commit(); conn.close()
 
     except Exception as e:
+        # SECURITY FIX: Don't reveal internals to webhook sender
         print(f"[WEBHOOK ERROR] {e}")
         return jsonify({"status": "error"}), 500
 
