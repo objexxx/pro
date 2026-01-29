@@ -36,9 +36,9 @@
 
     {% if user.is_subscribed %}
     <div class="flex flex-col lg:grid lg:grid-cols-12 gap-6 flex-1 min-h-0">
-        <div class="lg:col-span-4 flex flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar">
+        <div class="lg:col-span-4 flex flex-col gap-4 min-h-0">
             
-            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 relative overflow-hidden group shadow-glow">
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 relative overflow-hidden group shadow-glow shrink-0">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 bg-green-500/10 border border-green-500/20 text-green-500 flex items-center justify-center">
@@ -56,15 +56,16 @@
                 </div>
             </div>
 
-            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] flex flex-col flex-1 relative overflow-hidden shadow-glow">
-                <div class="flex border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505]">
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] flex flex-col flex-1 relative overflow-hidden shadow-glow min-h-0">
+                <div class="flex border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505] shrink-0">
                     <button onclick="toggleConfigTab('credentials')" id="tab-credentials" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest border-b-2 border-black dark:border-white text-black dark:text-white transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111]">API Keys</button>
                     <button onclick="toggleConfigTab('inventory')" id="tab-inventory" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">Inventory</button>
                     <button onclick="toggleConfigTab('sender')" id="tab-sender" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">Sender</button>
                 </div>
 
-                <div class="p-5 flex-1 overflow-y-auto custom-scrollbar">
-                    <div id="panel-credentials" class="space-y-4">
+                <div class="p-5 flex-1 flex flex-col min-h-0 overflow-hidden relative">
+                    
+                    <div id="panel-credentials" class="h-full flex flex-col space-y-4 overflow-y-auto custom-scrollbar">
                         <div>
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Cookies (JSON String)</label>
                             <textarea id="in_cookies" rows="6" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none resize-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">{{ user.auth_cookies or '' }}</textarea>
@@ -74,9 +75,11 @@
                             <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">
                         </div>
                     </div>
-                    <div id="panel-inventory" class="hidden space-y-3">
+
+                    <div id="panel-inventory" class="hidden h-full flex flex-col">
                         <textarea id="in_inventory" class="hidden">{{ user.inventory_json or '{}' }}</textarea>
-                        <div class="bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] p-3 space-y-2">
+                        
+                        <div class="bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] p-3 space-y-2 shrink-0 mb-3">
                             <div class="grid grid-cols-2 gap-2">
                                 <input id="inv_sku" type="text" placeholder="SKU ID" class="p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
                                 <input id="inv_weight" type="number" placeholder="Lbs" class="p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
@@ -84,9 +87,11 @@
                             <input id="inv_desc" type="text" placeholder="Package Description" class="w-full p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
                             <button onclick="addInvItem()" class="w-full py-2 bg-black dark:bg-white border border-transparent text-white dark:text-black text-[9px] font-bold uppercase tracking-widest hover:opacity-90 transition-all font-mono">Update Map</button>
                         </div>
-                        <div id="inventory_list" class="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar"></div>
+
+                        <div id="inventory_list" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar"></div>
                     </div>
-                    <div id="panel-sender" class="hidden space-y-4">
+
+                    <div id="panel-sender" class="hidden h-full flex flex-col space-y-4 overflow-y-auto custom-scrollbar">
                         <div class="flex justify-between items-center mb-1">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono">Sender Profile</label>
                             <a href="#" onclick="switchTab('addresses')" class="text-[9px] font-bold text-blue-500 uppercase hover:text-blue-400 transition-colors font-mono underline decoration-blue-500/30 underline-offset-4">Manage Profiles</a>
@@ -104,15 +109,15 @@
                     </div>
                 </div>
 
-                <div class="p-5 border-t border-gray-200 dark:border-[#1E1E1E] space-y-2 bg-gray-50 dark:bg-[#050505]">
+                <div class="p-5 border-t border-gray-200 dark:border-[#1E1E1E] space-y-2 bg-gray-50 dark:bg-[#050505] shrink-0">
                     <button onclick="saveSettings()" id="saveBtn" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold text-[9px] uppercase tracking-widest hover:opacity-90 transition-all font-mono shadow-sm">Save Config</button>
                     <button onclick="formatFile()" id="parseBtn" disabled class="w-full py-3 bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#1E1E1E] text-gray-400 text-[9px] font-bold uppercase tracking-widest cursor-not-allowed transition-all font-mono">Parse Orders</button>
                 </div>
             </div>
         </div>
 
-        <div class="lg:col-span-8 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden">
-            <div class="p-5 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+        <div class="lg:col-span-8 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden min-h-0">
+            <div class="p-5 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505] shrink-0">
                 <div class="flex items-center gap-6">
                     <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">Pending Confirmations</h3>
                     <div class="flex items-center gap-4 border-l border-gray-200 dark:border-[#1E1E1E] pl-6 text-center">
@@ -123,6 +128,10 @@
                         <div>
                             <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Partial</p>
                             <p id="stat-partial" class="text-[10px] font-mono font-bold text-yellow-500">0</p>
+                        </div>
+                        <div>
+                            <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Failed</p>
+                            <p id="stat-failed" class="text-[10px] font-mono font-bold text-red-500">0</p>
                         </div>
                     </div>
                 </div>
@@ -147,7 +156,7 @@
                 </table>
             </div>
 
-            <div class="p-4 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505]">
+            <div class="p-4 border-t border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505] shrink-0">
                 <span id="auto_page_info" class="text-[9px] font-mono font-bold text-gray-500 uppercase tracking-widest">Page 0 of 0</span>
                 <div class="flex gap-2">
                     <button onclick="changeAutoPage(-1)" id="btnPrevAuto" disabled class="px-4 py-1.5 border border-gray-200 dark:border-[#1E1E1E] text-[8px] font-bold uppercase text-black dark:text-white hover:bg-white dark:hover:bg-[#151515] disabled:opacity-30 transition-all font-mono">Prev</button>
@@ -186,7 +195,6 @@
     let addressesAvailable = false;
     window.confirmedSessionIds = []; 
 
-    // --- REAL TIME POLLER FOR CONFIG ---
     async function syncConfig() {
         try {
             const res = await fetch('/api/automation/public_config');
@@ -286,8 +294,17 @@
             const res = await fetch(`/api/batches?page=${autoCurrentPage}&limit=10`);
             const json = await res.json();
             let html = '';
-            let readyCount = 0, partialCount = 0;
             
+            // --- UPDATED STATS FETCHING ---
+            // Fetch true global counts from API instead of local counting
+            const statsRes = await fetch('/api/stats');
+            const stats = await statsRes.json();
+            
+            if (document.getElementById('stat-ready')) document.getElementById('stat-ready').innerText = stats.ready_batches || 0;
+            if (document.getElementById('stat-partial')) document.getElementById('stat-partial').innerText = stats.partial_batches || 0;
+            if (document.getElementById('stat-failed')) document.getElementById('stat-failed').innerText = stats.failed_batches || 0;
+            
+            // Update Balance if needed
             const userRes = await fetch('/api/user');
             const userData = await userRes.json();
             const balElem = document.getElementById('wallet-balance');
@@ -307,8 +324,12 @@
                     statusBadge = '<span class="text-gray-500 font-bold font-mono uppercase text-[9px]">EXPIRED</span>';
                     actionBtn = `<button disabled class="w-[120px] py-1.5 bg-[#111] text-gray-500 font-bold uppercase text-[8px] cursor-not-allowed border border-[#222] font-mono flex items-center justify-center ml-auto">WINDOW EXPIRED</button>`;
                 }
+                else if (b.status === 'REFUNDED') {
+                    labelClass = 'text-red-600 dark:text-red-400 border-red-500/20';
+                    statusBadge = '<span class="text-red-600 dark:text-red-400 font-bold font-mono uppercase text-[9px]">REFUNDED</span>';
+                    actionBtn = `<button disabled class="w-[120px] py-1.5 bg-gray-100 dark:bg-[#111] text-gray-400 font-bold uppercase text-[8px] cursor-not-allowed border border-gray-200 dark:border-[#333] font-mono flex items-center justify-center ml-auto">REVOKED</button>`;
+                }
                 else if (b.status === 'CONFIRMED') {
-                    readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border-green-500/30';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">CONFIRMED</span>';
                     actionBtn = `
@@ -328,13 +349,11 @@
                     actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
                 }
                 else if (b.status === 'COMPLETED' || b.status === 'READY') {
-                    readyCount++;
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM BATCH</button>`;
                 } 
                 else if (b.status === 'PARTIAL') {
-                    partialCount++;
                     labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30';
                     statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold font-mono uppercase text-[9px]">PARTIAL</span>';
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM REMAINING</button>`;
@@ -361,8 +380,6 @@
             });
             tbody.innerHTML = html || '<tr><td colspan="5" class="p-8 text-center text-gray-400 font-mono text-[9px] tracking-[0.2em] uppercase">NO DATA FOUND</td></tr>';
             
-            document.getElementById('stat-ready').innerText = readyCount;
-            document.getElementById('stat-partial').innerText = partialCount;
             const meta = json.pagination;
             document.getElementById('auto_page_info').innerText = `PAGE ${meta.current_page} OF ${meta.total_pages || 1}`;
             document.getElementById('btnPrevAuto').disabled = meta.current_page <= 1;

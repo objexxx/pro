@@ -23,9 +23,6 @@ def log_server_error(db_path, source, msg, batch_id=None):
 def log_debug(message):
     print(f"[{datetime.now()}] [WORKER] {message}")
 
-# ... [get_worker_price, check_auto_renewals, archive_and_purge remain same] ...
-# PASTE THOSE FUNCTIONS HERE IF NEEDED, OR JUST UPDATE THE LOOP BELOW:
-
 def get_worker_price(db_path, user_id, label_type, version):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -61,29 +58,42 @@ def archive_and_purge(app):
     try:
         with app.app_context():
             db_path = current_app.config['DB_PATH']
-            cutoff_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+            cutoff_date = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
+            
             conn = sqlite3.connect(db_path)
             c = conn.cursor()
-            c.execute("SELECT batch_id, user_id, success_count FROM batches WHERE created_at < ? AND status IN ('COMPLETED', 'PARTIAL', 'FAILED')", (cutoff_date,))
+            
+            c.execute("SELECT batch_id, user_id, success_count, filename FROM batches WHERE created_at < ? AND status IN ('COMPLETED', 'PARTIAL', 'FAILED')", (cutoff_date,))
             old_batches = c.fetchall()
+            
             if not old_batches:
                 conn.close(); return
+            
             batch_ids = [b[0] for b in old_batches]
             batch_placeholders = ','.join(['?'] * len(batch_ids))
             
             total_revenue_to_archive = 0.0
-            for bid, uid, count in old_batches:
+            for bid, uid, count, fname in old_batches:
                 c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,)); res = c.fetchone(); price = res[0] if res else 3.00
                 total_revenue_to_archive += (count * price)
+            
             c.execute("UPDATE system_config SET value = CAST((CAST(value AS REAL) + ?) AS TEXT) WHERE key = 'archived_revenue'", (total_revenue_to_archive,))
             
-            for bid, _, _ in old_batches:
+            for bid, _, _, fname in old_batches:
                 try: os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"))
+                except: pass
+                
+                try: 
+                    if fname:
+                        os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname))
                 except: pass
             
             c.execute(f"DELETE FROM history WHERE batch_id IN ({batch_placeholders})", batch_ids)
             c.execute(f"DELETE FROM batches WHERE batch_id IN ({batch_placeholders})", batch_ids)
             conn.commit(); conn.execute("VACUUM"); conn.close()
+            
+            log_debug(f"Purged {len(batch_ids)} old batches (>14 days).")
+            
     except Exception as e:
         print(f"[ARCHIVE ERROR] {e}")
 
@@ -130,11 +140,21 @@ def worker_loop(app, worker_id):
             with app.app_context():
                 data_folder = current_app.config['DATA_FOLDER']
                 db_path = current_app.config['DB_PATH']
+                
                 if worker_id == 1 and int(time.time()) % 3600 < 5:
                     archive_and_purge(app)
                     time.sleep(5)
+                
                 conn = sqlite3.connect(db_path)
                 c = conn.cursor()
+                
+                # --- HEARTBEAT UPDATE (FIXED) ---
+                # This line ensures the admin panel sees the worker as "ONLINE"
+                now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (now_str,))
+                conn.commit()
+                # --------------------------------
+
                 c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
                 paused = c.fetchone()
                 conn.close()
@@ -156,7 +176,7 @@ def worker_loop(app, worker_id):
 
                     df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
                     engine = LabelEngine()
-                    # Pass DB path to engine so it can log sub-errors too
+                    
                     pdf_bytes, success = engine.process_batch(
                         df, ltype, version, bid, db_path, uid, template, data_folder=data_folder
                     )
@@ -174,7 +194,6 @@ def worker_loop(app, worker_id):
                     if failed > 0:
                         refund = failed * price
                         c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
-                        # LOG THIS TO SYSTEM ERROR LOG TOO IF IT WAS A FAILURE
                         if success == 0:
                             log_server_error(db_path, f"Worker-{worker_id}", f"Batch {bid} Failed completely. Refunded ${refund}", bid)
 
@@ -182,7 +201,6 @@ def worker_loop(app, worker_id):
                     conn.commit(); conn.close()
                     
                 except Exception as e:
-                    # HERE IS THE KEY CHANGE: LOG TO DB
                     log_server_error(db_path, f"Worker-{worker_id}", f"CRASH: {str(e)}", bid)
                     
                     conn = sqlite3.connect(db_path, timeout=60)
@@ -195,7 +213,6 @@ def worker_loop(app, worker_id):
                 time.sleep(1) 
         
         except Exception as e:
-            # We can't log to DB easily if we don't have db_path context, but print it
             print(f"[WORKER CRASH] {e}")
             time.sleep(5)
 

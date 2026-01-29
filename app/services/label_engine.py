@@ -81,7 +81,7 @@ class LabelEngine:
         return "\\&".join(parts)
 
     def generate_0901_number(self): return f"090100000{random.randint(1000, 9999)}"
-    def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(3000000000, 3999999999)) 
+    def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(30000000, 99999999)) 
     def generate_c_number(self): return f"C{random.randint(1000000, 9999999)}"
     def generate_stamps_refs(self): return f"063S00000{random.randint(10000, 99999)}", f"{random.randint(1000000, 9999999)}"
 
@@ -292,10 +292,6 @@ class LabelEngine:
         success_count = 0
         db_records = []
         
-        # --- RE-ADDED CHUNKED UPDATES TO FIX 'REAL-TIME' ISSUE SAFELY ---
-        # We perform 1 quick DB write every 5 labels.
-        # This keeps the UI feeling 'live' without locking the DB for every single label.
-        
         with ThreadPoolExecutor(max_workers=1) as executor:
             futures = {executor.submit(self.process_single_label, row, version, templates, template_choice, batch_seq_code, now, today, data_folder): idx for idx, row in df.iterrows()}
             
@@ -311,11 +307,11 @@ class LabelEngine:
                         datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), meta['ref02']
                     ))
 
-                    # --- SAFE LIVE UPDATE (CHUNKED EVERY 5) ---
+                    # --- SAFE LIVE UPDATE (CHUNKED EVERY 5 LABELS) ---
+                    # Increased timeout to 5s to ensure it doesn't get blocked by frontend
                     if success_count % 5 == 0:
                         try:
-                            # Short timeout to fail fast rather than block
-                            conn = sqlite3.connect(db_path, timeout=1) 
+                            conn = sqlite3.connect(db_path, timeout=5) 
                             conn.execute("UPDATE batches SET success_count = ? WHERE batch_id = ?", (success_count, batch_id))
                             conn.commit()
                             conn.close()

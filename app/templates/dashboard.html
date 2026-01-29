@@ -47,7 +47,14 @@
         // --- GLOBAL STATE ---
         let allBatches = []; 
         let activeTab = "{{ active_tab|default('purchase') }}";
-        let batchStatusMemory = {}; 
+        
+        // --- [FIX] LOAD MEMORY FROM LOCAL STORAGE ---
+        // This ensures we remember which errors we've already shown, even after a refresh.
+        let batchStatusMemory = {};
+        try {
+            batchStatusMemory = JSON.parse(localStorage.getItem('batchStatusMemory')) || {};
+        } catch(e) { batchStatusMemory = {}; }
+
         let isFirstLoad = true; 
         window.confirmedSessionIds = window.confirmedSessionIds || [];
         
@@ -174,6 +181,33 @@
             try {
                 if (activeTab === 'history') window.loadFullHistory();
                 else if (activeTab === 'automation') window.loadAutomationHistory();
+                
+                // --- NEW GLOBAL ALERT CHECKER WITH PERSISTENCE ---
+                const response = await fetch(`/api/batches?page=1&limit=5`);
+                const result = await response.json();
+                
+                if(result.data) {
+                    let hasChanges = false;
+                    result.data.forEach(batch => {
+                        // Check if status changed to AUTH_ERROR
+                        // Only show if we haven't seen this specific batch as AUTH_ERROR yet (based on localStorage)
+                        if(batch.status === 'AUTH_ERROR' && batchStatusMemory[batch.batch_id] !== 'AUTH_ERROR') {
+                            showNotification("FAILED: CHECK COOKIES/CSRF", 'error');
+                        }
+                        
+                        // Update memory if changed
+                        if (batchStatusMemory[batch.batch_id] !== batch.status) {
+                            batchStatusMemory[batch.batch_id] = batch.status;
+                            hasChanges = true;
+                        }
+                    });
+                    
+                    // Save updated memory to Local Storage
+                    if (hasChanges) {
+                         localStorage.setItem('batchStatusMemory', JSON.stringify(batchStatusMemory));
+                    }
+                }
+                
             } catch(e) {}
         }
 
@@ -273,6 +307,14 @@
                                         colorStyles = 'text-blue-500 border-blue-500/30 bg-blue-500/10 animate-pulse';
                                         badgeTxt = 'CONFIRMING...';
                                     }
+                                    else if (batch.status === 'AUTH_ERROR') {
+                                        colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
+                                        badgeTxt = 'AUTH FAILED';
+                                    }
+                                    else if (batch.status === 'CONFIRM_FAILED') {
+                                        colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
+                                        badgeTxt = 'CONFIRM FAIL';
+                                    }
                                     else if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
                                         colorStyles = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
                                         badgeTxt = 'COMPLETED';
@@ -299,11 +341,14 @@
                                     let pdfButton = '';
                                     let csvButton = '';
 
+                                    const safeStatus = ['CONFIRMING', 'CONFIRMED', 'AUTH_ERROR', 'CONFIRM_FAILED', 'COMPLETED', 'PARTIAL'];
+
                                     if (isRefunded) {
                                         pdfButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
                                         csvButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
                                     }
-                                    else if (isProcessing) {
+                                    else if (isProcessing && batch.status !== 'CONFIRMING') {
+                                        // Standard processing (making labels) - Button Hidden
                                         pdfButton = `
                                             <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
                                                 <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -314,7 +359,8 @@
                                             </span>`;
                                         csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
                                     } 
-                                    else if (batch.success_count > 0) {
+                                    else if (batch.success_count > 0 || safeStatus.includes(batch.status)) {
+                                        // Buttons ENABLED even if count is 0 (during confirming)
                                         pdfButton = `<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
                                         csvButton = `<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
                                     } 

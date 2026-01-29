@@ -1,136 +1,166 @@
 import csv
 import io
-import datetime
-import json
 import zipfile
-from collections import defaultdict
+import json
+import re
+from datetime import datetime
+
+# --- SMART STATE MAPPING ---
+US_STATES_MAP = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR", "CALIFORNIA": "CA",
+    "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE", "FLORIDA": "FL", "GEORGIA": "GA",
+    "HAWAII": "HI", "IDAHO": "ID", "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA",
+    "KANSAS": "KS", "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS", "MISSOURI": "MO",
+    "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV", "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ",
+    "NEW MEXICO": "NM", "NEW YORK": "NY", "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH",
+    "OKLAHOMA": "OK", "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+    "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT", "VERMONT": "VT",
+    "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY",
+    "DISTRICT OF COLUMBIA": "DC", "PUERTO RICO": "PR", "GUAM": "GU", "AMERICAN SAMOA": "AS", "VIRGIN ISLANDS": "VI"
+}
 
 class OrderParser:
     @staticmethod
-    def parse_to_zip(unshipped_content, inventory_json, sender_address):
-        # 1. Strict Check for Address
-        if not sender_address:
-            return None, "NO SENDER ADDRESS SELECTED"
-
+    def parse_to_zip(file_content, inventory_json, sender_profile=None):
         try:
-            inventory = json.loads(inventory_json)
-        except:
-            return None, "Invalid Inventory JSON format"
-
-        # Decode File
-        try:
-            decoded = unshipped_content.decode("utf-8-sig")
-        except:
-            decoded = unshipped_content.decode("latin-1")
-
-        stream = io.StringIO(decoded)
-        
-        # Detect Delimiter (Tab for Amazon txt, Comma for others)
-        reader = csv.DictReader(stream, delimiter='\t')
-        
-        # If headers look wrong, retry with comma
-        if not reader.fieldnames or len(reader.fieldnames) < 2:
-            stream.seek(0)
-            reader = csv.DictReader(stream, delimiter=',')
-
-        # --- FIX 1: Normalize Input Headers ---
-        if reader.fieldnames:
-            reader.fieldnames = [h.strip() for h in reader.fieldnames]
-
-        # --- VALIDATION STEP ---
-        all_rows = list(reader)
-        
-        missing_skus = set()
-        
-        # 1. Scan for Missing SKUs
-        for row in all_rows:
-            sku = row.get('sku', '').replace('"', '').strip()
-            if sku and sku not in inventory:
-                missing_skus.add(sku)
-        
-        # 2. Fail if any are missing
-        if missing_skus:
-            missing_list = ", ".join(sorted(list(missing_skus)))
-            return None, f"MISSING SKUS IN INVENTORY: {missing_list}"
-
-        # --- PROCESSING STEP ---
-        grouped_rows = defaultdict(list)
-        
-        # --- NEW STRICT HEADERS ---
-        headers = [
-            'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 
-            'Street2From', 'CityFrom', 'StateFrom', 'PostalCodeFrom', 
-            'ToName', 'PhoneTo', 'Street1To', 'Company2', 'Street2To', 
-            'CityTo', 'StateTo', 'ZipTo', 'Weight', 'Length', 
-            'Width', 'Height', 'Description', 'Ref01', 'Ref02', 
-            'Contains Hazard', 'Shipment Date'
-        ]
-
-        row_counter = 1
-        addr = sender_address
-
-        for row in all_rows:
-            sku = row.get('sku', '').replace('"', '').strip()
+            # Decode file content
+            text_content = file_content.decode('utf-8-sig')
             
-            if sku not in inventory: continue 
+            # --- AMAZON FIX: DETECT DELIMITER (Tab vs Comma) ---
+            delimiter = ','
+            first_line = text_content.splitlines()[0] if text_content else ''
+            if '\t' in first_line:
+                delimiter = '\t'
             
-            item_data = inventory[sku]
-            weight = int(item_data.get('weight', 1))
-            desc = item_data.get('description', 'Merchandise')
+            input_csv = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
             
-            try:
-                qty = int(row.get('quantity-purchased', 1))
-            except:
-                qty = 1
+            # Parse Inventory Map
+            inventory_map = {}
+            if inventory_json:
+                try:
+                    inventory_map = json.loads(inventory_json)
+                except:
+                    pass
 
-            for _ in range(qty):
-                # Clean phone number
-                phone = row.get('buyer-phone-number', '')[:15] 
+            # Dictionary to group orders by SKU
+            # Format: { 'SKU_NAME': [row_dict_1, row_dict_2] }
+            orders_by_sku = {}
 
-                # --- MAPPING TO NEW HEADER NAMES ---
-                new_row = {
-                    'No': row_counter,
-                    'FromName': addr.get('name', ''),
-                    'PhoneFrom': addr.get('phone', ''),
-                    'Street1From': addr.get('street1', ''),
-                    'CompanyFrom': addr.get('company', ''),
-                    'Street2From': addr.get('street2', ''),
-                    'CityFrom': addr.get('city', ''),
-                    'StateFrom': addr.get('state', ''),
-                    'PostalCodeFrom': addr.get('zip', ''),
-                    'ToName': row.get('recipient-name', '')[:30],
-                    'PhoneTo': phone,
-                    'Street1To': row.get('ship-address-1', ''),
-                    'Company2': '', # Amazon usually puts company in address lines
-                    'Street2To': row.get('ship-address-2', ''),
-                    'CityTo': row.get('ship-city', ''),
-                    'StateTo': row.get('ship-state', ''),
-                    'ZipTo': row.get('ship-postal-code', ''), # Renamed from To PostalCode
-                    'Weight': weight,
-                    'Length': 10, 'Width': 6, 'Height': 1,
-                    'Description': desc,
-                    'Ref01': sku, # SKU maps to Ref01 now? Or swap if needed.
-                    'Ref02': row.get('order-id', ''),
-                    'Contains Hazard': 'FALSE', # Renamed from Contains Hazardous
-                    'Shipment Date': datetime.datetime.now().strftime('%m/%d/%Y')
-                }
-                grouped_rows[sku].append(new_row)
-                row_counter += 1
+            # Output Headers
+            fieldnames = [
+                'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From', 
+                'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To', 
+                'Company2', 'Street2To', 'CityTo', 'StateTo', 'ZipTo', 'Weight', 'Length', 
+                'Width', 'Height', 'Description', 'Ref01', 'Ref02', 'Contains Hazard', 'Shipment Date'
+            ]
+            
+            row_count = 0
+            
+            for row in input_csv:
+                # --- SMART STATE AUTO-CORRECTION ---
+                def smart_state(val):
+                    if not val: return ""
+                    clean_val = str(val).strip().upper()
+                    return US_STATES_MAP.get(clean_val, clean_val)
 
-        if not grouped_rows:
-            return None, "File appears empty or no SKUs found."
+                # Recipient State
+                raw_state_to = row.get('Shipping State') or row.get('State') or row.get('ship-state') or row.get('Recipient State') or ''
+                final_state_to = smart_state(raw_state_to)
 
-        # Create ZIP
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for sku, rows in grouped_rows.items():
-                csv_buffer = io.StringIO()
-                writer = csv.DictWriter(csv_buffer, fieldnames=headers)
-                writer.writeheader()
-                writer.writerows(rows)
+                # Sender State
+                raw_state_from = row.get('Return State') or ''
+                final_state_from = smart_state(raw_state_from)
+                # -----------------------------------
+
+                # Sender Info (Profile takes priority)
+                s_name = sender_profile['name'] if sender_profile else "Shipping Dept"
+                s_comp = sender_profile['company'] if sender_profile else ""
+                s_str1 = sender_profile['street1'] if sender_profile else "123 Sender Ln"
+                s_str2 = sender_profile.get('street2', '') if sender_profile else ""
+                s_city = sender_profile['city'] if sender_profile else "Las Vegas"
+                s_state = sender_profile['state'] if sender_profile else "NV"
+                s_zip = sender_profile['zip'] if sender_profile else "89101"
+                s_phone = sender_profile['phone'] if sender_profile else "5551234567"
+
+                # Parse Items/SKUs
+                sku = row.get('SKU') or row.get('Item SKU') or row.get('sku') or row.get('Seller SKU') or "Unknown_SKU"
+                # Sanitize SKU for filename usage later
+                safe_sku = re.sub(r'[\\/*?:"<>|]', "_", sku).strip()
+                if not safe_sku: safe_sku = "Unknown_SKU"
+
+                # Default Dimensions
+                weight = "1"
+                length, width, height = "10", "6", "4"
+                desc = "Merchandise"
+
+                # Check Inventory Map
+                if sku in inventory_map:
+                    item_data = inventory_map[sku]
+                    weight = item_data.get('weight', weight)
+                    desc = item_data.get('name', desc) 
                 
-                safe_sku = "".join(c for c in sku if c.isalnum() or c in (' ', '-', '_')).strip()
-                zip_file.writestr(f"{safe_sku}.csv", csv_buffer.getvalue())
+                # Recipient Mapping
+                to_name = row.get('Recipient Name') or row.get('Name') or row.get('recipient-name') or row.get('Ship To Name') or ""
+                to_phone = row.get('Ship To Phone') or row.get('Phone') or row.get('buyer-phone-number') or ""
+                to_str1 = row.get('Ship To Address 1') or row.get('Address 1') or row.get('ship-address-1') or row.get('Street 1') or ""
+                to_str2 = row.get('Ship To Address 2') or row.get('Address 2') or row.get('ship-address-2') or row.get('Street 2') or ""
+                to_city = row.get('Ship To City') or row.get('City') or row.get('ship-city') or ""
+                to_zip = row.get('Ship To Zip') or row.get('Postal Code') or row.get('ship-postal-code') or row.get('Zip') or ""
+                
+                order_id = row.get('Order ID') or row.get('Order Number') or row.get('order-id') or f"ORD-{row_count}"
 
-        zip_buffer.seek(0)
-        return zip_buffer.getvalue(), None
+                # Build the row dictionary
+                formatted_row = {
+                    'No': str(row_count + 1),
+                    'FromName': s_name,
+                    'PhoneFrom': s_phone,
+                    'Street1From': s_str1,
+                    'CompanyFrom': s_comp,
+                    'Street2From': s_str2,
+                    'CityFrom': s_city,
+                    'StateFrom': s_state, 
+                    'PostalCodeFrom': s_zip,
+                    'ToName': to_name,
+                    'PhoneTo': to_phone,
+                    'Street1To': to_str1,
+                    'Company2': "",
+                    'Street2To': to_str2,
+                    'CityTo': to_city,
+                    'StateTo': final_state_to,
+                    'ZipTo': to_zip,
+                    'Weight': weight,
+                    'Length': length,
+                    'Width': width,
+                    'Height': height,
+                    'Description': desc,
+                    'Ref01': sku,
+                    'Ref02': order_id,
+                    'Contains Hazard': 'False',
+                    'Shipment Date': datetime.now().strftime("%m/%d/%Y")
+                }
+
+                # Group by SKU
+                if safe_sku not in orders_by_sku:
+                    orders_by_sku[safe_sku] = []
+                orders_by_sku[safe_sku].append(formatted_row)
+                
+                row_count += 1
+
+            # Create ZIP containing multiple CSVs
+            memory_file = io.BytesIO()
+            with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for sku_name, rows in orders_by_sku.items():
+                    sku_output = io.StringIO()
+                    writer = csv.DictWriter(sku_output, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                    
+                    # Add CSV to ZIP with SKU as filename
+                    zf.writestr(f"{sku_name}.csv", sku_output.getvalue())
+            
+            memory_file.seek(0)
+            return memory_file.getvalue(), None
+
+        except Exception as e:
+            return None, str(e)

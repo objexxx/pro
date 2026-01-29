@@ -58,18 +58,14 @@ def normalize_dataframe(df):
         first_error_idx = incomplete_rows.index[0] + 2
         return None, f"Row {first_error_idx} Error: Missing required Recipient Information."
 
-    # --- NEW: VALIDATE STATE LENGTH (2 Letters Only) ---
     if 'StateTo' in df.columns:
-        # Convert to string, strip whitespace, and check length
         df['StateTo'] = df['StateTo'].astype(str).str.strip().str.upper()
         bad_states = df[df['StateTo'].str.len() != 2]
-        
         if not bad_states.empty:
             bad_row = bad_states.index[0] + 2
             bad_val = bad_states.iloc[0]['StateTo']
-            return None, f"Row {bad_row} Error: State '{bad_val}' must be a 2-letter code (e.g. 'CA' not 'California')."
+            return None, f"Row {bad_row} Error: State '{bad_val}' must be a 2-letter code (e.g. 'CA')."
 
-    # Also check Sender State if present
     if 'StateFrom' in df.columns:
         df['StateFrom'] = df['StateFrom'].astype(str).str.strip().str.upper()
         bad_from = df[df['StateFrom'].str.len() != 2]
@@ -84,7 +80,7 @@ def normalize_dataframe(df):
         if not short_zips.empty:
             bad_row = short_zips.index[0] + 2
             bad_val = short_zips.iloc[0]['ZipTo']
-            return None, f"Row {bad_row} Error: Zip Code '{bad_val}' is too short (must be 5 digits)."
+            return None, f"Row {bad_row} Error: Zip Code '{bad_val}' is too short."
 
     return df, None
 
@@ -203,6 +199,23 @@ def addresses(): return render_template('dashboard.html', user=current_user, act
 @login_required
 def api_user(): return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
 
+# --- NEW: NOTIFICATION POLLING ---
+@main_bp.route('/api/notifications/poll')
+@login_required
+def poll_notifications():
+    try:
+        conn = get_db(); c = conn.cursor()
+        c.execute("SELECT id, message, type FROM user_notifications WHERE user_id = ?", (current_user.id,))
+        rows = c.fetchall()
+        notifs = [{"id": r[0], "msg": r[1], "type": r[2]} for r in rows]
+        if notifs:
+            ids = [str(n['id']) for n in notifs]
+            c.execute(f"DELETE FROM user_notifications WHERE id IN ({','.join(ids)})")
+            conn.commit()
+        conn.close()
+        return jsonify(notifs)
+    except: return jsonify([])
+
 @main_bp.route('/api/settings/defaults', methods=['POST'])
 @login_required
 def save_defaults():
@@ -236,7 +249,11 @@ def api_stats():
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT SUM(success_count) FROM batches WHERE user_id = ?", (current_user.id,)); total = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ?", (current_user.id,)); batches = c.fetchone()[0] or 0
-    conn.close(); return jsonify({"total_labels": total, "total_batches": batches})
+    c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ? AND status = 'READY'", (current_user.id,)); ready = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ? AND status = 'PARTIAL'", (current_user.id,)); partial = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ? AND status IN ('FAILED', 'AUTH_ERROR')", (current_user.id,)); failed = c.fetchone()[0] or 0
+    conn.close()
+    return jsonify({"total_labels": total, "total_batches": batches, "ready_batches": ready, "partial_batches": partial, "failed_batches": failed})
 
 @main_bp.route('/process', methods=['POST'])
 @login_required
@@ -253,7 +270,6 @@ def process():
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e:
         log_debug(f"CSV Read Fail: {e}")
-        # SECURITY FIX: Generic error for user
         return jsonify({"error": "Could not read CSV file. Please ensure it is a valid CSV format."}), 400
 
     df, error_msg = normalize_dataframe(df)
@@ -275,9 +291,8 @@ def process():
         log_debug(f"Batch {batch_id} Queued Successfully")
         return jsonify({"status": "success", "batch_id": batch_id})
     except Exception as e:
-        # SECURITY FIX: Log specific error to console, send generic error to user
         log_debug(f"[CRITICAL ERROR] /process endpoint: {str(e)}")
-        current_user.update_balance(cost) # Refund attempted charge
+        current_user.update_balance(cost)
         return jsonify({"error": "Internal System Error. Please try again later."}), 500
 
 @main_bp.route('/verify-csv', methods=['POST'])
@@ -293,112 +308,54 @@ def verify_csv():
     if error_msg: return jsonify({"error": error_msg}), 400
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
 
-# --- OXAPAY SECURE DEPOSIT FLOW ---
-
 def verify_oxapay_payment(track_id):
     try:
-        if not OXAPAY_KEY:
-            print("[CRITICAL] OXAPAY_KEY MISSING")
-            return False, 0.0
-
+        if not OXAPAY_KEY: return False, 0.0
         url = "https://api.oxapay.com/merchants/inquiry"
         payload = {"merchant": OXAPAY_KEY, "trackId": track_id}
-        r = requests.post(url, json=payload, timeout=10)
-        data = r.json()
-        
+        r = requests.post(url, json=payload, timeout=10); data = r.json()
         if data.get('result') == 100:
-            status = data.get('status', '').lower()
-            if status in ['paid', 'complete']:
-                return True, float(data.get('amount')) 
-    except Exception as e:
-        print(f"[SECURITY CHECK FAILED] {e}")
+            if data.get('status', '').lower() in ['paid', 'complete']: return True, float(data.get('amount')) 
+    except: pass
     return False, 0.0
 
 @main_bp.route('/api/deposit/history', methods=['GET'])
 @login_required
 def get_deposit_history():
     conn = get_db(); c = conn.cursor()
-    # Auto-fail 'PROCESSING' if > 60 mins old
-    try:
-        one_hour_ago = (datetime.utcnow() - timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S")
-        c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", (one_hour_ago,))
-        if c.rowcount > 0: conn.commit()
+    try: c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", ((datetime.utcnow()-timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S"),)); conn.commit()
     except: pass
-
     c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 20", (current_user.id,))
-    data = []
-    for r in c.fetchall():
-        data.append({
-            "amount": r[0],
-            "currency": r[1],
-            "txn_id": r[2],
-            "status": r[3],
-            "date": to_est(r[4])
-        })
-    conn.close()
-    return jsonify(data)
+    data = [{"amount":r[0],"currency":r[1],"txn_id":r[2],"status":r[3],"date":to_est(r[4])} for r in c.fetchall()]
+    conn.close(); return jsonify(data)
 
 @main_bp.route('/api/deposit/create', methods=['POST'])
 @login_required
 def create_deposit():
     if not OXAPAY_KEY: return jsonify({"error": "Payment Gateway Configuration Error"}), 503
-
-    data = request.json
-    usd_amount = float(data.get('amount')) 
-    
+    data = request.json; usd_amount = float(data.get('amount'))
     if usd_amount < 10: return jsonify({"error": "Minimum deposit is $10"}), 400
-
     url = "https://api.oxapay.com/merchants/request"
     custom_order_id = f"USER_{current_user.id}_{int(time.time())}_{usd_amount}"
-
-    payload = {
-        "merchant": OXAPAY_KEY,
-        "amount": usd_amount,
-        "currency": "USDT", 
-        "lifeTime": 60, 
-        "feePaidByPayer": 0,
-        "underPaidCover": 2.0, 
-        "callbackUrl": url_for('main.deposit_webhook', _external=True),
-        "returnUrl": url_for('main.purchase', _external=True),
-        "description": f"Deposit ${usd_amount}",
-        "orderId": custom_order_id
-    }
-    
+    payload = {"merchant": OXAPAY_KEY, "amount": usd_amount, "currency": "USDT", "lifeTime": 60, "feePaidByPayer": 0, "underPaidCover": 2.0, "callbackUrl": url_for('main.deposit_webhook', _external=True), "returnUrl": url_for('main.purchase', _external=True), "description": f"Deposit ${usd_amount}", "orderId": custom_order_id}
     try:
-        r = requests.post(url, json=payload)
-        result = r.json()
-        
+        r = requests.post(url, json=payload); result = r.json()
         if result.get('result') == 100:
-            try:
-                track_id = result.get('trackId')
-                if track_id:
-                    conn = get_db(); c = conn.cursor()
-                    c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                              (current_user.id, usd_amount, 'USDT', str(track_id), 'PROCESSING', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-                    conn.commit(); conn.close()
-            except Exception as e: print(f"[DB ERROR] {e}")
-
+            track_id = result.get('trackId')
+            conn = get_db(); c = conn.cursor()
+            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", (current_user.id, usd_amount, 'USDT', str(track_id), 'PROCESSING', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit(); conn.close()
             return jsonify({"status": "success", "pay_link": result.get('payLink')})
-        else:
-            return jsonify({"error": "Gateway Unavailable"}), 400
-    except Exception as e:
-        return jsonify({"error": "Connection Error"}), 500
+        else: return jsonify({"error": "Gateway Unavailable"}), 400
+    except: return jsonify({"error": "Connection Error"}), 500
 
 @main_bp.route('/api/deposit/webhook', methods=['POST'])
 def deposit_webhook():
     try:
-        data = request.json
-        print(f"[WEBHOOK RECEIVED] {data}")
-
-        status = data.get('status', '').lower()
-        order_id = data.get('orderId')
-        track_id = data.get('trackId')
-        
-        if status == 'paid' or status == 'confirming':
-            # --- SECURITY ENFORCED ---
-            is_valid, verified_amount = verify_oxapay_payment(track_id)
-            
-            if is_valid: 
+        data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
+        if status in ['paid', 'confirming']:
+            is_valid, _ = verify_oxapay_payment(track_id)
+            if is_valid:
                 parts = order_id.split('_')
                 if len(parts) >= 2:
                     user_id = int(parts[1])
@@ -407,35 +364,22 @@ def deposit_webhook():
                         conn = get_db(); c = conn.cursor()
                         c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
                         existing = c.fetchone()
-                        
                         if existing:
-                            if existing[1] != 'PAID': 
+                            if existing[1] != 'PAID':
                                 user.update_balance(float(parts[3]))
                                 c.execute("UPDATE deposit_history SET status='PAID', currency=? WHERE id=?", (data.get('currency', 'USDT'), existing[0]))
                                 conn.commit()
-                                print(f"[PAYMENT COMPLETE] Updated {track_id}")
                         else:
                             user.update_balance(float(parts[3]))
-                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                                      (user_id, float(parts[3]), data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user_id, float(parts[3]), data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                             conn.commit()
                         conn.close()
-            else:
-                print(f"[SECURITY ALERT] Fake webhook detected: {track_id}")
-
         elif status in ['expired', 'failed', 'rejected']:
              conn = get_db(); c = conn.cursor()
-             c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),))
-             conn.commit(); conn.close()
-
-    except Exception as e:
-        # SECURITY FIX: Don't reveal internals to webhook sender
-        print(f"[WEBHOOK ERROR] {e}")
-        return jsonify({"status": "error"}), 500
-
+             c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),)); conn.commit(); conn.close()
+    except: return jsonify({"status": "error"}), 500
     return jsonify({"status": "ok"}), 200
 
-# ... (Rest of routes unchanged) ...
 @main_bp.route('/api/automation/public_config')
 @login_required
 def public_automation_config():
@@ -505,6 +449,18 @@ def automation_format():
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
     batch_id = request.json.get('batch_id')
+    
+    # --- SECURITY FIX: BLOCK REFUNDED BATCHES ---
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
+    row = c.fetchone()
+    if row and row[0] == 'REFUNDED':
+        conn.close()
+        return jsonify({'error': 'ACCESS REVOKED: THIS BATCH WAS REFUNDED'}), 403
+    conn.close()
+    # --------------------------------------------
+
     if batch_id in ACTIVE_CONFIRMATIONS: return jsonify({"error": "THIS BATCH IS ALREADY RUNNING"}), 429
     raw_cookies = current_user.auth_cookies; raw_csrf = current_user.auth_csrf
     if not raw_cookies or len(raw_cookies) < 10: return jsonify({"error": "MISSING COOKIES"}), 400
