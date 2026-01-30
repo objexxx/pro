@@ -330,7 +330,6 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                         group_success = False
 
                     # --- OPTIMIZED SPEED: Random jitter 0.5s - 1.0s ---
-                    # This is faster than 1.5s but still safe for 20+ instances
                     time.sleep(random.uniform(0.5, 1.0))
 
                 if group_success:
@@ -339,7 +338,6 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                 increment_batch_success(batch_id, len(row_indices))
                 total_confirmed_rows += len(row_indices)
                 
-                # Tiny gap between orders to breathe
                 time.sleep(0.1)
 
         print(f"[AMAZON BOT] FINISHED BATCH {batch_id}. Total Confirmed: {total_confirmed_rows}")
@@ -362,7 +360,8 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
         print(f"[AMAZON BOT] [CRASH] {e}")
         traceback.print_exc()
         set_batch_status(batch_id, 'CONFIRM_FAILED')
-        return False, str(e)
+        # --- SECURITY FIX: HIDE INTERNAL ERRORS FROM USER ---
+        return False, "Processing Error (Contact Support)"
 
 def run_thread(batch_id, cookies, csrf):
     target_txt_path = get_file_from_db(batch_id)

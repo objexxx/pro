@@ -12,6 +12,22 @@ from werkzeug.security import generate_password_hash
 # --- 🔒 SECURE URL PREFIX ---
 admin_bp = Blueprint('admin', __name__, url_prefix='/x7k9-p2m4-z8q1')
 
+# --- CSRF PROTECTION (CRITICAL FIX) ---
+@admin_bp.before_request
+def check_csrf_and_origin():
+    # Allow GET requests (viewing pages)
+    if request.method == "GET":
+        return
+    
+    # For POST/DELETE/PUT actions, verify origin
+    referer = request.headers.get('Referer')
+    
+    # Request.host returns '127.0.0.1:5000' or 'yourdomain.com'
+    allowed_host = request.host 
+    
+    if not referer or allowed_host not in referer:
+        return jsonify({"error": "CSRF BLOCKED: Invalid Source"}), 403
+
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -278,7 +294,6 @@ def user_action():
         msg = f"PASSWORD RESET FOR {target_username}"
         safe_notify_user(conn, uid, "SECURITY ALERT: Your password was reset by admin.", "processing")
     elif act == 'update_price':
-        # --- FIXED: Handle Version Specifics ---
         l, v, p = data.get('label_type'), data.get('version'), float(data.get('price'))
         
         # 1. Update/Insert specific row

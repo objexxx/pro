@@ -119,7 +119,7 @@ def index():
     return redirect(url_for('main.login'))
 
 @main_bp.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("50 per minute")
 def login():
     if request.method == 'POST':
         username = request.form['username']
@@ -324,16 +324,32 @@ def verify_csv():
     if error_msg: return jsonify({"error": error_msg}), 400
     return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
 
+# --- OXAPAY: VERIFY HELPER ---
 def verify_oxapay_payment(track_id):
     try:
-        if not OXAPAY_KEY: return False, 0.0
+        if not OXAPAY_KEY: 
+            print("[PAYMENT] Missing OXAPAY_KEY")
+            return False, 0.0, "Missing API Key"
+            
         url = "https://api.oxapay.com/merchants/inquiry"
         payload = {"merchant": OXAPAY_KEY, "trackId": track_id}
-        r = requests.post(url, json=payload, timeout=10); data = r.json()
+        r = requests.post(url, json=payload, timeout=10)
+        data = r.json()
+        
+        print(f"[PAYMENT CHECK] Response for {track_id}: {data}") # DEBUG LOG
+        
         if data.get('result') == 100:
-            if data.get('status', '').lower() in ['paid', 'complete']: return True, float(data.get('amount')) 
-    except: pass
-    return False, 0.0
+            status = data.get('status', '').lower()
+            if status in ['paid', 'complete']: 
+                return True, float(data.get('amount')), "Paid"
+            else:
+                return False, 0.0, f"Status: {status.upper()}"
+        else:
+            return False, 0.0, f"Gateway Error: {data.get('message', 'Unknown')}"
+            
+    except Exception as e: 
+        print(f"[PAYMENT ERROR] {e}")
+        return False, 0.0, "Connection Error"
 
 @main_bp.route('/api/deposit/history', methods=['GET'])
 @login_required
@@ -348,6 +364,42 @@ def get_deposit_history():
     
     data = [{"amount":r[0],"currency":r[1],"txn_id":r[2],"status":r[3],"date":to_est(r[4])} for r in c.fetchall()]
     conn.close(); return jsonify(data)
+
+# --- MANUAL STATUS CHECK (FIX FOR LOCALHOST / STUCK TX) ---
+@main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
+@login_required
+def manual_check_deposit(txn_id):
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
+    row = c.fetchone()
+    
+    if not row: 
+        conn.close()
+        return jsonify({"error": "Transaction not found"}), 404
+        
+    if row[1] == 'PAID': 
+        conn.close()
+        return jsonify({"status": "success", "message": "Already Paid"})
+    
+    is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
+    
+    if is_valid:
+        current_user.update_balance(paid_amount)
+        c.execute("UPDATE deposit_history SET status='PAID' WHERE id=?", (row[0],))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Payment Confirmed! Balance Updated."})
+    else:
+        # If status changed (e.g. to EXPIRED or FAILED), update DB so user sees it
+        if status_msg and "Status:" in status_msg:
+            clean_status = status_msg.split(': ')[1].strip()
+            if clean_status in ['EXPIRED', 'FAILED']:
+                c.execute("UPDATE deposit_history SET status=? WHERE id=?", (clean_status, row[0]))
+                conn.commit()
+        
+        conn.close()
+        # RETURN SPECIFIC GATEWAY STATUS
+        return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
 
 @main_bp.route('/api/deposit/create', methods=['POST'])
 @login_required
@@ -374,7 +426,7 @@ def deposit_webhook():
     try:
         data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
         if status in ['paid', 'confirming']:
-            is_valid, _ = verify_oxapay_payment(track_id)
+            is_valid, _, _ = verify_oxapay_payment(track_id)
             if is_valid:
                 parts = order_id.split('_')
                 if len(parts) >= 2:

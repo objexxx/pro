@@ -87,7 +87,7 @@ class LabelEngine:
 
     # --- PROCESSOR ---
     def process_single_label(self, row, version, templates, template_choice, batch_seq_code, now, today, data_folder):
-        # 1. INITIALIZE VARIABLES SAFELY (Prevents 'Not Defined' Crashes)
+        # 1. INITIALIZE VARIABLES SAFELY
         w_text = "1.0 LB" 
         weight_val = 1.0
         raw_w = "1"
@@ -148,14 +148,13 @@ class LabelEngine:
             
             if "easypost" in t_choice: acc = self.generate_c_number() 
 
-            # --- WEIGHT TEXT LOGIC (ROBUST) ---
+            # --- WEIGHT TEXT LOGIC ---
             if "stamps_v2" in t_choice:
-                # SPECIAL STAMPS FORMAT: SPACES FOR R LOGO
                 w_text = f"{weight_val:.1f} LB PRIORITY MAIL      RATE"
             elif "easypost" in t_choice:
-                w_text = str(raw_w) # Just the number
+                w_text = str(raw_w) 
             else:
-                w_text = f"{weight_val:.1f} LB" # Pitney Format
+                w_text = f"{weight_val:.1f} LB" 
 
             # --- ADDRESS FORMATTING ---
             sender_block = self.format_address(from_n, from_c, from_s, from_s2, from_ci, from_st, from_z)
@@ -195,35 +194,31 @@ class LabelEngine:
                 ymd = now.strftime("%Y%m%d")
                 check_val = str(random.randint(10000000, 99999999)) 
                 
-                # STAMPS SPECIFIC VARS
                 stamps_ref1 = "063S" + str(random.randint(1000000000, 9999999999))
                 stamps_ref2 = str(random.randint(1000000, 9999999))
                 
                 lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1)
                 lbl = lbl.replace("{STAMPS_REF_2}", stamps_ref2)
 
-                # USE UNIVERSAL FORMAT FOR ALL THREE NOW
                 pdf_acc_val = stamps_ref1 if "stamps" in t_choice else acc
                 
                 universal_pdf = f"USPS|PC|PM|Z{zone}|W{oz4}|D{ymd}|F{from_z[:5]}|T{zip_5}|S{trk}|RCOMM|A{pdf_acc_val}|C{check_val}|N0003|LCO25"
                 lbl = lbl.replace("{PDF_417_DATA}", universal_pdf)
 
             else:
-                # Fallback for old templates
                 pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
                 lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
 
-            # --- SIZE LOGIC ---
             label_size = "4x6"
             if "stamps" in t_choice or "pitney" in t_choice or "easypost" in t_choice: 
                 label_size = "4.8x7.1" 
 
-            # --- DEBUG FILE WRITE ---
-            try:
-                debug_file = os.path.join(data_folder, "zpl_debug_log.txt")
-                with open(debug_file, "a", encoding="utf-8") as f:
-                    f.write(f"\n{'='*50}\nTIMESTAMP: {datetime.now()}\nORDER: {order_id} | TEMPLATE: {template_choice}\n{'-'*50}\n{lbl}\n{'='*50}\n")
-            except: pass
+            # --- DEBUG FILE WRITE (DISABLED) ---
+            # try:
+            #     debug_file = os.path.join(data_folder, "zpl_debug_log.txt")
+            #     with open(debug_file, "a", encoding="utf-8") as f:
+            #         f.write(f"\n{'='*50}\nTIMESTAMP: {datetime.now()}\nORDER: {order_id} | TEMPLATE: {template_choice}\n{'-'*50}\n{lbl}\n{'='*50}\n")
+            # except: pass
 
             # --- API CALL ---
             attempts = 0
@@ -234,7 +229,6 @@ class LabelEngine:
                                         data=lbl.encode('utf-8'), headers={'Accept': 'application/pdf'}, timeout=30)
                     
                     if res.status_code == 200:
-                        # print(f" > [200 OK] Label Generated for {order_id}")
                         return res.content, {
                             "tracking": trk, "ref_id": sku, "from_name": from_n, "to_name": to_n,
                             "address_to": f"{to_s} {to_ci} {to_st} {to_z}", "ref02": order_id
@@ -307,8 +301,7 @@ class LabelEngine:
                         datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), meta['ref02']
                     ))
 
-                    # --- SAFE LIVE UPDATE (CHUNKED EVERY 5 LABELS) ---
-                    # Increased timeout to 5s to ensure it doesn't get blocked by frontend
+                    # --- SAFE LIVE UPDATE ---
                     if success_count % 5 == 0:
                         try:
                             conn = sqlite3.connect(db_path, timeout=5) 
