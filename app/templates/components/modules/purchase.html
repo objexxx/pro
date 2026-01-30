@@ -27,7 +27,7 @@
                     </div>
                 </div>
 
-                <form onsubmit="return false;" class="space-y-5">
+                <form id="purchaseForm" onsubmit="return false;" class="space-y-5">
                     <div class="grid grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Service Type</label>
@@ -40,6 +40,7 @@
                             <select name="tracking_version" onchange="updateProtocolBadge(this.value)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
                                 <option value="95055" {% if user.default_version == '95055' %}selected{% endif %}>95055 (Standard)</option>
                                 <option value="94888" {% if user.default_version == '94888' %}selected{% endif %}>94888 (Legacy)</option>
+                                <option value="94019" {% if user.default_version == '94019' %}selected{% endif %}>94019 (Test)</option>
                             </select>
                         </div>
                     </div>
@@ -100,14 +101,21 @@
 
     function updateProtocolBadge(version) {
         const badge = document.getElementById('protocol-badge');
+        
+        // Reset classes
+        badge.className = 'px-2 py-1 border text-[9px] font-bold uppercase tracking-tighter';
+        
         if (version === '94888') {
             badge.innerText = 'PRO-9488-LEGACY';
-            badge.classList.replace('text-blue-500', 'text-yellow-500');
-            badge.classList.replace('border-blue-500/20', 'border-yellow-500/20');
-        } else {
+            badge.classList.add('bg-yellow-500/5', 'border-yellow-500/20', 'text-yellow-500');
+        } 
+        else if (version === '94019') {
+            badge.innerText = 'TEST-94019-BETA';
+            badge.classList.add('bg-purple-500/5', 'border-purple-500/20', 'text-purple-500');
+        } 
+        else {
             badge.innerText = 'PRO-9505-ACTIVE';
-            badge.classList.replace('text-yellow-500', 'text-blue-500');
-            badge.classList.replace('border-yellow-500/20', 'border-blue-500/20');
+            badge.classList.add('bg-blue-500/5', 'border-blue-500/20', 'text-blue-500');
         }
     }
 
@@ -117,10 +125,43 @@
         updateProtocolBadge(savedVersion);
     });
 
+    // --- UPDATED VERIFY FUNCTION ---
     function triggerVerification() {
         updateAllocationStatus('ALLOCATED');
         if (typeof verifyData === 'function') verifyData();
     }
+    
+    // Override the global verifyData to include extra form fields
+    window.verifyData = async function() {
+        const fileInput = document.getElementById('csvUpload'); 
+        if (!fileInput.files[0]) return; 
+        
+        const verifyBtn = document.getElementById('verifyBtn'); 
+        const originalText = verifyBtn.innerText;
+        verifyBtn.innerText = "SCANNING..."; 
+        
+        const formData = new FormData(); 
+        formData.append('file', fileInput.files[0]); 
+        
+        // --- ADDED THESE LINES TO SEND CONFIG ---
+        formData.append('label_type', document.querySelector('[name="label_type"]').value);
+        formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
+        // ----------------------------------------
+
+        try { 
+            const res = await fetch('/verify-csv', { method: 'POST', body: formData }); 
+            const data = await res.json(); 
+            verifyBtn.innerText = originalText;
+            if (res.ok && data.count) { 
+                showNotification(`SCAN COMPLETE: ${data.count} LABELS`, 'success'); 
+                const confirmBtn = document.getElementById('confirmBtn'); 
+                confirmBtn.disabled = false; 
+                confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
+                confirmBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
+                confirmBtn.innerText = `EXECUTE ($${data.cost.toFixed(2)})`; 
+            } else { showNotification("ERROR: " + (data.error || "Unknown"), 'error'); } 
+        } catch (error) { showNotification("NETWORK ERROR", 'error'); verifyBtn.innerText = originalText; } 
+    };
 
     function triggerExecution() {
         updateAllocationStatus('ALLOCATED');

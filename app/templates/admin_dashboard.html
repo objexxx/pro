@@ -293,15 +293,21 @@
                                         <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 font-mono">Pricing Strategy</h3>
                                         
                                         <div class="flex items-center gap-2 mb-3">
-                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">Priority (V2)</span>
+                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">95055</span>
                                             <input type="number" id="price-priority-95055" step="0.01" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-1.5 text-xs outline-none font-mono" placeholder="0.00">
                                             <button onclick="userAction('update_price', {type:'priority', version:'95055'})" class="bg-black dark:bg-white text-white dark:text-black px-2 text-[9px] font-bold uppercase font-mono">SET</button>
                                         </div>
 
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">Legacy (V1)</span>
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">94888</span>
                                             <input type="number" id="price-priority-94888" step="0.01" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-1.5 text-xs outline-none font-mono" placeholder="0.00">
                                             <button onclick="userAction('update_price', {type:'priority', version:'94888'})" class="bg-black dark:bg-white text-white dark:text-black px-2 text-[9px] font-bold uppercase font-mono">SET</button>
+                                        </div>
+
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">94019 (Test)</span>
+                                            <input type="number" id="price-priority-94019" step="0.01" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-1.5 text-xs outline-none font-mono" placeholder="0.00">
+                                            <button onclick="userAction('update_price', {type:'priority', version:'94019'})" class="bg-black dark:bg-white text-white dark:text-black px-2 text-[9px] font-bold uppercase font-mono">SET</button>
                                         </div>
                                     </div>
 
@@ -514,9 +520,10 @@
             document.getElementById('sel-sub-status').innerText = d.subscription.is_active ? "ACTIVE" : "INACTIVE"; 
             document.getElementById('sel-sub-status').className = d.subscription.is_active ? "text-green-500 font-bold" : "text-gray-500"; 
             
-            // Populate BOTH price fields (Legacy & V2)
+            // Populate ALL price fields (95055, 94888, 94019)
             document.getElementById('price-priority-95055').value = d.prices['priority_95055'] || d.prices['priority'];
             document.getElementById('price-priority-94888').value = d.prices['priority_94888'] || d.prices['priority'];
+            document.getElementById('price-priority-94019').value = d.prices['priority_94019'] || d.prices['priority'];
             
             const rev = document.getElementById('btn-revoke-sub'); 
             if(d.subscription.is_active) rev.classList.remove('hidden'); else rev.classList.add('hidden'); 

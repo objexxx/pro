@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pypdf import PdfWriter
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import current_app
 
 class LabelEngine:
     def __init__(self):
@@ -26,9 +27,13 @@ class LabelEngine:
         try:
             with open(json_path, 'r') as f: data = json.load(f)
             ver_str = str(version).strip()
+            
             if "94888" in ver_str: mids = data.get('ids_94888', [])
+            elif "94019" in ver_str: mids = data.get('ids_94019', [])
             else: mids = data.get('ids_95055', [])
-            return str(random.choice(mids or default_ids)).strip()
+            
+            if not mids: return random.choice(default_ids)
+            return str(random.choice(mids)).strip()
         except: return random.choice(default_ids)
 
     def calculate_usps_check_digit(self, body):
@@ -39,17 +44,26 @@ class LabelEngine:
     def generate_unique_tracking(self, version, mailer_id, seq_code=None):
         ver_str = str(version).strip()
         
+        # --- 94888 LEGACY (FIXED: Starts with 94888) ---
         if "94888" in ver_str:
-            stc = "94888"
-            if len(mailer_id) == 9: serial = f"{random.randint(1000000, 9999999)}"
-            else: serial = f"{random.randint(10000000, 99999999)}"
+            stc = "94888" # 5 digits
+            serial = f"{random.randint(1, 9999999):07d}" 
             body = f"{stc}{mailer_id}{serial}"
             return body + self.calculate_usps_check_digit(body)
+            
+        # --- 94019 GROUND TEST (FIXED: Starts with 94019) ---
+        elif "94019" in ver_str:
+            stc = "94019" # 5 digits
+            serial = f"{random.randint(1, 9999999):07d}"
+            body = f"{stc}{mailer_id}{serial}"
+            return body + self.calculate_usps_check_digit(body)
+
+        # --- 9505 STANDARD (Starts with 9505) ---
         else:
-            stc = "9505"
-            day_code = seq_code if seq_code else datetime.now().strftime('%j')
-            rand_part = f"{random.randint(0, 99999):05d}"
-            serial = f"{day_code}{rand_part}"
+            stc = "9505" # 4 digits
+            day_code = seq_code if seq_code else datetime.now().strftime('%j') # 3 digits
+            rand_part = f"{random.randint(0, 99999):05d}" # 5 digits
+            serial = f"{day_code}{rand_part}" # Total 8 chars
             body = f"{stc}{mailer_id}{serial}"
             return body + self.calculate_usps_check_digit(body)
 
@@ -87,7 +101,6 @@ class LabelEngine:
 
     # --- PROCESSOR ---
     def process_single_label(self, row, version, templates, template_choice, batch_seq_code, now, today, data_folder):
-        # 1. INITIALIZE VARIABLES SAFELY
         w_text = "1.0 LB" 
         weight_val = 1.0
         raw_w = "1"
@@ -100,15 +113,16 @@ class LabelEngine:
             return self.sanitize_zpl(str(val).strip())
 
         try:
-            # --- INPUT PROCESSING (FORCED CAPITALIZATION) ---
             to_z = safe_get('ZipTo')
             if not to_z or len(to_z) < 5: 
                 print(f" > Skipped Row: Invalid Zip '{to_z}'")
                 return None, None
 
-            # Force Uppercase on EVERYTHING
-            order_id = safe_get('Ref01').upper()
-            sku = safe_get('Ref02').upper()
+            # --- CRITICAL FIX: Correct mapping to match Parser ---
+            # Parser sets Ref01 = SKU, Ref02 = Order ID
+            sku = safe_get('Ref01').upper()      # WAS switched
+            order_id = safe_get('Ref02').upper() # WAS switched
+            
             desc_val = safe_get('Description').upper()
             
             from_n = safe_get('FromName').upper()
@@ -131,7 +145,6 @@ class LabelEngine:
                 weight_val = float(raw_w)
             except: weight_val = 1.0; raw_w = '1'
 
-            # --- TEMPLATE SELECTION ---
             if "stamps_v2" in t_choice:
                 lbl = templates['heavy'] if weight_val >= 10 else templates['base']
             else:
@@ -148,7 +161,6 @@ class LabelEngine:
             
             if "easypost" in t_choice: acc = self.generate_c_number() 
 
-            # --- WEIGHT TEXT LOGIC ---
             if "stamps_v2" in t_choice:
                 w_text = f"{weight_val:.1f} LB PRIORITY MAIL      RATE"
             elif "easypost" in t_choice:
@@ -156,11 +168,9 @@ class LabelEngine:
             else:
                 w_text = f"{weight_val:.1f} LB" 
 
-            # --- ADDRESS FORMATTING ---
             sender_block = self.format_address(from_n, from_c, from_s, from_s2, from_ci, from_st, from_z)
             receiver_block = self.format_address(to_n, to_c, to_s, to_s2, to_ci, to_st, to_z)
 
-            # Common Replacements
             lbl = lbl.replace("{SENDER_BLOCK}", sender_block).replace("{RECEIVER_BLOCK}", receiver_block)
             lbl = lbl.replace("{SHIP_DATE}", today).replace("{EXPECTED_DATE}", exp_date).replace("{ZONE_ID}", zone)
             lbl = lbl.replace("{FROM_ZIP}", from_z).replace("{ZIP_TO_5}", zip_5)
@@ -179,7 +189,6 @@ class LabelEngine:
             lbl = lbl.replace("{TRACKING_SPACED}", " ".join([trk[i:i+4] for i in range(0, len(trk), 4)]))
             lbl = lbl.replace("{TRACKING_NO_SPACED}", trk)
             
-            # REF Handling
             lbl = lbl.replace("{REF1}", sku).replace("{REF}", sku)
             lbl = lbl.replace("{REF2}", order_id).replace("{DESC}", desc_val)
             lbl = lbl.replace("{REFS_REORDERED}", f"{order_id} | {desc_val} | {sku}")
@@ -188,7 +197,6 @@ class LabelEngine:
             lbl = lbl.replace("{C_NUMBER}", acc).replace("{RANDOM_0901}", self.generate_0901_number())
             lbl = lbl.replace("{SHIP_DATE_YMD_NODASH}", now.strftime("%Y%m%d"))
             
-            # --- PDF 417 BARCODE GENERATION ---
             if "pitney" in t_choice or "easypost" in t_choice or "stamps" in t_choice:
                 oz4 = f"{int(weight_val * 16):04d}" 
                 ymd = now.strftime("%Y%m%d")
@@ -213,14 +221,6 @@ class LabelEngine:
             if "stamps" in t_choice or "pitney" in t_choice or "easypost" in t_choice: 
                 label_size = "4.8x7.1" 
 
-            # --- DEBUG FILE WRITE (DISABLED) ---
-            # try:
-            #     debug_file = os.path.join(data_folder, "zpl_debug_log.txt")
-            #     with open(debug_file, "a", encoding="utf-8") as f:
-            #         f.write(f"\n{'='*50}\nTIMESTAMP: {datetime.now()}\nORDER: {order_id} | TEMPLATE: {template_choice}\n{'-'*50}\n{lbl}\n{'='*50}\n")
-            # except: pass
-
-            # --- API CALL ---
             attempts = 0
             max_retries = 10
             while attempts < max_retries:
@@ -229,6 +229,7 @@ class LabelEngine:
                                         data=lbl.encode('utf-8'), headers={'Accept': 'application/pdf'}, timeout=30)
                     
                     if res.status_code == 200:
+                        # Return Correct Mapping for DB Insertion
                         return res.content, {
                             "tracking": trk, "ref_id": sku, "from_name": from_n, "to_name": to_n,
                             "address_to": f"{to_s} {to_ci} {to_st} {to_z}", "ref02": order_id
@@ -301,7 +302,6 @@ class LabelEngine:
                         datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), meta['ref02']
                     ))
 
-                    # --- SAFE LIVE UPDATE ---
                     if success_count % 5 == 0:
                         try:
                             conn = sqlite3.connect(db_path, timeout=5) 

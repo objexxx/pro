@@ -207,12 +207,13 @@ def api_user():
     # Fallback to default price if specific version not set
     p_95 = prices.get('95055', current_user.price_per_label)
     p_94 = prices.get('94888', current_user.price_per_label)
+    p_19 = prices.get('94019', current_user.price_per_label) # ADDED TEST VERSION
 
     return jsonify({
         "username": current_user.username, 
         "balance": current_user.balance, 
         "price_per_label": current_user.price_per_label,
-        "prices": { "95055": p_95, "94888": p_94 }
+        "prices": { "95055": p_95, "94888": p_94, "94019": p_19 }
     })
 
 # --- NOTIFICATION POLLING ---
@@ -291,7 +292,9 @@ def process():
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     
+    # --- GET CORRECT PRICE WITH VERSION ---
     price = get_price(current_user.id, request.form.get('label_type'), request.form.get('tracking_version'), current_user.price_per_label)
+    
     cost = len(df) * price
     if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
     
@@ -322,7 +325,14 @@ def verify_csv():
     except Exception as e: return jsonify({"error": "Invalid CSV Format"}), 400
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
-    return jsonify({"count": len(df), "cost": len(df) * current_user.price_per_label})
+    
+    # --- FIX: CALCULATE COST USING SELECTED VERSION ---
+    label_type = request.form.get('label_type', 'priority')
+    version = request.form.get('tracking_version', '95055')
+    
+    price = get_price(current_user.id, label_type, version, current_user.price_per_label)
+    
+    return jsonify({"count": len(df), "cost": len(df) * price})
 
 # --- OXAPAY: VERIFY HELPER ---
 def verify_oxapay_payment(track_id):
@@ -336,7 +346,7 @@ def verify_oxapay_payment(track_id):
         r = requests.post(url, json=payload, timeout=10)
         data = r.json()
         
-        print(f"[PAYMENT CHECK] Response for {track_id}: {data}") # DEBUG LOG
+        print(f"[PAYMENT CHECK] Response for {track_id}: {data}") 
         
         if data.get('result') == 100:
             status = data.get('status', '').lower()
@@ -390,7 +400,6 @@ def manual_check_deposit(txn_id):
         conn.close()
         return jsonify({"status": "success", "message": "Payment Confirmed! Balance Updated."})
     else:
-        # If status changed (e.g. to EXPIRED or FAILED), update DB so user sees it
         if status_msg and "Status:" in status_msg:
             clean_status = status_msg.split(': ')[1].strip()
             if clean_status in ['EXPIRED', 'FAILED']:
@@ -398,7 +407,6 @@ def manual_check_deposit(txn_id):
                 conn.commit()
         
         conn.close()
-        # RETURN SPECIFIC GATEWAY STATUS
         return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
 
 @main_bp.route('/api/deposit/create', methods=['POST'])
@@ -522,18 +530,10 @@ def automation_format():
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
     batch_id = request.json.get('batch_id')
-    
-    # --- SECURITY FIX: BLOCK REFUNDED BATCHES ---
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
-    row = c.fetchone()
-    if row and row[0] == 'REFUNDED':
-        conn.close()
-        return jsonify({'error': 'ACCESS REVOKED: THIS BATCH WAS REFUNDED'}), 403
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); row = c.fetchone()
+    if row and row[0] == 'REFUNDED': conn.close(); return jsonify({'error': 'ACCESS REVOKED: THIS BATCH WAS REFUNDED'}), 403
     conn.close()
-    # --------------------------------------------
-
     if batch_id in ACTIVE_CONFIRMATIONS: return jsonify({"error": "THIS BATCH IS ALREADY RUNNING"}), 429
     raw_cookies = current_user.auth_cookies; raw_csrf = current_user.auth_csrf
     if not raw_cookies or len(raw_cookies) < 10: return jsonify({"error": "MISSING COOKIES"}), 400

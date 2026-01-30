@@ -266,6 +266,7 @@ def user_details(uid):
     base = u[0] # Default price from users table
     if 'priority_95055' not in prices: prices['priority_95055'] = base
     if 'priority_94888' not in prices: prices['priority_94888'] = base
+    if 'priority_94019' not in prices: prices['priority_94019'] = base # ADDED TEST VERSION
     
     conn.close()
     return jsonify({

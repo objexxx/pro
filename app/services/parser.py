@@ -27,7 +27,7 @@ class OrderParser:
             # Decode file content
             text_content = file_content.decode('utf-8-sig')
             
-            # --- AMAZON FIX: DETECT DELIMITER (Tab vs Comma) ---
+            # --- DETECT DELIMITER (Tab vs Comma) ---
             delimiter = ','
             first_line = text_content.splitlines()[0] if text_content else ''
             if '\t' in first_line:
@@ -44,7 +44,6 @@ class OrderParser:
                     pass
 
             # Dictionary to group orders by SKU
-            # Format: { 'SKU_NAME': [row_dict_1, row_dict_2] }
             orders_by_sku = {}
 
             # Output Headers
@@ -71,7 +70,6 @@ class OrderParser:
                 # Sender State
                 raw_state_from = row.get('Return State') or ''
                 final_state_from = smart_state(raw_state_from)
-                # -----------------------------------
 
                 # Sender Info (Profile takes priority)
                 s_name = sender_profile['name'] if sender_profile else "Shipping Dept"
@@ -84,21 +82,33 @@ class OrderParser:
                 s_phone = sender_profile['phone'] if sender_profile else "5551234567"
 
                 # Parse Items/SKUs
-                sku = row.get('SKU') or row.get('Item SKU') or row.get('sku') or row.get('Seller SKU') or "Unknown_SKU"
+                raw_sku = row.get('SKU') or row.get('Item SKU') or row.get('sku') or row.get('Seller SKU') or "Unknown_SKU"
+                sku = str(raw_sku).strip() # Clean spaces
+                
                 # Sanitize SKU for filename usage later
                 safe_sku = re.sub(r'[\\/*?:"<>|]', "_", sku).strip()
                 if not safe_sku: safe_sku = "Unknown_SKU"
 
-                # Default Dimensions
+                # Default Dimensions & Description
                 weight = "1"
                 length, width, height = "10", "6", "4"
-                desc = "Merchandise"
+                desc = ""
 
-                # Check Inventory Map
+                # --- CHECK INVENTORY MAP ---
                 if sku in inventory_map:
                     item_data = inventory_map[sku]
                     weight = item_data.get('weight', weight)
-                    desc = item_data.get('name', desc) 
+                    
+                    # Check ALL possible key names for description
+                    inventory_desc = (
+                        item_data.get('name') or 
+                        item_data.get('description') or 
+                        item_data.get('desc') or 
+                        item_data.get('package_description')
+                    )
+                    
+                    if inventory_desc:
+                        desc = inventory_desc
                 
                 # Recipient Mapping
                 to_name = row.get('Recipient Name') or row.get('Name') or row.get('recipient-name') or row.get('Ship To Name') or ""
@@ -110,42 +120,54 @@ class OrderParser:
                 
                 order_id = row.get('Order ID') or row.get('Order Number') or row.get('order-id') or f"ORD-{row_count}"
 
-                # Build the row dictionary
-                formatted_row = {
-                    'No': str(row_count + 1),
-                    'FromName': s_name,
-                    'PhoneFrom': s_phone,
-                    'Street1From': s_str1,
-                    'CompanyFrom': s_comp,
-                    'Street2From': s_str2,
-                    'CityFrom': s_city,
-                    'StateFrom': s_state, 
-                    'PostalCodeFrom': s_zip,
-                    'ToName': to_name,
-                    'PhoneTo': to_phone,
-                    'Street1To': to_str1,
-                    'Company2': "",
-                    'Street2To': to_str2,
-                    'CityTo': to_city,
-                    'StateTo': final_state_to,
-                    'ZipTo': to_zip,
-                    'Weight': weight,
-                    'Length': length,
-                    'Width': width,
-                    'Height': height,
-                    'Description': desc,
-                    'Ref01': sku,
-                    'Ref02': order_id,
-                    'Contains Hazard': 'False',
-                    'Shipment Date': datetime.now().strftime("%m/%d/%Y")
-                }
-
-                # Group by SKU
-                if safe_sku not in orders_by_sku:
-                    orders_by_sku[safe_sku] = []
-                orders_by_sku[safe_sku].append(formatted_row)
+                # --- QUANTITY EXPLOSION LOGIC ---
+                # Detect quantity from CSV
+                raw_qty = row.get('quantity-purchased') or row.get('quantity') or row.get('qty') or row.get('Quantity') or "1"
+                try:
+                    qty = int(raw_qty)
+                except:
+                    qty = 1
                 
-                row_count += 1
+                # If quantity is 0 or negative, skip (or default to 1, depending on preference. Defaulting to 1 for safety)
+                if qty < 1: qty = 1
+
+                # Generate ONE ROW per QUANTITY Unit
+                for _ in range(qty):
+                    formatted_row = {
+                        'No': str(row_count + 1),
+                        'FromName': s_name,
+                        'PhoneFrom': s_phone,
+                        'Street1From': s_str1,
+                        'CompanyFrom': s_comp,
+                        'Street2From': s_str2,
+                        'CityFrom': s_city,
+                        'StateFrom': s_state, 
+                        'PostalCodeFrom': s_zip,
+                        'ToName': to_name,
+                        'PhoneTo': to_phone,
+                        'Street1To': to_str1,
+                        'Company2': "",
+                        'Street2To': to_str2,
+                        'CityTo': to_city,
+                        'StateTo': final_state_to,
+                        'ZipTo': to_zip,
+                        'Weight': weight,
+                        'Length': length,
+                        'Width': width,
+                        'Height': height,
+                        'Description': desc,
+                        'Ref01': sku,
+                        'Ref02': order_id,
+                        'Contains Hazard': 'False',
+                        'Shipment Date': datetime.now().strftime("%m/%d/%Y")
+                    }
+
+                    # Group by SKU
+                    if safe_sku not in orders_by_sku:
+                        orders_by_sku[safe_sku] = []
+                    orders_by_sku[safe_sku].append(formatted_row)
+                    
+                    row_count += 1
 
             # Create ZIP containing multiple CSVs
             memory_file = io.BytesIO()

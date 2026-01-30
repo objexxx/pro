@@ -9,6 +9,7 @@ import json
 import random
 import string
 import threading
+import re
 from collections import defaultdict
 from datetime import datetime
 
@@ -75,14 +76,18 @@ def parse_cookies_and_csrf(cookie_input):
     return "; ".join(cookie_str_parts), extracted_csrf
 
 def gen_package_id():
-    return str(random.randint(100000, 1000000))
+    return str(random.randint(100000000, 999999999))
 
 def gen_ship_date():
     current_time = time.time()
     seconds_in_a_day = 24 * 60 * 60
     return int(str(int(current_time) - (int(current_time) % seconds_in_a_day)))
 
-# --- DB HELPERS (Thread Safe) ---
+def is_amazon_order_id(val):
+    if not val: return False
+    return bool(re.search(r'\d{3}-\d{7}-\d{7}', str(val)))
+
+# --- DB HELPERS ---
 def execute_db(query, args=()):
     retries = 3
     while retries > 0:
@@ -98,17 +103,40 @@ def execute_db(query, args=()):
             retries -= 1
         except: return
 
-def get_tracking_from_db(batch_id):
-    tracking_map = {}
+def get_tracking_map_by_order_id(batch_id):
+    tracking_map = defaultdict(list)
     print(f"[AMAZON BOT] Fetching tracking from DB for Batch {batch_id}...")
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("SELECT id, tracking FROM history WHERE batch_id = ? ORDER BY id ASC", (batch_id,))
-        for i, row in enumerate(c.fetchall()):
-            if row[1] and "FAILED" not in row[1]: 
-                tracking_map[str(i + 1)] = str(row[1]).strip()
-        print(f"[AMAZON BOT] Loaded {len(tracking_map)} tracking numbers.")
+        c.execute("SELECT ref_id, ref02, tracking FROM history WHERE batch_id = ?", (batch_id,))
+        rows = c.fetchall()
+        
+        valid_count = 0
+        swapped_count = 0
+        
+        for row in rows:
+            col_ref_id = str(row[0]).strip()
+            col_ref02 = str(row[1]).strip()
+            tn = str(row[2]).strip()
+            
+            if not tn or "FAILED" in tn: continue
+
+            final_order_id = None
+            if is_amazon_order_id(col_ref02):
+                final_order_id = col_ref02
+                valid_count += 1
+            elif is_amazon_order_id(col_ref_id):
+                final_order_id = col_ref_id
+                swapped_count += 1
+            
+            if final_order_id:
+                tracking_map[final_order_id].append(tn)
+        
+        print(f"[AMAZON BOT] Loaded tracking for {len(tracking_map)} unique orders.")
+        if swapped_count > 0:
+            print(f"[DEBUG] DETECTED SWAPPED DATABASE COLUMNS ({swapped_count} rows). Auto-Corrected.")
+        
         conn.close()
     except Exception as e: print(f"[AMAZON BOT] DB Error: {e}")
     return tracking_map
@@ -128,9 +156,8 @@ def detect_delimiter(filepath):
             return '\t' if '\t' in f.readline() else ','
     except: return ','
 
-# --- STATUS UPDATERS ---
 def update_db_status(order_id, status):
-    execute_db("UPDATE history SET status = ? WHERE ref_id = ?", (status, order_id))
+    execute_db("UPDATE history SET status = ? WHERE ref_id = ? OR ref02 = ?", (status, order_id, order_id))
 
 def increment_batch_success(batch_id, count=1):
     for _ in range(count):
@@ -159,7 +186,6 @@ def validate_session(cookies, csrf):
 def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
     print(f"\n[AMAZON BOT] === STARTING BATCH: {batch_id} ===")
     
-    # Init Count to 0 for progress bar
     execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
     set_batch_status(batch_id, 'CONFIRMING')
 
@@ -167,8 +193,9 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
         set_batch_status(batch_id, 'CONFIRM_FAILED')
         return False, "Input missing"
 
-    tracking_data = get_tracking_from_db(batch_id)
-    if not tracking_data:
+    tracking_map = get_tracking_map_by_order_id(batch_id)
+    if not tracking_map:
+        print("[AMAZON BOT] DB returned empty map. No valid Order IDs found.")
         set_batch_status(batch_id, 'CONFIRM_FAILED')
         return True, "No labels"
 
@@ -179,7 +206,6 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
         set_batch_status(batch_id, 'CONFIRM_FAILED')
         return False, "Invalid Cookies Format"
 
-    # === PERSISTENT SESSION ===
     session = requests.Session()
     session.headers.update({
         "accept": "application/json",
@@ -189,9 +215,6 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
     })
 
     delimiter = detect_delimiter(txt_path)
-    total_confirmed_rows = 0
-    
-    # --- FAIL FAST SETUP ---
     attempts = 0
     failures = 0
     FAIL_FAST_LIMIT = 10 
@@ -202,100 +225,122 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
             reader = csv.DictReader(f, delimiter=delimiter)
             if reader.fieldnames: reader.fieldnames = [h.strip() for h in reader.fieldnames]
             
-            grouped_orders = defaultdict(list)
-            original_row_index = 1 
+            unique_orders = set()
             for row in reader:
                 candidates = [row.get('Ref02'), row.get('Ref01'), row.get('order-id'), row.get('order id')]
                 order_id = next((x for x in candidates if x and len(x) > 15), None)
-                if order_id: grouped_orders[order_id].append(original_row_index)
-                original_row_index += 1
+                if order_id: unique_orders.add(order_id)
             
             local_history = load_history()
             
-            for order_id, row_indices in grouped_orders.items():
+            for order_id in unique_orders:
                 
-                csv_tracking_set = set()
-                for idx in row_indices:
-                    tn = tracking_data.get(str(idx))
-                    if tn: csv_tracking_set.add(tn.strip())
+                db_tracking_list = tracking_map.get(order_id, [])
                 
-                if not csv_tracking_set: continue 
-
                 print(f"\n[AMAZON BOT] Checking Order: {order_id}")
-                
-                # --- FETCH INFO ---
+                print(f" > Found {len(db_tracking_list)} tracking numbers in DB.")
+
+                if not db_tracking_list: 
+                    print(" > No tracking found for this order. Skipping.")
+                    continue 
+
                 attempts += 1
-                
                 fetch_url = f"https://sellercentral.amazon.com/orders-api/order/{order_id}"
-                item_code = None
                 address_id = None
-                amazon_tracking_list = []
+                
+                existing_package_ids = [] 
+                needed_items_queue = [] 
                 
                 try:
                     res = session.get(fetch_url, params={"ts": time.time()}, timeout=15)
-                    
                     if res.status_code == 200 and "<title>Amazon Sign-In</title>" not in res.text:
                         data = res.json()
                         if 'order' in data:
                             if 'assignedShipFromLocationAddressId' in data['order']:
                                 address_id = data['order']['assignedShipFromLocationAddressId']
-                            if 'orderItems' in data['order'] and len(data['order']['orderItems']) > 0:
-                                item_code = data['order']['orderItems'][0]['CustomerOrderItemCode']
+                            
+                            if 'orderItems' in data['order']:
+                                for item in data['order']['orderItems']:
+                                    code = item.get('CustomerOrderItemCode')
+                                    try:
+                                        qty_ordered = int(item.get('QuantityOrdered', 0))
+                                        qty_shipped = int(item.get('QuantityShipped', 0))
+                                        qty_needed = qty_ordered - qty_shipped
+                                        
+                                        # If fully shipped, force it to 1 so we can EDIT it
+                                        if qty_needed <= 0: qty_needed = 1 
+                                        
+                                        for _ in range(qty_needed):
+                                            needed_items_queue.append(code)
+                                    except: pass
+
+                            # --- CRITICAL FIX: CHECK FOR "PackageId" (Capitalized) ---
                             if 'packages' in data['order'] and data['order']['packages']:
                                 for pkg in data['order']['packages']:
-                                    if 'trackingId' in pkg and pkg['trackingId']:
-                                        amazon_tracking_list.append(str(pkg['trackingId']).strip())
+                                    # We check PackageId (Standard), packageId (Legacy), id (Fallback)
+                                    pid = pkg.get('PackageId') or pkg.get('packageId') or pkg.get('packageIdString') or pkg.get('id')
+                                    if pid:
+                                        existing_package_ids.append(str(pid))
+
                     elif "<title>Amazon Sign-In</title>" in res.text:
-                        item_code = "SESSION_DIED"
+                        needed_items_queue = ["SESSION_DIED"] 
                 except: pass
 
-                # --- FAIL FAST LOGIC ---
-                if item_code and item_code != "SESSION_DIED":
-                    has_successful_fetch = True 
+                is_dead = (len(needed_items_queue) == 1 and needed_items_queue[0] == "SESSION_DIED")
+                if not is_dead and address_id: has_successful_fetch = True 
                 
-                if not item_code and not has_successful_fetch and attempts <= FAIL_FAST_LIMIT:
+                if not address_id and not has_successful_fetch and attempts <= FAIL_FAST_LIMIT:
                     failures += 1
-                    print(f"[AMAZON BOT] Fail Fast Check: {failures}/{attempts} failed.")
                     if failures >= FAIL_FAST_LIMIT:
                         print("[AMAZON BOT] ABORTING: Too many initial failures.")
                         execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
                         set_batch_status(batch_id, 'AUTH_ERROR')
                         return False, "Auth Error"
 
-                if item_code == "SESSION_DIED":
+                if is_dead:
                     execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
                     set_batch_status(batch_id, 'AUTH_ERROR')
                     return False, "Session Expired Mid-Batch"
                 
-                if not item_code or not address_id:
-                    print(f"[AMAZON BOT] Failed to get Order Info. Skipping.")
-                    increment_batch_success(batch_id, len(row_indices))
-                    total_confirmed_rows += len(row_indices)
+                if not address_id:
+                    print(f"[AMAZON BOT] Failed to get Order Info/Address. Skipping.")
+                    increment_batch_success(batch_id, 1)
                     continue
 
-                amazon_tracking_set = set(amazon_tracking_list)
-                to_upload = []
-                for tn in csv_tracking_set:
-                    if tn in amazon_tracking_set: continue
-                    if tn in local_history: continue
-                    to_upload.append(tn)
-
-                if not to_upload:
-                    increment_batch_success(batch_id, len(row_indices))
-                    total_confirmed_rows += len(row_indices)
-                    continue
-
+                to_upload = db_tracking_list
                 group_success = True
                 confirm_url = 'https://sellercentral.amazon.com/orders-api/confirm-shipment'
                 
-                for tn in to_upload:
+                for i, tn in enumerate(to_upload):
+                    target_item_code = None
+                    if i < len(needed_items_queue):
+                        target_item_code = needed_items_queue[i]
+                    else:
+                        if needed_items_queue: target_item_code = needed_items_queue[0]
+                        elif data.get('order', {}).get('orderItems'): 
+                            target_item_code = data['order']['orderItems'][0].get('CustomerOrderItemCode')
+
+                    if not target_item_code:
+                        print(f"[AMAZON BOT] No valid Item Code found for {tn}. Skipping.")
+                        continue
+
+                    # --- OVERWRITE LOGIC ---
+                    is_edit = False
+                    if existing_package_ids:
+                        pkg_id = existing_package_ids.pop(0) # Reuse ID
+                        is_edit = True
+                        print(f"[DEBUG] Found ID {pkg_id}. Sending EDIT update.")
+                    else:
+                        pkg_id = gen_package_id() # New Package
+                        print("[DEBUG] No Existing ID found. Sending NEW shipment.")
+                    
                     payload = {
                         "OrderIdToPackagesList": [{
                             "OrderId": order_id,
                             "DefaultShippingMethod": None,
                             "ConfirmShipmentPackageList": [{
-                                "packageIdString": gen_package_id(),
-                                "ItemList": [{ "ItemQty": 1, "CustomerOrderItemCode": item_code }], 
+                                "packageIdString": pkg_id,
+                                "ItemList": [{ "ItemQty": 1, "CustomerOrderItemCode": target_item_code }], 
                                 "PackageShippingDetails": {
                                     "Carrier": "USPS",
                                     "ShipDate": gen_ship_date(), 
@@ -308,6 +353,7 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                             "ConfirmInvoiceFlag": False
                         }],
                         "ConfirmInvoiceFlag": False,
+                        "EditShipmentFlag": is_edit,
                         "BulkConfirmShipmentFlag": False
                     }
                     
@@ -315,52 +361,40 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                     
                     confirmed = False
                     try:
-                        print(f"[DEBUG] Confirming {order_id} -> {tn}")
+                        print(f"[DEBUG] POSTing {tn} to Package {pkg_id}")
                         res = session.post(confirm_url, json=payload, timeout=30)
+                        
                         if res.status_code == 200:
-                            if 'ConfirmShipmentResponseEnum":"Success"' in res.text or "Success" in res.text: confirmed = True
-                            elif 'ConfirmShipmentResponseEnum":"AlreadyShipped"' in res.text: confirmed = True
-                    except: pass
+                            if 'ConfirmShipmentResponseEnum":"Success"' in res.text or "Success" in res.text: 
+                                confirmed = True
+                                print(f"[AMAZON BOT] -> SUCCESS: Added/Updated {tn}")
+                            elif 'ConfirmShipmentResponseEnum":"AlreadyShipped"' in res.text:
+                                confirmed = True
+                                print(f"[AMAZON BOT] -> ALREADY SHIPPED (Amazon rejected edit): {tn}")
+                            else:
+                                print(f"[AMAZON BOT] -> UNKNOWN RESPONSE: {res.text[:100]}...")
+                        else:
+                            print(f"[AMAZON BOT] -> FAILED ({res.status_code}): {res.text[:100]}")
+                    except Exception as e:
+                        print(f"[AMAZON BOT] -> EXCEPTION: {e}")
                     
-                    if confirmed:
-                        save_to_history(tn) 
-                        print(f"[AMAZON BOT] -> SUCCESS: Added {tn}")
-                    else:
-                        print(f"[AMAZON BOT] FAILED to confirm Tracking {tn}")
-                        group_success = False
+                    if confirmed: save_to_history(tn) 
+                    else: group_success = False
 
-                    # --- OPTIMIZED SPEED: Random jitter 0.5s - 1.0s ---
-                    time.sleep(random.uniform(0.5, 1.0))
+                    time.sleep(random.uniform(0.8, 1.2))
 
-                if group_success:
-                    update_db_status(order_id, 'CONFIRMED')
-                
-                increment_batch_success(batch_id, len(row_indices))
-                total_confirmed_rows += len(row_indices)
-                
+                if group_success: update_db_status(order_id, 'CONFIRMED')
+                increment_batch_success(batch_id, len(to_upload))
                 time.sleep(0.1)
 
-        print(f"[AMAZON BOT] FINISHED BATCH {batch_id}. Total Confirmed: {total_confirmed_rows}")
-        
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute("SELECT count FROM batches WHERE batch_id = ?", (batch_id,))
-        total_rows = c.fetchone()[0]
-        conn.close()
-
-        if total_confirmed_rows >= total_rows:
-            set_batch_status(batch_id, 'CONFIRMED')
-        elif total_confirmed_rows > 0:
-            set_batch_status(batch_id, 'PARTIAL')
-        else:
-            set_batch_status(batch_id, 'CONFIRM_FAILED')
-        
+        print(f"[AMAZON BOT] FINISHED BATCH {batch_id}.")
+        set_batch_status(batch_id, 'CONFIRMED')
         return True, "Batch Processed"
 
     except Exception as e:
         print(f"[AMAZON BOT] [CRASH] {e}")
         traceback.print_exc()
         set_batch_status(batch_id, 'CONFIRM_FAILED')
-        # --- SECURITY FIX: HIDE INTERNAL ERRORS FROM USER ---
         return False, "Processing Error (Contact Support)"
 
 def run_thread(batch_id, cookies, csrf):
