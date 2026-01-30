@@ -288,14 +288,23 @@
                                             <button onclick="promptReasonAndExec('update_balance', {amount: -1}, 'Enter Reason for Deduction')" class="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-500 hover:bg-red-500 hover:text-white py-2 text-[9px] font-bold uppercase transition-all font-mono">Deduct</button>
                                         </div>
                                     </div>
+                                    
                                     <div class="border border-gray-200 dark:border-[#1E1E1E] p-5">
                                         <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 font-mono">Pricing Strategy</h3>
-                                        <div class="flex items-center gap-2 mb-2">
-                                            <span class="w-12 text-[9px] text-gray-500 uppercase font-mono">Priority</span>
-                                            <input type="number" id="price-priority" step="0.01" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-2 text-xs outline-none font-mono">
+                                        
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">Priority (V2)</span>
+                                            <input type="number" id="price-priority-95055" step="0.01" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-1.5 text-xs outline-none font-mono" placeholder="0.00">
+                                            <button onclick="userAction('update_price', {type:'priority', version:'95055'})" class="bg-black dark:bg-white text-white dark:text-black px-2 text-[9px] font-bold uppercase font-mono">SET</button>
                                         </div>
-                                        <button onclick="userAction('update_price', {type:'priority'})" class="w-full bg-black dark:bg-white text-white dark:text-black py-2 text-[9px] font-bold uppercase hover:opacity-90 font-mono transition-all">Update Pricing</button>
+
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-16 text-[9px] text-gray-500 uppercase font-mono">Legacy (V1)</span>
+                                            <input type="number" id="price-priority-94888" step="0.01" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-1.5 text-xs outline-none font-mono" placeholder="0.00">
+                                            <button onclick="userAction('update_price', {type:'priority', version:'94888'})" class="bg-black dark:bg-white text-white dark:text-black px-2 text-[9px] font-bold uppercase font-mono">SET</button>
+                                        </div>
                                     </div>
+
                                     <div class="border border-gray-200 dark:border-[#1E1E1E] p-5">
                                         <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 font-mono">Security</h3>
                                         <button onclick="promptReasonAndExec('reset_pass', {}, 'Enter New Password', true)" class="w-full border border-gray-200 dark:border-[#333] text-gray-500 hover:text-black dark:hover:text-white hover:border-black dark:hover:border-white py-3 text-[9px] font-bold uppercase transition-all font-mono">Reset Password</button>
@@ -426,7 +435,31 @@
         function closeModal() { document.getElementById('custom-modal').classList.add('hidden'); document.getElementById('modal-input').classList.remove('border-red-500'); }
         function openConfirm(title, desc, callback) { openModal(title, desc, false, callback); }
         function openPrompt(title, desc, callback) { openModal(title, desc, true, callback); }
-        function promptReasonAndExec(action, extra, title, valueIsDirect=false) { openPrompt(title.toUpperCase(), "Please input value below:", (val) => { if(!val) return; if (valueIsDirect) { if(action==='reset_pass') extra.new_password = val; if(action==='grant_sub') extra.days = val; } else { extra.reason = val; } userAction(action, extra); }); }
+        
+        // --- FIXED PROMPT LOGIC ---
+        function promptReasonAndExec(action, extra, title, valueIsDirect=false) { 
+            openPrompt(title.toUpperCase(), "Please input value below:", (val) => { 
+                if(!val) return; 
+                
+                if (valueIsDirect) { 
+                    if(action==='reset_pass') extra.new_password = val; 
+                    if(action==='grant_sub') extra.days = val; 
+                } else { 
+                    extra.reason = val; 
+                } 
+                
+                // IMPORTANT: Ensure amount comes from input field, NOT prompt
+                if(action === 'update_balance') {
+                    const inputAmount = parseFloat(document.getElementById('balance-adj-amount').value);
+                    if(isNaN(inputAmount) || inputAmount <= 0) {
+                        alert("Invalid Amount"); return;
+                    }
+                    extra.amount = inputAmount * (extra.amount < 0 ? -1 : 1);
+                }
+
+                userAction(action, extra); 
+            }); 
+        }
         
         function refundBatch(bid) { openConfirm('REFUND BATCH', `Refund Batch ${bid}? This cannot be undone.`, () => { openPrompt('REFUND REASON', 'Enter reason for audit log:', (reason) => { fetch(`${API_BASE}/api/jobs/action`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({batch_id:bid, action:'refund', reason: reason}) }).then(r => r.json()).then(data => { if(data.status === 'success') { showNotification(data.message || 'BATCH REFUNDED', 'success'); fetchHistory(); } }); }); }); }
         
@@ -464,8 +497,55 @@
         async function toggleWorker() { const action = isWorkerPaused ? 'resume' : 'pause'; await fetch(`${API_BASE}/api/queue/control`, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action})}); fetchSystemState(); }
         let userSearchTimeout;
         async function searchUsers() { const q = document.getElementById('user-search').value; const container = document.getElementById('user-list-container'); const countLabel = document.getElementById('total-users-count'); clearTimeout(userSearchTimeout); userSearchTimeout = setTimeout(async()=>{ const res = await fetch(`${API_BASE}/api/users/search?q=${q}`); const data = await res.json(); if(countLabel) countLabel.innerText = data.total; if(data.users.length === 0) { container.innerHTML = '<div class="p-4 text-center text-gray-400 text-[10px] uppercase">No Users Found</div>'; return; } let html = ''; data.users.forEach(u => { const activeClass = (selectedUserId == u.id) ? 'bg-gray-100 dark:bg-[#111] border-l-2 border-black dark:border-white' : 'border-l-2 border-transparent'; html += `<div onclick="loadUser('${u.id}', '${u.username}', '${u.balance}')" class="p-3 border-b border-gray-100 dark:border-[#151515] hover:bg-gray-50 dark:hover:bg-[#111] cursor-pointer group ${activeClass} transition-all"><div class="flex justify-between items-center"><span class="text-xs text-black dark:text-gray-300 font-bold group-hover:text-black dark:group-hover:text-white">${u.username}</span><span class="text-[10px] text-green-600 dark:text-green-500 font-mono">$${parseFloat(u.balance).toFixed(2)}</span></div><div class="text-[9px] text-gray-400 font-mono mt-1">ID: ${u.id} | Joined: ${u.date}</div></div>`; }); container.innerHTML = html; }, 300); }
-        async function loadUser(id, name, bal) { selectedUserId = id; searchUsers(); document.getElementById('user-details-empty').classList.add('hidden'); document.getElementById('user-details-content').classList.remove('hidden'); document.getElementById('user-details-content').classList.add('flex'); document.getElementById('sel-username').innerText = name; document.getElementById('sel-balance').innerText = '$'+parseFloat(bal).toFixed(2); const res = await fetch(`${API_BASE}/api/users/details/${id}`); const d = await res.json(); document.getElementById('sel-ip').innerText = d.ip; document.getElementById('sel-sub-status').innerText = d.subscription.is_active ? "ACTIVE" : "INACTIVE"; document.getElementById('sel-sub-status').className = d.subscription.is_active ? "text-green-500 font-bold" : "text-gray-500"; document.getElementById('price-priority').value = d.prices.priority; const rev = document.getElementById('btn-revoke-sub'); if(d.subscription.is_active) rev.classList.remove('hidden'); else rev.classList.add('hidden'); }
-        async function userAction(act, extra={}) { if(!selectedUserId) return; let payload = {action:act, user_id:selectedUserId, ...extra}; if(act === 'update_price') { payload.price = document.getElementById('price-'+extra.type).value; payload.label_type = extra.type; } const res = await fetch(`${API_BASE}/api/users/action`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }); if(res.ok) { const data = await res.json(); showNotification(data.message || "ACTION COMPLETED", "success"); if(act==='update_balance') { document.getElementById('sel-balance').innerText = '$' + parseFloat(data.new_balance || 0).toFixed(2); document.getElementById('balance-adj-amount').value = ''; searchUsers(); } if(act==='revoke_sub' || act==='grant_sub') loadUser(selectedUserId, document.getElementById('sel-username').innerText, document.getElementById('sel-balance').innerText.replace('$','')); } else { showNotification("ACTION FAILED", "error"); } }
+        
+        // --- UPDATED LOAD USER ---
+        async function loadUser(id, name, bal) { 
+            selectedUserId = id; 
+            searchUsers(); 
+            document.getElementById('user-details-empty').classList.add('hidden'); 
+            document.getElementById('user-details-content').classList.remove('hidden'); 
+            document.getElementById('user-details-content').classList.add('flex'); 
+            document.getElementById('sel-username').innerText = name; 
+            document.getElementById('sel-balance').innerText = '$'+parseFloat(bal).toFixed(2); 
+            
+            const res = await fetch(`${API_BASE}/api/users/details/${id}`); 
+            const d = await res.json(); 
+            document.getElementById('sel-ip').innerText = d.ip; 
+            document.getElementById('sel-sub-status').innerText = d.subscription.is_active ? "ACTIVE" : "INACTIVE"; 
+            document.getElementById('sel-sub-status').className = d.subscription.is_active ? "text-green-500 font-bold" : "text-gray-500"; 
+            
+            // Populate BOTH price fields (Legacy & V2)
+            document.getElementById('price-priority-95055').value = d.prices['priority_95055'] || d.prices['priority'];
+            document.getElementById('price-priority-94888').value = d.prices['priority_94888'] || d.prices['priority'];
+            
+            const rev = document.getElementById('btn-revoke-sub'); 
+            if(d.subscription.is_active) rev.classList.remove('hidden'); else rev.classList.add('hidden'); 
+        }
+        
+        async function userAction(act, extra={}) { 
+            if(!selectedUserId) return; 
+            let payload = {action:act, user_id:selectedUserId, ...extra}; 
+            
+            if(act === 'update_price') { 
+                // Dynamically grab price from specific input
+                payload.price = document.getElementById('price-priority-'+extra.version).value; 
+                payload.label_type = extra.type; 
+            } 
+            
+            const res = await fetch(`${API_BASE}/api/users/action`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }); 
+            if(res.ok) { 
+                const data = await res.json(); 
+                showNotification(data.message || "ACTION COMPLETED", "success"); 
+                if(act==='update_balance') { 
+                    document.getElementById('sel-balance').innerText = '$' + parseFloat(data.new_balance || 0).toFixed(2); 
+                    document.getElementById('balance-adj-amount').value = ''; 
+                    searchUsers(); 
+                } 
+                if(act==='revoke_sub' || act==='grant_sub') loadUser(selectedUserId, document.getElementById('sel-username').innerText, document.getElementById('sel-balance').innerText.replace('$','')); 
+            } else { 
+                showNotification("ACTION FAILED", "error"); 
+            } 
+        }
 
         setInterval(() => { fetchSystemState(); if(currentTab==='queue') fetchJobs(); if(currentTab==='confirming') fetchConfirming(); }, 2000);
         switchTab('queue'); // Init default

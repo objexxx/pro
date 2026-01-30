@@ -71,11 +71,18 @@
             <div class="absolute top-0 right-0 p-3 opacity-5 text-6xl font-black text-green-500 rotate-12 -mt-3 -mr-3 transition-transform group-hover:scale-110">$</div>
             <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6">Service Pricing</h3>
             <div class="space-y-3">
+                
                 <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
-                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">Priority V2</span>
-                    <span class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">${{ "{:.2f}".format(user.price_per_label) }}</span>
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">Priority V2 (95055)</span>
+                    <span id="price_95055" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
                 </div>
+
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">Legacy V1 (94888)</span>
+                    <span id="price_94888" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
                 </div>
+
+            </div>
             <div class="mt-8 p-4 border border-blue-500/20 bg-blue-500/5">
                 <p class="text-[9px] font-bold text-blue-500 uppercase leading-relaxed font-mono">
                     > NOTE: Pricing is dynamic based on volume. Contact support for bulk discounts > 1k/day.
@@ -115,4 +122,23 @@
         }
         btn.innerText = orig;
     }
+
+    // --- FETCH & DISPLAY DUAL PRICING ---
+    async function loadPrices() {
+        try {
+            const res = await fetch('/api/user');
+            const data = await res.json();
+            
+            if (data.prices) {
+                document.getElementById('price_95055').innerText = '$' + parseFloat(data.prices['95055']).toFixed(2);
+                document.getElementById('price_94888').innerText = '$' + parseFloat(data.prices['94888']).toFixed(2);
+            } else {
+                // Fallback for old accounts
+                const base = parseFloat(data.price_per_label).toFixed(2);
+                document.getElementById('price_95055').innerText = '$' + base;
+                document.getElementById('price_94888').innerText = '$' + base;
+            }
+        } catch(e) {}
+    }
+    loadPrices();
 </script>

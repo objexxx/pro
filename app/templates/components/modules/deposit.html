@@ -56,7 +56,7 @@
                     <p class="text-[9px] text-gray-500 font-mono mt-1 uppercase">Recent Inbound Transfers</p>
                 </div>
 
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto flex-1 overflow-y-auto custom-scrollbar max-h-[400px]">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="text-[9px] text-gray-500 uppercase tracking-wider border-b border-gray-100 dark:border-[#1E1E1E]">
@@ -161,14 +161,15 @@
                     badge = `<span class="px-2 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded text-[9px] font-bold uppercase">${tx.status || 'FAILED'}</span>`;
                 }
 
+                // FIX: text-black dark:text-white for light/dark mode visibility
                 html += `
                 <tr class="border-b border-gray-50 dark:border-[#151515] hover:bg-gray-50 dark:hover:bg-[#111] transition-colors">
-                    <td class="py-4 px-2 text-gray-500">${tx.date}</td>
+                    <td class="py-4 px-2 text-gray-500 text-black dark:text-gray-500">${tx.date}</td>
                     <td class="py-4 px-2">
-                        <span class="text-white font-bold">${tx.currency}</span>
+                        <span class="text-black dark:text-white font-bold">${tx.currency}</span>
                         <div class="text-[8px] text-gray-600 uppercase tracking-wider">${tx.txn_id.slice(0,12)}...</div>
                     </td>
-                    <td class="py-4 px-2 text-right text-white font-bold text-xs">$${parseFloat(tx.amount).toFixed(2)}</td>
+                    <td class="py-4 px-2 text-right text-black dark:text-white font-bold text-xs">$${parseFloat(tx.amount).toFixed(2)}</td>
                     <td class="py-4 px-2 text-right">${badge}</td>
                 </tr>`;
             });

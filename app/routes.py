@@ -197,9 +197,25 @@ def addresses(): return render_template('dashboard.html', user=current_user, act
 # --- API ENDPOINTS ---
 @main_bp.route('/api/user')
 @login_required
-def api_user(): return jsonify({"username": current_user.username, "balance": current_user.balance, "price_per_label": current_user.price_per_label})
+def api_user():
+    # --- FETCH SPLIT PRICING ---
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT version, price FROM user_pricing WHERE user_id = ? AND label_type = 'priority'", (current_user.id,))
+    prices = {row[0]: float(row[1]) for row in c.fetchall()}
+    conn.close()
+    
+    # Fallback to default price if specific version not set
+    p_95 = prices.get('95055', current_user.price_per_label)
+    p_94 = prices.get('94888', current_user.price_per_label)
 
-# --- NEW: NOTIFICATION POLLING ---
+    return jsonify({
+        "username": current_user.username, 
+        "balance": current_user.balance, 
+        "price_per_label": current_user.price_per_label,
+        "prices": { "95055": p_95, "94888": p_94 }
+    })
+
+# --- NOTIFICATION POLLING ---
 @main_bp.route('/api/notifications/poll')
 @login_required
 def poll_notifications():
@@ -325,7 +341,11 @@ def get_deposit_history():
     conn = get_db(); c = conn.cursor()
     try: c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", ((datetime.utcnow()-timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S"),)); conn.commit()
     except: pass
-    c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 20", (current_user.id,))
+    
+    # --- UPDATED: LIMIT 10 ---
+    c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 10", (current_user.id,))
+    # -------------------------
+    
     data = [{"amount":r[0],"currency":r[1],"txn_id":r[2],"status":r[3],"date":to_est(r[4])} for r in c.fetchall()]
     conn.close(); return jsonify(data)
 
@@ -380,6 +400,7 @@ def deposit_webhook():
     except: return jsonify({"status": "error"}), 500
     return jsonify({"status": "ok"}), 200
 
+# --- REST OF AUTOMATION API ---
 @main_bp.route('/api/automation/public_config')
 @login_required
 def public_automation_config():

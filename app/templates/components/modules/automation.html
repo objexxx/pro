@@ -119,19 +119,23 @@
         <div class="lg:col-span-8 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden min-h-0">
             <div class="p-5 border-b border-gray-200 dark:border-[#1E1E1E] flex justify-between items-center bg-gray-50 dark:bg-[#050505] shrink-0">
                 <div class="flex items-center gap-6">
-                    <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">Pending Confirmations</h3>
+                    <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">Page Stats</h3>
                     <div class="flex items-center gap-4 border-l border-gray-200 dark:border-[#1E1E1E] pl-6 text-center">
                         <div>
                             <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Ready</p>
-                            <p id="stat-ready" class="text-[10px] font-mono font-bold text-black dark:text-white">0</p>
+                            <p id="stat-ready" class="text-[10px] font-mono font-bold text-gray-300 dark:text-gray-600">0</p>
+                        </div>
+                        <div>
+                            <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Confirmed</p>
+                            <p id="stat-confirmed" class="text-[10px] font-mono font-bold text-gray-300 dark:text-gray-600">0</p>
                         </div>
                         <div>
                             <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Partial</p>
-                            <p id="stat-partial" class="text-[10px] font-mono font-bold text-yellow-500">0</p>
+                            <p id="stat-partial" class="text-[10px] font-mono font-bold text-gray-300 dark:text-gray-600">0</p>
                         </div>
                         <div>
                             <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Failed</p>
-                            <p id="stat-failed" class="text-[10px] font-mono font-bold text-red-500">0</p>
+                            <p id="stat-failed" class="text-[10px] font-mono font-bold text-gray-300 dark:text-gray-600">0</p>
                         </div>
                     </div>
                 </div>
@@ -285,6 +289,20 @@
     
     function changeAutoPage(delta) { autoCurrentPage += delta; loadAutomationHistory(); }
 
+    // --- HELPER FOR STATS COLORS ---
+    function updateStatColor(id, count, colorClass) {
+        const el = document.getElementById(id);
+        if(!el) return;
+        el.innerText = count;
+        // Reset base classes + neutral state
+        el.className = "text-[10px] font-mono font-bold transition-colors duration-300";
+        if (count > 0) {
+            el.classList.add(colorClass);
+        } else {
+            el.classList.add("text-gray-300", "dark:text-gray-600");
+        }
+    }
+
     async function loadAutomationHistory() {
         const tbody = document.getElementById('automation-history-body');
         if(!tbody) return; 
@@ -295,16 +313,12 @@
             const json = await res.json();
             let html = '';
             
-            // --- UPDATED STATS FETCHING ---
-            // Fetch true global counts from API instead of local counting
-            const statsRes = await fetch('/api/stats');
-            const stats = await statsRes.json();
-            
-            if (document.getElementById('stat-ready')) document.getElementById('stat-ready').innerText = stats.ready_batches || 0;
-            if (document.getElementById('stat-partial')) document.getElementById('stat-partial').innerText = stats.partial_batches || 0;
-            if (document.getElementById('stat-failed')) document.getElementById('stat-failed').innerText = stats.failed_batches || 0;
-            
-            // Update Balance if needed
+            // --- PAGE-SPECIFIC STATS COUNTER ---
+            let p_ready = 0;
+            let p_confirmed = 0;
+            let p_partial = 0;
+            let p_failed = 0;
+
             const userRes = await fetch('/api/user');
             const userData = await userRes.json();
             const balElem = document.getElementById('wallet-balance');
@@ -318,6 +332,21 @@
             }
 
             json.data.forEach(b => {
+                // --- COUNT STATS (Corrected Logic) ---
+                if (b.status === 'READY' || b.status === 'COMPLETED') {
+                    p_ready++; // 'COMPLETED' (from DB) shows as 'READY' (in UI) -> Counts as Ready
+                } 
+                else if (b.status === 'CONFIRMED') {
+                    p_confirmed++;
+                } 
+                else if (b.status === 'PARTIAL') {
+                    p_partial++;
+                } 
+                else if (['FAILED', 'AUTH_ERROR', 'CONFIRM_FAILED', 'REFUNDED'].includes(b.status)) {
+                    p_failed++;
+                }
+                // -------------------------------------
+
                 let statusBadge = '', actionBtn = '', labelClass = '';
                 if (b.is_expired) {
                     labelClass = 'text-gray-500 border border-gray-500/20';
@@ -380,6 +409,12 @@
             });
             tbody.innerHTML = html || '<tr><td colspan="5" class="p-8 text-center text-gray-400 font-mono text-[9px] tracking-[0.2em] uppercase">NO DATA FOUND</td></tr>';
             
+            // --- UPDATE STATS WITH COLORS ---
+            updateStatColor('stat-ready', p_ready, 'text-green-500');
+            updateStatColor('stat-confirmed', p_confirmed, 'text-blue-500');
+            updateStatColor('stat-partial', p_partial, 'text-yellow-500');
+            updateStatColor('stat-failed', p_failed, 'text-red-500');
+
             const meta = json.pagination;
             document.getElementById('auto_page_info').innerText = `PAGE ${meta.current_page} OF ${meta.total_pages || 1}`;
             document.getElementById('btnPrevAuto').disabled = meta.current_page <= 1;

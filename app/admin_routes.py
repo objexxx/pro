@@ -23,6 +23,16 @@ def admin_required(f):
 def get_db():
     return sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
 
+# --- SAFE NOTIFICATION HELPER ---
+def safe_notify_user(conn, user_id, message, msg_type="info"):
+    """Safely attempts to insert a notification, ignoring errors if table is missing."""
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", 
+                  (user_id, message, msg_type))
+    except Exception as e:
+        print(f"[WARNING] Notification failed (Action still succeeded): {e}")
+
 @admin_bp.route('/dashboard')
 @login_required
 @admin_required
@@ -46,17 +56,23 @@ def system_health():
     c.execute("SELECT COUNT(*) FROM batches WHERE status='FAILED' AND created_at > datetime('now', '-1 day')")
     err_batch = c.fetchone()[0]
     
-    c.execute("SELECT COUNT(*) FROM server_errors WHERE created_at > datetime('now', '-1 day')")
-    err_sys = c.fetchone()[0]
+    # Check Server Errors Count (Safely)
+    try:
+        c.execute("SELECT COUNT(*) FROM server_errors WHERE created_at > datetime('now', '-1 day')")
+        err_sys = c.fetchone()[0]
+    except: err_sys = 0
     
+    # Lifetime Revenue (Live + Archived)
     c.execute("""SELECT SUM(b.success_count * COALESCE(u.price_per_label, 3.00)) FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('COMPLETED','PARTIAL')""")
     rev_live = c.fetchone()[0] or 0.0
     rev_arch = float(config.get('archived_revenue', '0.00'))
     rev_life = rev_live + rev_arch
     
+    # 30 Day Revenue
     c.execute("""SELECT SUM(b.success_count * COALESCE(u.price_per_label, 3.00)) FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('COMPLETED','PARTIAL') AND b.created_at > datetime('now', '-30 days')""")
     rev_30 = c.fetchone()[0] or 0.0
     
+    # 7-Day Rolling Average for Projection
     c.execute("""SELECT SUM(b.success_count * COALESCE(u.price_per_label, 3.00)) FROM batches b JOIN users u ON b.user_id = u.id WHERE b.status IN ('COMPLETED','PARTIAL') AND b.created_at > datetime('now', '-7 days')""")
     rev_7d = c.fetchone()[0] or 0.0
     
@@ -81,8 +97,10 @@ def system_health():
 @admin_required
 def server_errors():
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT id, source, batch_id, error_msg, created_at FROM server_errors ORDER BY created_at DESC LIMIT 100")
-    rows = [{"id":r[0], "source":r[1], "batch":r[2], "msg":r[3], "date":r[4]} for r in c.fetchall()]
+    try:
+        c.execute("SELECT id, source, batch_id, error_msg, created_at FROM server_errors ORDER BY created_at DESC LIMIT 100")
+        rows = [{"id":r[0], "source":r[1], "batch":r[2], "msg":r[3], "date":r[4]} for r in c.fetchall()]
+    except: rows = []
     conn.close()
     return jsonify(rows)
 
@@ -155,9 +173,9 @@ def job_action():
             c.execute("UPDATE batches SET status='REFUNDED' WHERE batch_id=?", (bid,))
             c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
                       (current_user.id, "REFUND", f"Batch {bid} refunded (${amt}) - {data.get('reason','Manual')}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-            # --- NOTIFY USER ---
-            c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", 
-                      (uid, f"REFUND ISSUED: Batch {bid} (${amt:.2f})", "success"))
+            
+            safe_notify_user(conn, uid, f"REFUND ISSUED: Batch {bid} (${amt:.2f})", "success")
+            
             conn.commit(); conn.close()
             return jsonify({"status": "success", "message": f"REFUND BATCH {bid} REFUNDED (${amt:.2f})"})
     
@@ -219,12 +237,30 @@ def user_details(uid):
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT price_per_label, subscription_end, auto_renew FROM users WHERE id=?", (uid,)); u = c.fetchone()
     if not u: conn.close(); return jsonify({}), 404
+    
     c.execute("SELECT ip_address FROM login_history WHERE user_id=? ORDER BY created_at DESC LIMIT 1", (uid,)); ip = c.fetchone()
-    prices = {'priority':u[0], 'ground':u[0], 'express':u[0]}
-    c.execute("SELECT label_type, price FROM user_pricing WHERE user_id=? AND version='95055'", (uid,))
-    for l, p in c.fetchall(): prices[l] = p
+    
+    # --- FETCH ALL PRICING VARIANTS ---
+    c.execute("SELECT label_type, version, price FROM user_pricing WHERE user_id=?", (uid,))
+    prices = {}
+    for l, v, p in c.fetchall():
+        prices[f"{l}_{v}"] = p
+    
+    # Defaults if missing
+    base = u[0] # Default price from users table
+    if 'priority_95055' not in prices: prices['priority_95055'] = base
+    if 'priority_94888' not in prices: prices['priority_94888'] = base
+    
     conn.close()
-    return jsonify({"ip": ip[0] if ip else "None", "prices": prices, "subscription": {"is_active": u[1] and datetime.strptime(u[1], "%Y-%m-%d %H:%M:%S") > datetime.utcnow(), "end_date": u[1] or "--", "auto_renew": bool(u[2])}})
+    return jsonify({
+        "ip": ip[0] if ip else "None", 
+        "prices": prices, 
+        "subscription": {
+            "is_active": u[1] and datetime.strptime(u[1], "%Y-%m-%d %H:%M:%S") > datetime.utcnow(), 
+            "end_date": u[1] or "--", 
+            "auto_renew": bool(u[2])
+        }
+    })
 
 @admin_bp.route('/api/users/action', methods=['POST'])
 @login_required
@@ -240,26 +276,35 @@ def user_action():
     if act == 'reset_pass':
         c.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(data.get('new_password')), uid))
         msg = f"PASSWORD RESET FOR {target_username}"
-        c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", (uid, "SECURITY ALERT: Your password was reset by admin.", "processing"))
+        safe_notify_user(conn, uid, "SECURITY ALERT: Your password was reset by admin.", "processing")
     elif act == 'update_price':
-        l, p = data.get('label_type'), float(data.get('price'))
-        for v in ['95055', '94888']: c.execute("DELETE FROM user_pricing WHERE user_id=? AND label_type=? AND version=?", (uid, l, v)); c.execute("INSERT INTO user_pricing (user_id, label_type, version, price) VALUES (?,?,?,?)", (uid, l, v, p))
-        if l == 'priority': c.execute("UPDATE users SET price_per_label=? WHERE id=?", (p, uid))
+        # --- FIXED: Handle Version Specifics ---
+        l, v, p = data.get('label_type'), data.get('version'), float(data.get('price'))
+        
+        # 1. Update/Insert specific row
+        c.execute("DELETE FROM user_pricing WHERE user_id=? AND label_type=? AND version=?", (uid, l, v))
+        c.execute("INSERT INTO user_pricing (user_id, label_type, version, price) VALUES (?,?,?,?)", (uid, l, v, p))
+        
+        # 2. Update default price if it matches 95055 (Legacy/Default sync)
+        if l == 'priority' and v == '95055':
+            c.execute("UPDATE users SET price_per_label=? WHERE id=?", (p, uid))
+            
         msg = f"PRICING UPDATED FOR {target_username}"
-        c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", (uid, f"PRICE UPDATE: Your {l} rate is now ${p}", "success"))
+        safe_notify_user(conn, uid, f"PRICE UPDATE: Your {l} ({v}) rate is now ${p}", "success")
     elif act == 'update_balance':
         amt = float(data.get('amount')); c.execute("UPDATE users SET balance = balance + ? WHERE id=?", (amt, uid)); c.execute("SELECT balance FROM users WHERE id=?", (uid,)); new_bal = c.fetchone()[0]
         c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", (current_user.id, "BALANCE_ADJUST", f"{target_username} Amt {amt}: {data.get('reason')}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        # --- NOTIFY USER ---
-        notify_msg = f"BALANCE ADJUSTMENT: ${amt:+.2f} ({data.get('reason')})"
-        c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", (uid, notify_msg, "success" if amt > 0 else "error"))
+        
+        notify_msg = f"BALANCE ADJUSTMENT: ${amt:+.2f}"
+        safe_notify_user(conn, uid, notify_msg, "success" if amt > 0 else "error")
+        
         conn.commit(); conn.close()
         return jsonify({"status": "success", "new_balance": new_bal, "message": f"BALANCE UPDATED: {target_username} (${amt})"})
     elif act == 'revoke_sub':
         c.execute("UPDATE users SET subscription_end=NULL, auto_renew=0 WHERE id=?", (uid,))
         c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
                   (current_user.id, "SUB_REVOKE", f"Revoked {target_username}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", (uid, "ALERT: Automation License Revoked.", "error"))
+        safe_notify_user(conn, uid, "ALERT: Automation License Revoked.", "error")
         msg = f"LICENSE REVOKED FOR {target_username}"
     elif act == 'grant_sub':
         days = int(data.get('days', 30))
@@ -267,7 +312,7 @@ def user_action():
         c.execute("UPDATE users SET subscription_end=?, auto_renew=0 WHERE id=?", (new_end, uid))
         c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
                   (current_user.id, "SUB_GRANT", f"Granted {days}d to {target_username}", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        c.execute("INSERT INTO user_notifications (user_id, message, type) VALUES (?, ?, ?)", (uid, f"LICENSE GRANTED: {days} Days Added.", "success"))
+        safe_notify_user(conn, uid, f"LICENSE GRANTED: {days} Days Added.", "success")
         msg = f"LICENSE GRANTED TO {target_username} ({days} DAYS)"
     
     conn.commit(); conn.close()

@@ -47,17 +47,10 @@
         // --- GLOBAL STATE ---
         let allBatches = []; 
         let activeTab = "{{ active_tab|default('purchase') }}";
-        
-        // --- [FIX] LOAD MEMORY FROM LOCAL STORAGE ---
-        // This ensures we remember which errors we've already shown, even after a refresh.
         let batchStatusMemory = {};
-        try {
-            batchStatusMemory = JSON.parse(localStorage.getItem('batchStatusMemory')) || {};
-        } catch(e) { batchStatusMemory = {}; }
-
+        try { batchStatusMemory = JSON.parse(localStorage.getItem('batchStatusMemory')) || {}; } catch(e) { batchStatusMemory = {}; }
         let isFirstLoad = true; 
         window.confirmedSessionIds = window.confirmedSessionIds || [];
-        
         window.histCurrentPage = 1;
         window.autoCurrentPage = 1;
 
@@ -88,15 +81,10 @@
             activeTab = tabName; 
             window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
 
-            if (tabName === 'history') { 
-                if(typeof window.loadFullHistory === 'function') window.loadFullHistory();
-            }
+            if (tabName === 'history') { if(typeof window.loadFullHistory === 'function') window.loadFullHistory(); }
             if (tabName === 'stats') loadStats();
             if (tabName === 'addresses' && typeof loadAddressList === 'function') loadAddressList();
-            if (tabName === 'automation') { 
-                if(typeof loadDropdown === 'function') loadDropdown();
-                if(typeof loadAutomationHistory === 'function') loadAutomationHistory();
-            }
+            if (tabName === 'automation') { if(typeof loadDropdown === 'function') loadDropdown(); if(typeof loadAutomationHistory === 'function') loadAutomationHistory(); }
             updateNavUI(tabName);
         }
 
@@ -182,30 +170,31 @@
                 if (activeTab === 'history') window.loadFullHistory();
                 else if (activeTab === 'automation') window.loadAutomationHistory();
                 
-                // --- NEW GLOBAL ALERT CHECKER WITH PERSISTENCE ---
+                // --- ADMIN MESSAGES POLL ---
+                const notifRes = await fetch('/api/notifications/poll');
+                const notifs = await notifRes.json();
+                if(notifs && notifs.length > 0) {
+                    notifs.forEach(n => {
+                        showNotification(n.msg, n.type === 'error' ? 'error' : 'success');
+                    });
+                    loadUserData();
+                }
+
+                // --- GLOBAL ALERT CHECKER ---
                 const response = await fetch(`/api/batches?page=1&limit=5`);
                 const result = await response.json();
-                
                 if(result.data) {
                     let hasChanges = false;
                     result.data.forEach(batch => {
-                        // Check if status changed to AUTH_ERROR
-                        // Only show if we haven't seen this specific batch as AUTH_ERROR yet (based on localStorage)
                         if(batch.status === 'AUTH_ERROR' && batchStatusMemory[batch.batch_id] !== 'AUTH_ERROR') {
                             showNotification("FAILED: CHECK COOKIES/CSRF", 'error');
                         }
-                        
-                        // Update memory if changed
                         if (batchStatusMemory[batch.batch_id] !== batch.status) {
                             batchStatusMemory[batch.batch_id] = batch.status;
                             hasChanges = true;
                         }
                     });
-                    
-                    // Save updated memory to Local Storage
-                    if (hasChanges) {
-                         localStorage.setItem('batchStatusMemory', JSON.stringify(batchStatusMemory));
-                    }
+                    if (hasChanges) localStorage.setItem('batchStatusMemory', JSON.stringify(batchStatusMemory));
                 }
                 
             } catch(e) {}
@@ -416,8 +405,8 @@
             
             <div id="view-automation" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/automation.html' %} </div>
             <div id="view-stats" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/stats.html' %} </div>
-            <div id="view-deposit" class="hidden-section h-full flex flex-col items-center justify-start pt-10"> {% include 'components/modules/deposit.html' %} </div>
-            <div id="view-settings" class="hidden-section h-full flex items-center justify-center"> {% include 'components/modules/settings.html' %} </div>
+            <div id="view-deposit" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/deposit.html' %} </div>
+            <div id="view-settings" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/settings.html' %} </div>
             <div id="view-addresses" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/addresses.html' %} </div>
         </div>
     </main>
