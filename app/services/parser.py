@@ -89,26 +89,28 @@ class OrderParser:
                 safe_sku = re.sub(r'[\\/*?:"<>|]', "_", sku).strip()
                 if not safe_sku: safe_sku = "Unknown_SKU"
 
-                # Default Dimensions & Description
-                weight = "1"
+                # --- STRICT INVENTORY CHECK (REQUIRED) ---
+                if sku not in inventory_map:
+                    return None, f"SKU NOT MAPPED: {sku} (Please add this SKU to your Inventory in Automation settings)"
+
+                # Load Inventory Data
+                item_data = inventory_map[sku]
+                
+                # Default Dimensions & Description (Fallback if missing in JSON, though unlikely if keyed)
+                weight = str(item_data.get('weight', "1"))
                 length, width, height = "10", "6", "4"
                 desc = ""
-
-                # --- CHECK INVENTORY MAP ---
-                if sku in inventory_map:
-                    item_data = inventory_map[sku]
-                    weight = item_data.get('weight', weight)
-                    
-                    # Check ALL possible key names for description
-                    inventory_desc = (
-                        item_data.get('name') or 
-                        item_data.get('description') or 
-                        item_data.get('desc') or 
-                        item_data.get('package_description')
-                    )
-                    
-                    if inventory_desc:
-                        desc = inventory_desc
+                
+                # Check ALL possible key names for description from inventory
+                inventory_desc = (
+                    item_data.get('name') or 
+                    item_data.get('description') or 
+                    item_data.get('desc') or 
+                    item_data.get('package_description')
+                )
+                
+                if inventory_desc:
+                    desc = inventory_desc
                 
                 # Recipient Mapping
                 to_name = row.get('Recipient Name') or row.get('Name') or row.get('recipient-name') or row.get('Ship To Name') or ""

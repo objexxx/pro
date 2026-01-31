@@ -159,10 +159,6 @@ def detect_delimiter(filepath):
 def update_db_status(order_id, status):
     execute_db("UPDATE history SET status = ? WHERE ref_id = ? OR ref02 = ?", (status, order_id, order_id))
 
-def increment_batch_success(batch_id, count=1):
-    for _ in range(count):
-        execute_db("UPDATE batches SET success_count = MIN(count, success_count + 1) WHERE batch_id = ?", (batch_id,))
-
 def set_batch_status(batch_id, status):
     execute_db("UPDATE batches SET status = ? WHERE batch_id = ?", (status, batch_id))
 
@@ -186,7 +182,7 @@ def validate_session(cookies, csrf):
 def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
     print(f"\n[AMAZON BOT] === STARTING BATCH: {batch_id} ===")
     
-    execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
+    # --- FIX: REMOVED reset of success_count. Preserves label generation count. ---
     set_batch_status(batch_id, 'CONFIRMING')
 
     if not txt_path or not os.path.exists(txt_path):
@@ -196,7 +192,9 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
     tracking_map = get_tracking_map_by_order_id(batch_id)
     if not tracking_map:
         print("[AMAZON BOT] DB returned empty map. No valid Order IDs found.")
-        set_batch_status(batch_id, 'CONFIRM_FAILED')
+        # Only set failed if we genuinely found nothing (meaning initial gen likely failed too)
+        # But usually we want to keep it as is if labels exist.
+        set_batch_status(batch_id, 'CONFIRM_FAILED') 
         return True, "No labels"
 
     final_cookie_str, extracted_csrf = parse_cookies_and_csrf(cookies_input)
@@ -293,18 +291,17 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                     failures += 1
                     if failures >= FAIL_FAST_LIMIT:
                         print("[AMAZON BOT] ABORTING: Too many initial failures.")
-                        execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
+                        # --- FIX: Do NOT reset success_count here ---
                         set_batch_status(batch_id, 'AUTH_ERROR')
                         return False, "Auth Error"
 
                 if is_dead:
-                    execute_db("UPDATE batches SET success_count = 0 WHERE batch_id = ?", (batch_id,))
+                    # --- FIX: Do NOT reset success_count here ---
                     set_batch_status(batch_id, 'AUTH_ERROR')
                     return False, "Session Expired Mid-Batch"
                 
                 if not address_id:
                     print(f"[AMAZON BOT] Failed to get Order Info/Address. Skipping.")
-                    increment_batch_success(batch_id, 1)
                     continue
 
                 to_upload = db_tracking_list
@@ -384,7 +381,7 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                     time.sleep(random.uniform(0.8, 1.2))
 
                 if group_success: update_db_status(order_id, 'CONFIRMED')
-                increment_batch_success(batch_id, len(to_upload))
+                # --- FIX: Removed increment_batch_success to prevent double counting ---
                 time.sleep(0.1)
 
         print(f"[AMAZON BOT] FINISHED BATCH {batch_id}.")
