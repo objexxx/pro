@@ -38,9 +38,29 @@
                         <div class="space-y-2">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Tracking Version</label>
                             <select name="tracking_version" onchange="updateProtocolBadge(this.value)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
+                                {% if version_status['95055'] %}
                                 <option value="95055" {% if user.default_version == '95055' %}selected{% endif %}>95055 (Standard)</option>
+                                {% endif %}
+                                
+                                {% if version_status['94888'] %}
                                 <option value="94888" {% if user.default_version == '94888' %}selected{% endif %}>94888 (Legacy)</option>
+                                {% endif %}
+                                
+                                {% if version_status['94019'] %}
                                 <option value="94019" {% if user.default_version == '94019' %}selected{% endif %}>94019 (Test)</option>
+                                {% endif %}
+
+                                {% if version_status['95888'] %}
+                                <option value="95888" {% if user.default_version == '95888' %}selected{% endif %}>95888 (Test)</option>
+                                {% endif %}
+
+                                {% if version_status['91149'] %}
+                                <option value="91149" {% if user.default_version == '91149' %}selected{% endif %}>91149 (Test)</option>
+                                {% endif %}
+
+                                {% if version_status['93055'] %}
+                                <option value="93055" {% if user.default_version == '93055' %}selected{% endif %}>93055 (Test)</option>
+                                {% endif %}
                             </select>
                         </div>
                     </div>
@@ -109,8 +129,9 @@
             badge.innerText = 'PRO-9488-LEGACY';
             badge.classList.add('bg-yellow-500/5', 'border-yellow-500/20', 'text-yellow-500');
         } 
-        else if (version === '94019') {
-            badge.innerText = 'TEST-94019-BETA';
+        else if (version === '94019' || version === '95888' || version === '91149' || version === '93055') {
+            // Group all test versions under the purple TEST badge
+            badge.innerText = 'TEST-VERSION-BETA';
             badge.classList.add('bg-purple-500/5', 'border-purple-500/20', 'text-purple-500');
         } 
         else {

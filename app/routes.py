@@ -110,6 +110,27 @@ def to_est(date_str):
         return est.strftime("%Y-%m-%d %H:%M:%S")
     except: return date_str
 
+# --- HELPER: CHECK ENABLED VERSIONS ---
+def get_enabled_versions():
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_en_%'")
+    rows = dict(c.fetchall())
+    conn.close()
+    
+    # Defaults (True if not found)
+    return {
+        '95055': rows.get('ver_en_95055', '1') == '1',
+        '94888': rows.get('ver_en_94888', '1') == '1',
+        '94019': rows.get('ver_en_94019', '1') == '1',
+        '95888': rows.get('ver_en_95888', '1') == '1',
+        '91149': rows.get('ver_en_91149', '1') == '1',
+        '93055': rows.get('ver_en_93055', '1') == '1'
+    }
+
+def is_version_enabled(version):
+    status = get_enabled_versions()
+    return status.get(version, True)
+
 # --- AUTH ROUTES ---
 @main_bp.route('/')
 def index():
@@ -161,11 +182,13 @@ def dashboard_root(): return redirect(url_for('main.purchase'))
 
 @main_bp.route('/purchase')
 @login_required
-def purchase(): return render_template('dashboard.html', user=current_user, active_tab='purchase')
+def purchase(): 
+    return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions())
 
 @main_bp.route('/history')
 @login_required
-def history(): return render_template('dashboard.html', user=current_user, active_tab='history')
+def history(): 
+    return render_template('dashboard.html', user=current_user, active_tab='history', version_status=get_enabled_versions())
 
 @main_bp.route('/automation')
 @login_required
@@ -175,24 +198,27 @@ def automation():
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
     p_month = sys_config.get('automation_price_monthly', '29.99')
     p_life = sys_config.get('automation_price_lifetime', '499.00')
-    return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, price_monthly=p_month, price_lifetime=p_life, system_status="OPERATIONAL")
+    return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, price_monthly=p_month, price_lifetime=p_life, system_status="OPERATIONAL", version_status=get_enabled_versions())
 
 @main_bp.route('/stats')
 @login_required
-def stats(): return render_template('dashboard.html', user=current_user, active_tab='stats')
+def stats(): 
+    return render_template('dashboard.html', user=current_user, active_tab='stats', version_status=get_enabled_versions())
 
 @main_bp.route('/deposit')
 @login_required
 def deposit():
-    return render_template('dashboard.html', user=current_user, active_tab='deposit')
+    return render_template('dashboard.html', user=current_user, active_tab='deposit', version_status=get_enabled_versions())
 
 @main_bp.route('/settings')
 @login_required
-def settings(): return render_template('dashboard.html', user=current_user, active_tab='settings')
+def settings(): 
+    return render_template('dashboard.html', user=current_user, active_tab='settings', version_status=get_enabled_versions())
 
 @main_bp.route('/addresses')
 @login_required
-def addresses(): return render_template('dashboard.html', user=current_user, active_tab='addresses')
+def addresses(): 
+    return render_template('dashboard.html', user=current_user, active_tab='addresses', version_status=get_enabled_versions())
 
 # --- API ENDPOINTS ---
 @main_bp.route('/api/user')
@@ -205,15 +231,21 @@ def api_user():
     conn.close()
     
     # Fallback to default price if specific version not set
-    p_95 = prices.get('95055', current_user.price_per_label)
-    p_94 = prices.get('94888', current_user.price_per_label)
-    p_19 = prices.get('94019', current_user.price_per_label) # ADDED TEST VERSION
-
+    base = current_user.price_per_label
+    
+    # --- FIX: Ensure ALL keys are present to prevent $NaN on frontend ---
     return jsonify({
         "username": current_user.username, 
         "balance": current_user.balance, 
-        "price_per_label": current_user.price_per_label,
-        "prices": { "95055": p_95, "94888": p_94, "94019": p_19 }
+        "price_per_label": base,
+        "prices": { 
+            "95055": prices.get('95055', base), 
+            "94888": prices.get('94888', base), 
+            "94019": prices.get('94019', base),
+            "95888": prices.get('95888', base), 
+            "91149": prices.get('91149', base), 
+            "93055": prices.get('93055', base)
+        }
     })
 
 # --- NOTIFICATION POLLING ---
@@ -280,6 +312,11 @@ def process():
     file = request.files['file']
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
     
+    # --- CHECK IF VERSION IS DISABLED ---
+    req_version = request.form.get('tracking_version')
+    if not is_version_enabled(req_version):
+        return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
+
     log_debug(f"Processing Upload: {file.filename}")
 
     try:
@@ -293,19 +330,39 @@ def process():
     if error_msg: return jsonify({"error": error_msg}), 400
     
     # --- GET CORRECT PRICE WITH VERSION ---
-    price = get_price(current_user.id, request.form.get('label_type'), request.form.get('tracking_version'), current_user.price_per_label)
+    price = get_price(current_user.id, request.form.get('label_type'), req_version, current_user.price_per_label)
     
     cost = len(df) * price
     if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
     
     try:
-        batch_id = str(random.randint(100000, 999999))
+        # --- FIX FOR DUPLICATE ID ERROR ---
+        # Instead of just one random attempt, we loop to find a free ID
+        batch_id = None
+        for _ in range(10): # Try 10 times to find a unique ID
+            temp_id = str(random.randint(100000, 999999))
+            
+            # Check DB if ID exists
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT 1 FROM batches WHERE batch_id = ?", (temp_id,))
+            exists = c.fetchone()
+            conn.close()
+            
+            if not exists:
+                batch_id = temp_id
+                break
+        
+        if not batch_id:
+            current_user.update_balance(cost) # Refund user if we fail
+            return jsonify({"error": "System Busy: Could not allocate Batch ID. Please try again."}), 500
+
         filename = f"{batch_id}_{secure_filename(file.filename)}"
         df.to_csv(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename), index=False)
         
         conn = get_db(); c = conn.cursor()
         c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                  (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), request.form.get('tracking_version'), request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                  (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit(); conn.close()
         log_debug(f"Batch {batch_id} Queued Successfully")
         return jsonify({"status": "success", "batch_id": batch_id})
@@ -326,11 +383,15 @@ def verify_csv():
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     
+    # --- CHECK DISABLED VERSION ---
+    req_version = request.form.get('tracking_version', '95055')
+    if not is_version_enabled(req_version):
+        return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
+
     # --- FIX: CALCULATE COST USING SELECTED VERSION ---
     label_type = request.form.get('label_type', 'priority')
-    version = request.form.get('tracking_version', '95055')
     
-    price = get_price(current_user.id, label_type, version, current_user.price_per_label)
+    price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
     
     return jsonify({"count": len(df), "cost": len(df) * price})
 
@@ -465,11 +526,23 @@ def deposit_webhook():
 @login_required
 def public_automation_config():
     sys_config = get_system_config()
+    
+    # --- FETCH VERSION STATUS ---
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_en_%'")
+    ver_rows = dict(c.fetchall())
+    conn.close()
+    
+    versions = {}
+    for v in ['95055', '94888', '94019', '95888', '91149', '93055']:
+        versions[v] = ver_rows.get(f"ver_en_{v}", "1") == "1"
+
     return jsonify({
         "monthly_price": sys_config.get('automation_price_monthly', '29.99'),
         "lifetime_price": sys_config.get('automation_price_lifetime', '499.00'),
         "monthly_left": int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0)),
-        "lifetime_left": int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
+        "lifetime_left": int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0)),
+        "versions": versions
     })
 
 @main_bp.route('/api/automation/purchase', methods=['POST'])

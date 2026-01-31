@@ -3,6 +3,7 @@ import sqlite3
 from flask import Flask, request, jsonify, redirect, url_for
 from datetime import datetime
 from dotenv import load_dotenv 
+from werkzeug.middleware.proxy_fix import ProxyFix # <--- REQUIRED FOR NGROK
 from .extensions import login_manager, limiter
 
 # Load .env file
@@ -18,6 +19,10 @@ def create_app():
         app.secret_key = 'dev-unsafe-key-change-me'
 
     app.config['VERSION'] = 'v1.0.0' 
+    
+    # --- FIX FOR NGROK / PROXIES ---
+    # This tells Flask to trust the X-Forwarded headers from Ngrok
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     
     app_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(app_dir)

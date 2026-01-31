@@ -47,9 +47,29 @@
                 <div class="space-y-1">
                     <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Default Version</label>
                     <select id="def_version" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white uppercase outline-none focus:border-black dark:focus:border-white transition-all cursor-pointer">
+                        {% if version_status['95055'] %}
                         <option value="95055" {% if user.default_version == '95055' %}selected{% endif %}>95055 (Standard)</option>
+                        {% endif %}
+                        
+                        {% if version_status['94888'] %}
                         <option value="94888" {% if user.default_version == '94888' %}selected{% endif %}>94888 (Legacy)</option>
+                        {% endif %}
+                        
+                        {% if version_status['94019'] %}
                         <option value="94019" {% if user.default_version == '94019' %}selected{% endif %}>94019 (Test)</option>
+                        {% endif %}
+
+                        {% if version_status['95888'] %}
+                        <option value="95888" {% if user.default_version == '95888' %}selected{% endif %}>95888 (Test)</option>
+                        {% endif %}
+
+                        {% if version_status['91149'] %}
+                        <option value="91149" {% if user.default_version == '91149' %}selected{% endif %}>91149 (Test)</option>
+                        {% endif %}
+
+                        {% if version_status['93055'] %}
+                        <option value="93055" {% if user.default_version == '93055' %}selected{% endif %}>93055 (Test)</option>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="space-y-1">
@@ -73,20 +93,47 @@
             <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6">Service Pricing</h3>
             <div class="space-y-3">
                 
+                {% if version_status['95055'] %}
                 <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
                     <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">95055 (V2)</span>
                     <span id="price_95055" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
                 </div>
+                {% endif %}
 
+                {% if version_status['94888'] %}
                 <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
-                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">94888 (V1)</span>
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">94888 (V2)</span>
                     <span id="price_94888" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
                 </div>
+                {% endif %}
 
+                {% if version_status['94019'] %}
                 <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
                     <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">94019 (Test)</span>
                     <span id="price_94019" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
                 </div>
+                {% endif %}
+
+                {% if version_status['95888'] %}
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">95888 (Test)</span>
+                    <span id="price_95888" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
+                </div>
+                {% endif %}
+
+                {% if version_status['91149'] %}
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">91149 (Test)</span>
+                    <span id="price_91149" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
+                </div>
+                {% endif %}
+
+                {% if version_status['93055'] %}
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E]">
+                    <span class="text-[10px] font-bold text-gray-700 dark:text-gray-300 uppercase">93055 (Test)</span>
+                    <span id="price_93055" class="text-[10px] font-mono font-bold text-green-600 dark:text-green-500">Loading...</span>
+                </div>
+                {% endif %}
 
             </div>
             <div class="mt-8 p-4 border border-blue-500/20 bg-blue-500/5">
@@ -145,12 +192,18 @@
                 setP('price_95055', data.prices['95055']);
                 setP('price_94888', data.prices['94888']);
                 setP('price_94019', data.prices['94019']);
+                setP('price_95888', data.prices['95888']);
+                setP('price_91149', data.prices['91149']);
+                setP('price_93055', data.prices['93055']);
             } else {
                 // Fallback for old accounts
                 const base = parseFloat(data.price_per_label).toFixed(2);
                 setP('price_95055', base);
                 setP('price_94888', base);
                 setP('price_94019', base);
+                setP('price_95888', base);
+                setP('price_91149', base);
+                setP('price_93055', base);
             }
         } catch(e) {}
     }

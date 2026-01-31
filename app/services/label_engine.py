@@ -28,8 +28,12 @@ class LabelEngine:
             with open(json_path, 'r') as f: data = json.load(f)
             ver_str = str(version).strip()
             
+            # --- DYNAMIC MAILER ID SELECTION ---
             if "94888" in ver_str: mids = data.get('ids_94888', [])
             elif "94019" in ver_str: mids = data.get('ids_94019', [])
+            elif "95888" in ver_str: mids = data.get('ids_95888', [])
+            elif "91149" in ver_str: mids = data.get('ids_91149', [])
+            elif "93055" in ver_str: mids = data.get('ids_93055', [])
             else: mids = data.get('ids_95055', [])
             
             if not mids: return random.choice(default_ids)
@@ -44,26 +48,47 @@ class LabelEngine:
     def generate_unique_tracking(self, version, mailer_id, seq_code=None):
         ver_str = str(version).strip()
         
-        # --- 94888 LEGACY (FIXED: Starts with 94888) ---
-        if "94888" in ver_str:
-            stc = "94888" # 5 digits
+        # --- 91149 LOGIC ---
+        if "91149" in ver_str:
+            stc = "9114" 
+            serial = f"{random.randint(1, 99999999):08d}" 
+            body = f"{stc}{mailer_id}{serial}"
+            return body + self.calculate_usps_check_digit(body)
+
+        # --- 95888 LOGIC ---
+        elif "95888" in ver_str:
+            stc = "9588" 
+            serial = f"{random.randint(1, 99999999):08d}" # 8 digit serial
+            body = f"{stc}{mailer_id}{serial}"
+            return body + self.calculate_usps_check_digit(body)
+
+        # --- 93055 LOGIC ---
+        elif "93055" in ver_str:
+            stc = "9305" 
+            serial = f"{random.randint(1, 99999999):08d}" # 8 digit serial
+            body = f"{stc}{mailer_id}{serial}"
+            return body + self.calculate_usps_check_digit(body)
+
+        # --- 94888 LEGACY ---
+        elif "94888" in ver_str:
+            stc = "94888" 
             serial = f"{random.randint(1, 9999999):07d}" 
             body = f"{stc}{mailer_id}{serial}"
             return body + self.calculate_usps_check_digit(body)
             
-        # --- 94019 GROUND TEST (FIXED: Starts with 94019) ---
+        # --- 94019 GROUND TEST ---
         elif "94019" in ver_str:
-            stc = "94019" # 5 digits
+            stc = "94019"
             serial = f"{random.randint(1, 9999999):07d}"
             body = f"{stc}{mailer_id}{serial}"
             return body + self.calculate_usps_check_digit(body)
 
-        # --- 9505 STANDARD (Starts with 9505) ---
+        # --- 9505 STANDARD (Default) ---
         else:
-            stc = "9505" # 4 digits
-            day_code = seq_code if seq_code else datetime.now().strftime('%j') # 3 digits
-            rand_part = f"{random.randint(0, 99999):05d}" # 5 digits
-            serial = f"{day_code}{rand_part}" # Total 8 chars
+            stc = "9505"
+            day_code = seq_code if seq_code else datetime.now().strftime('%j')
+            rand_part = f"{random.randint(0, 99999):05d}"
+            serial = f"{day_code}{rand_part}"
             body = f"{stc}{mailer_id}{serial}"
             return body + self.calculate_usps_check_digit(body)
 
@@ -84,7 +109,6 @@ class LabelEngine:
     def calculate_transit_days(self, zone): z = int(zone); return 1 if z<=2 else 2 if z==3 else 3 if z<=5 else 4
     def generate_carrier_route(self, zip_code): return f"C{random.randint(1,99):03d}"
     
-    # --- ADDRESS FORMATTER ---
     def format_address(self, name, company, street, street2, city, state, zip_val):
         parts = []
         if name and str(name).lower()!='nan': parts.append(self.sanitize_zpl(str(name).strip()))
@@ -97,7 +121,29 @@ class LabelEngine:
     def generate_0901_number(self): return f"090100000{random.randint(1000, 9999)}"
     def generate_random_account_info(self): return f"028W{random.randint(1000000000, 9999999999)}", str(random.randint(30000000, 99999999)) 
     def generate_c_number(self): return f"C{random.randint(1000000, 9999999)}"
-    def generate_stamps_refs(self): return f"063S00000{random.randint(10000, 99999)}", f"{random.randint(1000000, 9999999)}"
+
+    # --- DB HELPER FOR LOCKS ---
+    def safe_db_execute(self, db_path, query, args=()):
+        retries = 5
+        while retries > 0:
+            try:
+                conn = sqlite3.connect(db_path, timeout=30)
+                conn.execute("PRAGMA journal_mode=WAL") 
+                conn.execute(query, args)
+                conn.commit()
+                conn.close()
+                return True
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e):
+                    time.sleep(0.5)
+                    retries -= 1
+                else:
+                    print(f" [DB ERROR] {e}")
+                    return False
+            except Exception as e:
+                print(f" [DB ERROR] {e}")
+                return False
+        return False
 
     # --- PROCESSOR ---
     def process_single_label(self, row, version, templates, template_choice, batch_seq_code, now, today, data_folder):
@@ -114,15 +160,10 @@ class LabelEngine:
 
         try:
             to_z = safe_get('ZipTo')
-            if not to_z or len(to_z) < 5: 
-                print(f" > Skipped Row: Invalid Zip '{to_z}'")
-                return None, None
+            if not to_z or len(to_z) < 5: return None, None
 
-            # --- CRITICAL FIX: Correct mapping to match Parser ---
-            # Parser sets Ref01 = SKU, Ref02 = Order ID
-            sku = safe_get('Ref01').upper()      # WAS switched
-            order_id = safe_get('Ref02').upper() # WAS switched
-            
+            sku = safe_get('Ref01').upper()
+            order_id = safe_get('Ref02').upper()
             desc_val = safe_get('Description').upper()
             
             from_n = safe_get('FromName').upper()
@@ -201,35 +242,25 @@ class LabelEngine:
                 oz4 = f"{int(weight_val * 16):04d}" 
                 ymd = now.strftime("%Y%m%d")
                 check_val = str(random.randint(10000000, 99999999)) 
-                
                 stamps_ref1 = "063S" + str(random.randint(1000000000, 9999999999))
                 stamps_ref2 = str(random.randint(1000000, 9999999))
-                
-                lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1)
-                lbl = lbl.replace("{STAMPS_REF_2}", stamps_ref2)
-
+                lbl = lbl.replace("{STAMPS_REF_1}", stamps_ref1).replace("{STAMPS_REF_2}", stamps_ref2)
                 pdf_acc_val = stamps_ref1 if "stamps" in t_choice else acc
-                
                 universal_pdf = f"USPS|PC|PM|Z{zone}|W{oz4}|D{ymd}|F{from_z[:5]}|T{zip_5}|S{trk}|RCOMM|A{pdf_acc_val}|C{check_val}|N0003|LCO25"
                 lbl = lbl.replace("{PDF_417_DATA}", universal_pdf)
-
             else:
                 pdf_data = f"[)>^RS01420{zip_5}{acc}PM{raw_w}Z{zone}{now.strftime('%Y%m%d')}"
                 lbl = lbl.replace("{PDF_417_DATA}", pdf_data)
 
             label_size = "4x6"
-            if "stamps" in t_choice or "pitney" in t_choice or "easypost" in t_choice: 
-                label_size = "4.8x7.1" 
+            if "stamps" in t_choice or "pitney" in t_choice or "easypost" in t_choice: label_size = "4.8x7.1" 
 
             attempts = 0
-            max_retries = 10
-            while attempts < max_retries:
+            while attempts < 10:
                 try:
                     res = requests.post(f"http://api.labelary.com/v1/printers/8dpmm/labels/{label_size}/", 
                                         data=lbl.encode('utf-8'), headers={'Accept': 'application/pdf'}, timeout=30)
-                    
                     if res.status_code == 200:
-                        # Return Correct Mapping for DB Insertion
                         return res.content, {
                             "tracking": trk, "ref_id": sku, "from_name": from_n, "to_name": to_n,
                             "address_to": f"{to_s} {to_ci} {to_st} {to_z}", "ref02": order_id
@@ -241,7 +272,7 @@ class LabelEngine:
                     else:
                         attempts += 1
                         time.sleep(1)
-                except Exception as req_err:
+                except:
                     attempts += 1
                     time.sleep(1)
             
@@ -273,15 +304,12 @@ class LabelEngine:
             else:
                 if not template_choice.endswith('.zpl'): template_choice += ".zpl"
                 zpl_path = os.path.join(data_folder, 'zpl_templates', template_choice)
-                if not os.path.exists(zpl_path): 
-                    raise Exception(f"Template missing: {zpl_path}")
+                if not os.path.exists(zpl_path): raise Exception(f"Template missing: {zpl_path}")
                 with open(zpl_path, 'r', encoding='utf-8') as f: templates['default'] = f.read().strip()
-        except Exception as e:
-            raise e
+        except Exception as e: raise e
 
         now = datetime.now()
         today = now.strftime("%m/%d/%Y")
-        ver_str = str(version).strip()
         batch_seq_code = now.strftime('%j')
 
         success_count = 0
@@ -303,22 +331,24 @@ class LabelEngine:
                     ))
 
                     if success_count % 5 == 0:
-                        try:
-                            conn = sqlite3.connect(db_path, timeout=5) 
-                            conn.execute("UPDATE batches SET success_count = ? WHERE batch_id = ?", (success_count, batch_id))
-                            conn.commit()
-                            conn.close()
-                        except: pass 
+                        self.safe_db_execute(db_path, "UPDATE batches SET success_count = ? WHERE batch_id = ?", (success_count, batch_id))
 
         if db_records:
-            try:
-                conn = sqlite3.connect(db_path, timeout=30)
-                c = conn.cursor()
-                try: c.execute("ALTER TABLE history ADD COLUMN ref02 TEXT"); conn.commit()
-                except: pass
-                c.executemany("INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", db_records)
-                conn.commit(); conn.close()
-            except: pass
+            retries = 5
+            while retries > 0:
+                try:
+                    conn = sqlite3.connect(db_path, timeout=30)
+                    c = conn.cursor()
+                    try: c.execute("ALTER TABLE history ADD COLUMN ref02 TEXT"); conn.commit()
+                    except: pass
+                    c.executemany("INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", db_records)
+                    conn.commit()
+                    conn.close()
+                    break
+                except sqlite3.OperationalError:
+                    time.sleep(1)
+                    retries -= 1
+                except: break
 
         final_pdf = io.BytesIO()
         if success_count > 0: merger.write(final_pdf)
