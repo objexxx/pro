@@ -373,7 +373,7 @@ def verify_csv():
     price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
     return jsonify({"count": len(df), "cost": len(df) * price})
 
-# --- OXAPAY: VERIFY HELPER ---
+# --- OXAPAY: VERIFY HELPER (FIXED) ---
 def verify_oxapay_payment(track_id):
     try:
         if not OXAPAY_KEY: 
@@ -389,8 +389,9 @@ def verify_oxapay_payment(track_id):
         if data.get('result') == 100:
             status = data.get('status', '').lower()
             if status in ['paid', 'complete']: 
-                # Return the ACTUAL amount paid according to the network
-                return True, float(data.get('payAmount', 0) or data.get('amount', 0)), "Paid"
+                # FIX: Use 'amount' (The original requested USD value)
+                usd_val = float(data.get('amount', 0))
+                return True, usd_val, "Paid"
             else:
                 return False, 0.0, f"Status: {status.upper()}"
         else:
@@ -587,7 +588,7 @@ def download_csv(batch_id):
 @login_required
 def download_pdf(batch_id):
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone(); conn.close()
+    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: return jsonify({"error": "UNAUTHORIZED ACCESS"}), 403
     if batch_row[1] == 'REFUNDED': return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
     clean_name = f"Batch_{batch_id}"
