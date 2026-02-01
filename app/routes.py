@@ -633,3 +633,53 @@ def delete_all_user_addresses():
     conn = get_db(); c = conn.cursor()
     c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,)); conn.commit(); conn.close()
     return jsonify({"status":"success"})
+
+# --- NEW: AUTOMATION SUBSCRIPTION PURCHASE ---
+@main_bp.route('/api/automation/purchase', methods=['POST'])
+@login_required
+def buy_automation_license():
+    data = request.json
+    plan = data.get('plan') # 'monthly' or 'lifetime'
+    sys_config = get_system_config()
+
+    # Determine Price
+    if plan == 'lifetime':
+        cost = float(sys_config.get('automation_price_lifetime', 499.00))
+        days = 36500 # 100 years
+    else:
+        cost = float(sys_config.get('automation_price_monthly', 29.99))
+        days = 30
+
+    # Check Balance (Using User Balance, NOT Oxapay)
+    if current_user.balance < cost:
+        return jsonify({'error': 'INSUFFICIENT BALANCE'}), 400
+
+    # Deduct Balance
+    if not current_user.update_balance(-cost):
+        return jsonify({'error': 'TRANSACTION FAILED'}), 500
+
+    # Activate Subscription in Database
+    try:
+        conn = get_db()
+        c = conn.cursor()
+        expiry = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("UPDATE users SET subscription_end = ?, is_subscribed = 1 WHERE id = ?", (expiry, current_user.id))
+        
+        # Add Notification
+        msg = f"PURCHASE SUCCESSFUL: {plan.upper()} ACCESS ACTIVATED"
+        try:
+            c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)", 
+                      (current_user.id, msg, 'SUCCESS', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        except:
+            pass # Ignore if table is missing to prevent crash
+
+        # Update Slot Usage
+        slot_key = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'
+        c.execute("UPDATE system_config SET value = CAST(value AS INTEGER) + 1 WHERE key = ?", (slot_key,))
+
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'success', 'message': 'LICENSE ACTIVATED'})
+    except Exception as e:
+        log_debug(f"SUB ERROR: {e}")
+        return jsonify({'error': 'DATABASE ERROR'}), 500

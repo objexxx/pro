@@ -262,7 +262,7 @@ def user_details(uid):
         prices[f"{l}_{v}"] = p
     
     base = u[0]
-    # Ensure all keys exist
+    # Ensure all keys exist - FALLBACK TO BASE IF NOT SET
     for v in ['95055', '94888', '94019', '95888', '91149', '93055']:
         if f'priority_{v}' not in prices: prices[f'priority_{v}'] = base
     
@@ -295,14 +295,13 @@ def user_action():
     elif act == 'update_price':
         l, v, p = data.get('label_type'), data.get('version'), float(data.get('price'))
         
-        # 1. Update/Insert specific row
+        # 1. Update/Insert specific row (Override)
         c.execute("DELETE FROM user_pricing WHERE user_id=? AND label_type=? AND version=?", (uid, l, v))
         c.execute("INSERT INTO user_pricing (user_id, label_type, version, price) VALUES (?,?,?,?)", (uid, l, v, p))
         
-        # 2. Update default price if it matches 95055 (Legacy/Default sync)
-        if l == 'priority' and v == '95055':
-            c.execute("UPDATE users SET price_per_label=? WHERE id=?", (p, uid))
-            
+        # --- REMOVED LEGACY SYNC CODE HERE ---
+        # Now 95055 updates ONLY 95055. It does not update users.price_per_label
+        
         msg = f"PRICING UPDATED FOR {target_username}"
         safe_notify_user(conn, uid, f"PRICE UPDATE: Your {l} ({v}) rate is now ${p}", "success")
     elif act == 'update_balance':

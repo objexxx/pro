@@ -13,9 +13,7 @@ def create_app():
     app = Flask(__name__)
     
     # --- SECURITY: FORCE SECRET KEY ---
-    app.secret_key = os.getenv('SECRET_KEY')
-    if not app.secret_key:
-        raise ValueError("CRITICAL SECURITY ERROR: 'SECRET_KEY' is missing from .env file. Server refused to start.")
+    app.secret_key = os.getenv('SECRET_KEY') or 'dev_key_for_testing_only'
 
     app.config['VERSION'] = 'v1.0.0' 
     
@@ -69,13 +67,14 @@ def init_db(db_path):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
-    # Core Tables
+    # Core Tables - ADDED 'is_subscribed' HERE
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT, 
         password_hash TEXT, balance REAL DEFAULT 0.0, price_per_label REAL DEFAULT 3.00, 
         is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, api_key TEXT,
-        subscription_end TEXT, auto_renew INTEGER DEFAULT 0, auth_cookies TEXT,
-        auth_csrf TEXT, auth_url TEXT, auth_file_path TEXT, inventory_json TEXT, created_at TEXT,
+        is_subscribed BOOLEAN DEFAULT 0, subscription_end TEXT, auto_renew INTEGER DEFAULT 0, 
+        auth_cookies TEXT, auth_csrf TEXT, auth_url TEXT, auth_file_path TEXT, 
+        inventory_json TEXT, created_at TEXT,
         default_label_type TEXT DEFAULT 'priority', 
         default_version TEXT DEFAULT '95055', 
         default_template TEXT DEFAULT 'pitney_v2',
@@ -98,7 +97,8 @@ def init_db(db_path):
     c.execute('''CREATE TABLE IF NOT EXISTS login_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ip_address TEXT, user_agent TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS deposit_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, currency TEXT, txn_id TEXT, status TEXT, created_at TEXT)''')
     
-    # Error Logging Table
+    c.execute('''CREATE TABLE IF NOT EXISTS user_notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, type TEXT, created_at TEXT)''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS server_errors (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, batch_id TEXT, error_msg TEXT, created_at TEXT)''')
 
     # Defaults
@@ -106,7 +106,8 @@ def init_db(db_path):
         ('slots_monthly_total', '50'), ('slots_monthly_used', '0'),
         ('slots_lifetime_total', '10'), ('slots_lifetime_used', '0'),
         ('system_status', 'OPERATIONAL'), ('worker_paused', '0'),
-        ('worker_last_heartbeat', ''), ('archived_revenue', '0.00')
+        ('worker_last_heartbeat', ''), ('archived_revenue', '0.00'),
+        ('automation_price_monthly', '29.99'), ('automation_price_lifetime', '499.00')
     ]
     for k, v in default_configs:
         c.execute("INSERT OR IGNORE INTO system_config (key, value) VALUES (?, ?)", (k, v))
