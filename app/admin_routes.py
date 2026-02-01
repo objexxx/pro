@@ -12,7 +12,20 @@ from werkzeug.security import generate_password_hash
 # --- 🔒 SECURE URL PREFIX ---
 admin_bp = Blueprint('admin', __name__, url_prefix='/x7k9-p2m4-z8q1')
 
-# --- NOTE: CSRF CHECK REMOVED TO FIX NGROK ---
+# --- CSRF PROTECTION (SMART MODE) ---
+@admin_bp.before_request
+def check_csrf_and_origin():
+    if request.method == "GET": return
+    
+    referer = request.headers.get('Referer')
+    host = request.host
+    
+    # Allow localhost/ngrok for dev, enforce matching for prod
+    if "127.0.0.1" in host or "localhost" in host: return
+    
+    if not referer or host not in referer:
+        print(f"[CSRF BLOCKED] Host: {host} vs Referer: {referer}")
+        return jsonify({"error": "CSRF SECURITY: Invalid Origin"}), 403
 
 def admin_required(f):
     @wraps(f)
@@ -349,7 +362,7 @@ def automation_config():
     conn.close()
     return jsonify(data)
 
-# --- VERSION CONTROL API ---
+# --- NEW: VERSION CONTROL API ---
 @admin_bp.route('/api/versions/config', methods=['GET', 'POST'])
 @login_required
 @admin_required

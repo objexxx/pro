@@ -3,7 +3,7 @@ import sqlite3
 from flask import Flask, request, jsonify, redirect, url_for
 from datetime import datetime
 from dotenv import load_dotenv 
-from werkzeug.middleware.proxy_fix import ProxyFix # <--- REQUIRED FOR NGROK
+from werkzeug.middleware.proxy_fix import ProxyFix 
 from .extensions import login_manager, limiter
 
 # Load .env file
@@ -12,16 +12,14 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     
-    # SECURITY: Load Key from .env
+    # --- SECURITY: FORCE SECRET KEY ---
     app.secret_key = os.getenv('SECRET_KEY')
     if not app.secret_key:
-        print("⚠️  WARNING: SECRET_KEY not found in .env. Using unsafe default.")
-        app.secret_key = 'dev-unsafe-key-change-me'
+        raise ValueError("CRITICAL SECURITY ERROR: 'SECRET_KEY' is missing from .env file. Server refused to start.")
 
     app.config['VERSION'] = 'v1.0.0' 
     
-    # --- FIX FOR NGROK / PROXIES ---
-    # This tells Flask to trust the X-Forwarded headers from Ngrok
+    # Trust headers from proxies (Nginx/Cloudflare)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     
     app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -47,13 +45,11 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'main.login'
     
-    # --- CRITICAL FIX FOR 429 LOOP ---
+    # 429 Error Handler (Rate Limits)
     @login_manager.unauthorized_handler
     def unauthorized():
-        # Check if '/api/' exists ANYWHERE in the path (covers Admin API too)
         if '/api/' in request.path:
             return jsonify({"error": "Session Expired", "redirect": url_for('main.login')}), 401
-        
         return redirect(url_for('main.login', next=request.url))
 
     limiter.init_app(app)

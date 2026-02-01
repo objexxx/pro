@@ -117,7 +117,6 @@ def get_enabled_versions():
     rows = dict(c.fetchall())
     conn.close()
     
-    # Defaults (True if not found)
     return {
         '95055': rows.get('ver_en_95055', '1') == '1',
         '94888': rows.get('ver_en_94888', '1') == '1',
@@ -224,16 +223,11 @@ def addresses():
 @main_bp.route('/api/user')
 @login_required
 def api_user():
-    # --- FETCH SPLIT PRICING ---
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT version, price FROM user_pricing WHERE user_id = ? AND label_type = 'priority'", (current_user.id,))
     prices = {row[0]: float(row[1]) for row in c.fetchall()}
     conn.close()
-    
-    # Fallback to default price if specific version not set
     base = current_user.price_per_label
-    
-    # --- FIX: Ensure ALL keys are present to prevent $NaN on frontend ---
     return jsonify({
         "username": current_user.username, 
         "balance": current_user.balance, 
@@ -248,7 +242,6 @@ def api_user():
         }
     })
 
-# --- NOTIFICATION POLLING ---
 @main_bp.route('/api/notifications/poll')
 @login_required
 def poll_notifications():
@@ -312,7 +305,6 @@ def process():
     file = request.files['file']
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
     
-    # --- CHECK IF VERSION IS DISABLED ---
     req_version = request.form.get('tracking_version')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
@@ -329,32 +321,22 @@ def process():
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     
-    # --- GET CORRECT PRICE WITH VERSION ---
     price = get_price(current_user.id, request.form.get('label_type'), req_version, current_user.price_per_label)
-    
     cost = len(df) * price
     if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
     
     try:
-        # --- FIX FOR DUPLICATE ID ERROR ---
-        # Instead of just one random attempt, we loop to find a free ID
+        # Collision Check for Batch ID
         batch_id = None
-        for _ in range(10): # Try 10 times to find a unique ID
+        for _ in range(10): 
             temp_id = str(random.randint(100000, 999999))
-            
-            # Check DB if ID exists
-            conn = get_db()
-            c = conn.cursor()
+            conn = get_db(); c = conn.cursor()
             c.execute("SELECT 1 FROM batches WHERE batch_id = ?", (temp_id,))
-            exists = c.fetchone()
-            conn.close()
-            
-            if not exists:
-                batch_id = temp_id
-                break
+            exists = c.fetchone(); conn.close()
+            if not exists: batch_id = temp_id; break
         
         if not batch_id:
-            current_user.update_balance(cost) # Refund user if we fail
+            current_user.update_balance(cost) 
             return jsonify({"error": "System Busy: Could not allocate Batch ID. Please try again."}), 500
 
         filename = f"{batch_id}_{secure_filename(file.filename)}"
@@ -383,16 +365,12 @@ def verify_csv():
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
     
-    # --- CHECK DISABLED VERSION ---
     req_version = request.form.get('tracking_version', '95055')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
 
-    # --- FIX: CALCULATE COST USING SELECTED VERSION ---
     label_type = request.form.get('label_type', 'priority')
-    
     price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
-    
     return jsonify({"count": len(df), "cost": len(df) * price})
 
 # --- OXAPAY: VERIFY HELPER ---
@@ -407,12 +385,12 @@ def verify_oxapay_payment(track_id):
         r = requests.post(url, json=payload, timeout=10)
         data = r.json()
         
-        print(f"[PAYMENT CHECK] Response for {track_id}: {data}") 
-        
+        # --- SECURE CHECK: Return True ONLY if confirmed paid by Gateway ---
         if data.get('result') == 100:
             status = data.get('status', '').lower()
             if status in ['paid', 'complete']: 
-                return True, float(data.get('amount')), "Paid"
+                # Return the ACTUAL amount paid according to the network
+                return True, float(data.get('payAmount', 0) or data.get('amount', 0)), "Paid"
             else:
                 return False, 0.0, f"Status: {status.upper()}"
         else:
@@ -428,15 +406,11 @@ def get_deposit_history():
     conn = get_db(); c = conn.cursor()
     try: c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", ((datetime.utcnow()-timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S"),)); conn.commit()
     except: pass
-    
-    # --- UPDATED: LIMIT 10 ---
     c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 10", (current_user.id,))
-    # -------------------------
-    
     data = [{"amount":r[0],"currency":r[1],"txn_id":r[2],"status":r[3],"date":to_est(r[4])} for r in c.fetchall()]
     conn.close(); return jsonify(data)
 
-# --- MANUAL STATUS CHECK (FIX FOR LOCALHOST / STUCK TX) ---
+# --- MANUAL CHECK ---
 @main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
 @login_required
 def manual_check_deposit(txn_id):
@@ -452,14 +426,16 @@ def manual_check_deposit(txn_id):
         conn.close()
         return jsonify({"status": "success", "message": "Already Paid"})
     
+    # --- FIX: USE VERIFIED AMOUNT, IGNORE DB/ID AMOUNT ---
     is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
     
-    if is_valid:
+    if is_valid and paid_amount > 0:
         current_user.update_balance(paid_amount)
-        c.execute("UPDATE deposit_history SET status='PAID' WHERE id=?", (row[0],))
+        # Update row to match what was actually paid
+        c.execute("UPDATE deposit_history SET status='PAID', amount=? WHERE id=?", (paid_amount, row[0]))
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "Payment Confirmed! Balance Updated."})
+        return jsonify({"status": "success", "message": f"Payment Confirmed! +${paid_amount} Added."})
     else:
         if status_msg and "Status:" in status_msg:
             clean_status = status_msg.split(': ')[1].strip()
@@ -494,9 +470,12 @@ def create_deposit():
 def deposit_webhook():
     try:
         data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
-        if status in ['paid', 'confirming']:
-            is_valid, _, _ = verify_oxapay_payment(track_id)
-            if is_valid:
+        
+        if status in ['paid', 'complete']: # Only credit on explicit success
+            # --- FIX: Verify amount with Gateway. Do NOT trust ID. ---
+            is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
+            
+            if is_valid and verified_amount > 0:
                 parts = order_id.split('_')
                 if len(parts) >= 2:
                     user_id = int(parts[1])
@@ -505,70 +484,30 @@ def deposit_webhook():
                         conn = get_db(); c = conn.cursor()
                         c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
                         existing = c.fetchone()
+                        
                         if existing:
                             if existing[1] != 'PAID':
-                                user.update_balance(float(parts[3]))
-                                c.execute("UPDATE deposit_history SET status='PAID', currency=? WHERE id=?", (data.get('currency', 'USDT'), existing[0]))
+                                user.update_balance(verified_amount) # Use VERIFIED Amount
+                                c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?", 
+                                          (data.get('currency', 'USDT'), verified_amount, existing[0]))
                                 conn.commit()
                         else:
-                            user.update_balance(float(parts[3]))
-                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user_id, float(parts[3]), data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                            user.update_balance(verified_amount)
+                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
+                                      (user_id, verified_amount, data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                             conn.commit()
                         conn.close()
+                        return jsonify({"status": "ok"}), 200
+        
         elif status in ['expired', 'failed', 'rejected']:
              conn = get_db(); c = conn.cursor()
              c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),)); conn.commit(); conn.close()
-    except: return jsonify({"status": "error"}), 500
+             
+    except Exception as e: 
+        print(f"[WEBHOOK ERROR] {e}")
+        return jsonify({"status": "error"}), 500
+    
     return jsonify({"status": "ok"}), 200
-
-# --- REST OF AUTOMATION API ---
-@main_bp.route('/api/automation/public_config')
-@login_required
-def public_automation_config():
-    sys_config = get_system_config()
-    
-    # --- FETCH VERSION STATUS ---
-    conn = get_db(); c = conn.cursor()
-    c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_en_%'")
-    ver_rows = dict(c.fetchall())
-    conn.close()
-    
-    versions = {}
-    for v in ['95055', '94888', '94019', '95888', '91149', '93055']:
-        versions[v] = ver_rows.get(f"ver_en_{v}", "1") == "1"
-
-    return jsonify({
-        "monthly_price": sys_config.get('automation_price_monthly', '29.99'),
-        "lifetime_price": sys_config.get('automation_price_lifetime', '499.00'),
-        "monthly_left": int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0)),
-        "lifetime_left": int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0)),
-        "versions": versions
-    })
-
-@main_bp.route('/api/automation/purchase', methods=['POST'])
-@login_required
-def automation_purchase():
-    data = request.json; plan = data.get('plan', 'monthly')
-    if current_user.is_subscribed: return jsonify({"error": "ACTIVE SUBSCRIPTION FOUND"}), 400
-    sys_config = get_system_config()
-    p_month = float(sys_config.get('automation_price_monthly', '29.99'))
-    p_life = float(sys_config.get('automation_price_lifetime', '499.00'))
-    cost = p_life if plan == 'lifetime' else p_month
-    days = 36500 if plan == 'lifetime' else 30
-    key_used = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'
-    key_total = 'slots_lifetime_total' if plan == 'lifetime' else 'slots_monthly_total'
-    conn = get_db(); c = conn.cursor()
-    try:
-        c.execute("SELECT value FROM system_config WHERE key = ?", (key_used,)); row = c.fetchone(); used = int(row[0]) if row else 0
-        c.execute("SELECT value FROM system_config WHERE key = ?", (key_total,)); row = c.fetchone(); total = int(row[0]) if row else 50
-        if used >= total: conn.close(); return jsonify({"error": f"SOLD OUT: {plan.upper()} KEYS UNAVAILABLE"}), 400
-    except: pass
-    if current_user.update_balance(-cost):
-        current_user.activate_subscription(days, plan != 'lifetime')
-        try: c.execute("UPDATE system_config SET value = ? WHERE key = ?", (str(used + 1), key_used)); conn.commit()
-        except: pass
-        conn.close(); return jsonify({"status": "success", "message": f"{plan.upper()} LICENSE ACTIVATED"})
-    conn.close(); return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
 
 @main_bp.route('/api/automation/save', methods=['POST'])
 @login_required
