@@ -18,10 +18,10 @@ def create_app():
     app.config['VERSION'] = 'v1.0.1' 
     
     # --- FIX FOR LOCALHOST LOGIN LOOP ---
-    app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['SESSION_COOKIE_SECURE'] = True
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.config['REMEMBER_COOKIE_SECURE'] = False
+    app.config['REMEMBER_COOKIE_SECURE'] = True
     
     # Only enable ProxyFix in production
     if not app.debug:
