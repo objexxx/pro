@@ -377,17 +377,25 @@
                     statusBadge = '<span class="text-blue-500 font-bold font-mono animate-pulse uppercase text-[9px]">CONFIRMING...</span>';
                     actionBtn = `<div class="w-[120px] text-center ml-auto"><span class="text-[9px] font-bold text-gray-400 uppercase tracking-widest font-mono">SYNCING...</span></div>`;
                 }
+                else if (b.status === 'QUEUED') {
+                    // --- FIX: QUEUED now shows WAITING... instead of RETRY ---
+                    labelClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-white/5';
+                    statusBadge = '<span class="text-gray-500 font-bold font-mono uppercase text-[9px]">QUEUED</span>';
+                    actionBtn = `<button disabled class="w-[120px] py-1.5 bg-transparent text-gray-400 font-bold uppercase text-[8px] cursor-wait border border-transparent font-mono flex items-center justify-center ml-auto">WAITING...</button>`;
+                }
                 else if (b.status === 'COMPLETED' || b.status === 'READY') {
                     labelClass = 'text-green-600 dark:text-green-400 border border-gray-500/20';
                     statusBadge = '<span class="text-green-600 dark:text-green-400 font-bold font-mono uppercase text-[9px]">READY</span>';
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM BATCH</button>`;
                 } 
                 else if (b.status === 'PARTIAL') {
+                    // --- FIX: PARTIAL now shows CONFIRM REMAINING ---
                     labelClass = 'text-yellow-600 dark:text-yellow-400 border-yellow-500/30';
                     statusBadge = '<span class="text-yellow-600 dark:text-yellow-400 font-bold font-mono uppercase text-[9px]">PARTIAL</span>';
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-[8px] hover:opacity-80 transition-all shadow-sm rounded font-mono flex items-center justify-center ml-auto">CONFIRM REMAINING</button>`;
                 }
                 else {
+                    // FAILED / AUTH_ERROR / CONFIRM_FAILED -> Show RETRY
                     labelClass = 'text-red-600 dark:text-red-400 border-red-500/20';
                     statusBadge = `<span class="text-red-600 dark:text-red-400 font-bold font-mono uppercase text-[9px]">${b.status}</span>`;
                     actionBtn = `<button onclick="confirmOrder('${b.batch_id}')" class="w-[120px] py-1.5 border border-red-500/20 text-red-500 font-bold uppercase text-[8px] hover:bg-red-500/10 transition-all font-mono flex items-center justify-center ml-auto">RETRY</button>`;
