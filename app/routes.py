@@ -347,6 +347,7 @@ def process():
         df.to_csv(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename), index=False)
         
         conn = get_db(); c = conn.cursor()
+        # --- FIXED: ADDED 'price' COLUMN TO INSERT ---
         c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                   (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
         conn.commit(); conn.close()
@@ -653,7 +654,7 @@ def delete_all_user_addresses():
     c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,)); conn.commit(); conn.close()
     return jsonify({"status":"success"})
 
-# --- NEW: AUTOMATION SUBSCRIPTION PURCHASE ---
+# --- NEW: AUTOMATION SUBSCRIPTION PURCHASE (WITH LEDGER TRACKING) ---
 @main_bp.route('/api/automation/purchase', methods=['POST'])
 @login_required
 def buy_automation_license():
@@ -684,13 +685,19 @@ def buy_automation_license():
         expiry = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE users SET subscription_end = ?, is_subscribed = 1 WHERE id = ?", (expiry, current_user.id))
         
+        # --- NEW: Record Revenue in Ledger so Admin Panel sees it ---
+        try:
+            c.execute("INSERT INTO revenue_ledger (user_id, amount, description, type, created_at) VALUES (?, ?, ?, ?, ?)",
+                      (current_user.id, cost, f"Subscription: {plan.upper()}", "SUBSCRIPTION", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        except Exception as led_err:
+            print(f"[LEDGER ERROR] {led_err}")
+
         # Add Notification
         msg = f"PURCHASE SUCCESSFUL: {plan.upper()} ACCESS ACTIVATED"
         try:
             c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)", 
                       (current_user.id, msg, 'SUCCESS', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        except:
-            pass # Ignore if table is missing to prevent crash
+        except: pass
 
         # Update Slot Usage
         slot_key = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'

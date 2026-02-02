@@ -15,17 +15,15 @@ def create_app():
     # --- SECURITY: FORCE SECRET KEY ---
     app.secret_key = os.getenv('SECRET_KEY') or 'dev_key_for_testing_only'
 
-    app.config['VERSION'] = 'v1.0.0' 
+    app.config['VERSION'] = 'v1.1.0' 
     
     # --- FIX FOR LOCALHOST LOGIN LOOP ---
-    # These settings ensure cookies work on http://127.0.0.1
     app.config['SESSION_COOKIE_SECURE'] = False
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     app.config['REMEMBER_COOKIE_SECURE'] = False
     
-    # Only enable ProxyFix in production (when not in debug mode)
-    # This prevents localhost from getting confused about IP addresses
+    # Only enable ProxyFix in production
     if not app.debug:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
     
@@ -99,7 +97,10 @@ def init_db(db_path):
     
     c.execute('''CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS user_pricing (user_id INTEGER, label_type TEXT, version TEXT, price REAL)''')
+    
+    # --- UPDATED: Added 'price' column to batches ---
     c.execute('''CREATE TABLE IF NOT EXISTS batches (batch_id TEXT PRIMARY KEY, user_id INTEGER, filename TEXT, count INTEGER, success_count INTEGER, status TEXT, template TEXT, version TEXT, label_type TEXT, created_at TEXT, price REAL)''')
+    
     c.execute('''CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, batch_id TEXT, user_id INTEGER, ref_id TEXT, tracking TEXT, status TEXT, from_name TEXT, to_name TEXT, address_to TEXT, version TEXT, created_at TEXT, ref02 TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS admin_audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER, action TEXT, details TEXT, created_at TEXT)''')
@@ -107,6 +108,16 @@ def init_db(db_path):
     c.execute('''CREATE TABLE IF NOT EXISTS login_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ip_address TEXT, user_agent TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS deposit_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, currency TEXT, txn_id TEXT, status TEXT, created_at TEXT)''')
     
+    # --- NEW: REVENUE LEDGER FOR SUBSCRIPTIONS ---
+    c.execute('''CREATE TABLE IF NOT EXISTS revenue_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        user_id INTEGER, 
+        amount REAL, 
+        description TEXT, 
+        type TEXT, 
+        created_at TEXT
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS user_notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, type TEXT, created_at TEXT)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS server_errors (id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, batch_id TEXT, error_msg TEXT, created_at TEXT)''')
