@@ -347,7 +347,6 @@ def process():
         df.to_csv(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename), index=False)
         
         conn = get_db(); c = conn.cursor()
-        # --- FIXED: ADDED 'price' COLUMN TO INSERT ---
         c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                   (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
         conn.commit(); conn.close()
@@ -697,7 +696,8 @@ def buy_automation_license():
         try:
             c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)", 
                       (current_user.id, msg, 'SUCCESS', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        except: pass
+        except:
+            pass # Ignore if table is missing to prevent crash
 
         # Update Slot Usage
         slot_key = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'

@@ -197,7 +197,7 @@ def list_history():
         params.extend([f"%{search}%", f"%{search}%"])
     c.execute(f"SELECT COUNT(*) {query_base}", params); total = c.fetchone()[0]
     
-    # --- HISTORY FIX: Select b.price first to calculate value correctly ---
+    # --- HISTORY FIX: Select b.price first ---
     c.execute(f"SELECT b.batch_id, u.username, b.created_at, b.count, b.success_count, b.status, COALESCE(b.price, u.price_per_label, 3.00) {query_base} ORDER BY b.created_at DESC LIMIT ? OFFSET ?", (*params, limit, offset))
     rows = []
     for r in c.fetchall():
@@ -216,14 +216,14 @@ def job_action():
     if act == 'cancel': c.execute("UPDATE batches SET status='FAILED' WHERE batch_id=?", (bid,))
     elif act == 'retry': c.execute("UPDATE batches SET status='QUEUED' WHERE batch_id=?", (bid,))
     elif act == 'refund':
-        # --- REFUND FIX: Use stored batch price ---
         c.execute("SELECT user_id, count, status, price FROM batches WHERE batch_id=?", (bid,)); row = c.fetchone()
         if row and row[2] != 'REFUNDED':
             uid, count = row[0], row[1]
+            # --- REFUND FIX: Use stored batch price ---
             if row[3] is not None:
                 price = row[3]
             else:
-                # Fallback only for old batches created before this update
+                # Fallback only for old batches
                 c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,)); p = c.fetchone(); price = p[0] if p else 3.00
             
             amt = count * price

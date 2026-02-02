@@ -78,11 +78,22 @@ class User(UserMixin):
         c = conn.cursor()
         try:
             new_key = "sk_live_" + str(uuid.uuid4()).replace('-','')[:24]
+            now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            created_date = datetime.utcnow().strftime("%Y-%m-%d")
+
+            # 1. Insert User
             c.execute("INSERT INTO users (username, email, password_hash, price_per_label, api_key, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                      (username, email, password_hash, 3.00, new_key, datetime.utcnow().strftime("%Y-%m-%d")))
+                      (username, email, password_hash, 3.00, new_key, created_date))
+            
+            # 2. Add to Admin Audit Log (admin_id 0 represents 'SYSTEM')
+            c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                      (0, 'NEW_USER', f"New Registration: {username} ({email})", now_ts))
+            
             conn.commit()
             return True
-        except: return False
+        except Exception as e:
+            print(f"User Create Error: {e}")
+            return False
         finally: conn.close()
 
     def update_balance(self, amount):
