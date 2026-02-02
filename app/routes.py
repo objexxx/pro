@@ -25,15 +25,15 @@ main_bp = Blueprint('main', __name__)
 
 # --- CONFIGURATION ---
 STRICT_HEADERS = [
-    'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From',
-    'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To',
-    'Company2', 'Street2To', 'CityTo', 'StateTo', 'ZipTo', 'Weight', 'Length',
+    'No', 'FromName', 'PhoneFrom', 'Street1From', 'CompanyFrom', 'Street2From', 
+    'CityFrom', 'StateFrom', 'PostalCodeFrom', 'ToName', 'PhoneTo', 'Street1To', 
+    'Company2', 'Street2To', 'CityTo', 'StateTo', 'ZipTo', 'Weight', 'Length', 
     'Width', 'Height', 'Description', 'Ref01', 'Ref02', 'Contains Hazard', 'Shipment Date'
 ]
 
 # SECURITY: LOAD FROM ENV
 OXAPAY_KEY = os.getenv('OXAPAY_KEY')
-ACTIVE_CONFIRMATIONS = set()
+ACTIVE_CONFIRMATIONS = set() 
 
 # --- HELPER: LOGGING ---
 def log_debug(message):
@@ -43,7 +43,7 @@ def log_debug(message):
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     current_headers = list(df.columns)
-
+    
     if current_headers != STRICT_HEADERS:
         log_debug(f"Header Mismatch. Got: {current_headers}")
         return None, "Format Error: Please use the updated 'Download Format' template."
@@ -52,7 +52,7 @@ def normalize_dataframe(df):
         if df['No'].isnull().any() or (df['No'] == '').any():
             return None, "Row Error: Missing Order Number in 'No' column."
 
-    incomplete_rows = df[df['ToName'].isnull() | (df['ToName'].astype(str).str.strip() == '') |
+    incomplete_rows = df[df['ToName'].isnull() | (df['ToName'].astype(str).str.strip() == '') | 
                           df['Street1To'].isnull() | (df['Street1To'].astype(str).str.strip() == '')]
     if not incomplete_rows.empty:
         first_error_idx = incomplete_rows.index[0] + 2
@@ -116,7 +116,7 @@ def get_enabled_versions():
     c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_en_%'")
     rows = dict(c.fetchall())
     conn.close()
-
+    
     return {
         '95055': rows.get('ver_en_95055', '1') == '1',
         '94888': rows.get('ver_en_94888', '1') == '1',
@@ -144,10 +144,13 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
+        remember = True if request.form.get('remember') else False
+        
         user_data = User.get_by_username(username)
         if user_data and check_password_hash(user_data[3], password):
-            user = User.get(user_data[0])
-            login_user(user)
+            user = User.get(user_data[0]) 
+            login_user(user, remember=remember)
+            
             try:
                 conn = get_db(); c = conn.cursor()
                 ip = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -156,6 +159,7 @@ def login():
                           (user.id, ip, ua, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                 conn.commit(); conn.close()
             except: pass
+            
             if user.is_admin: return redirect(url_for('admin.dashboard'))
             return redirect(url_for('main.purchase'))
         return render_template('login.html', error="INVALID CREDENTIALS")
@@ -181,17 +185,17 @@ def dashboard_root(): return redirect(url_for('main.purchase'))
 
 @main_bp.route('/purchase')
 @login_required
-def purchase():
+def purchase(): 
     return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions())
 
 @main_bp.route('/history')
 @login_required
-def history():
+def history(): 
     return render_template('dashboard.html', user=current_user, active_tab='history', version_status=get_enabled_versions())
 
 @main_bp.route('/automation')
 @login_required
-def automation():
+def automation(): 
     sys_config = get_system_config()
     monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
@@ -201,7 +205,7 @@ def automation():
 
 @main_bp.route('/stats')
 @login_required
-def stats():
+def stats(): 
     return render_template('dashboard.html', user=current_user, active_tab='stats', version_status=get_enabled_versions())
 
 @main_bp.route('/deposit')
@@ -211,12 +215,12 @@ def deposit():
 
 @main_bp.route('/settings')
 @login_required
-def settings():
+def settings(): 
     return render_template('dashboard.html', user=current_user, active_tab='settings', version_status=get_enabled_versions())
 
 @main_bp.route('/addresses')
 @login_required
-def addresses():
+def addresses(): 
     return render_template('dashboard.html', user=current_user, active_tab='addresses', version_status=get_enabled_versions())
 
 # --- API ENDPOINTS ---
@@ -229,15 +233,15 @@ def api_user():
     conn.close()
     base = current_user.price_per_label
     return jsonify({
-        "username": current_user.username,
-        "balance": current_user.balance,
+        "username": current_user.username, 
+        "balance": current_user.balance, 
         "price_per_label": base,
-        "prices": {
-            "95055": prices.get('95055', base),
-            "94888": prices.get('94888', base),
+        "prices": { 
+            "95055": prices.get('95055', base), 
+            "94888": prices.get('94888', base), 
             "94019": prices.get('94019', base),
-            "95888": prices.get('95888', base),
-            "91149": prices.get('91149', base),
+            "95888": prices.get('95888', base), 
+            "91149": prices.get('91149', base), 
             "93055": prices.get('93055', base)
         }
     })
@@ -279,7 +283,7 @@ def api_batches():
     data = []
     for r in rows:
         b_id=r[0]; est_date=to_est(r[9]); is_exp=False
-        try:
+        try: 
             if (datetime.utcnow() - datetime.strptime(r[9], "%Y-%m-%d %H:%M:%S")).days >= 7: is_exp = True
         except: pass
         data.append({"batch_id": b_id, "batch_name": r[2].split('_',1)[1] if '_' in r[2] else r[2], "count": r[3], "success_count": r[4], "status": r[5], "date": est_date, "is_expired": is_exp})
@@ -299,12 +303,12 @@ def api_stats():
 
 @main_bp.route('/process', methods=['POST'])
 @login_required
-@limiter.limit("30 per minute")
+@limiter.limit("30 per minute") 
 def process():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
-
+    
     req_version = request.form.get('tracking_version')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
@@ -320,31 +324,30 @@ def process():
 
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
-
+    
     price = get_price(current_user.id, request.form.get('label_type'), req_version, current_user.price_per_label)
     cost = len(df) * price
     if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
-
+    
     try:
         # Collision Check for Batch ID
         batch_id = None
-        for _ in range(10):
+        for _ in range(10): 
             temp_id = str(random.randint(100000, 999999))
             conn = get_db(); c = conn.cursor()
             c.execute("SELECT 1 FROM batches WHERE batch_id = ?", (temp_id,))
             exists = c.fetchone(); conn.close()
             if not exists: batch_id = temp_id; break
-
+        
         if not batch_id:
-            current_user.update_balance(cost)
+            current_user.update_balance(cost) 
             return jsonify({"error": "System Busy: Could not allocate Batch ID. Please try again."}), 500
 
         filename = f"{batch_id}_{secure_filename(file.filename)}"
         df.to_csv(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename), index=False)
-
+        
         conn = get_db(); c = conn.cursor()
-        # --- FIXED: ADDED 'price' COLUMN TO INSERT ---
-        c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
                   (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
         conn.commit(); conn.close()
         log_debug(f"Batch {batch_id} Queued Successfully")
@@ -359,13 +362,13 @@ def process():
 def verify_csv():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
-    try:
+    try: 
         file.stream.seek(0)
         df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
     except Exception as e: return jsonify({"error": "Invalid CSV Format"}), 400
     df, error_msg = normalize_dataframe(df)
     if error_msg: return jsonify({"error": error_msg}), 400
-
+    
     req_version = request.form.get('tracking_version', '95055')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
@@ -374,22 +377,22 @@ def verify_csv():
     price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
     return jsonify({"count": len(df), "cost": len(df) * price})
 
-# --- OXAPAY: VERIFY HELPER ---
+# --- OXAPAY: VERIFY HELPER (FIXED) ---
 def verify_oxapay_payment(track_id):
     try:
-        if not OXAPAY_KEY:
+        if not OXAPAY_KEY: 
             print("[PAYMENT] Missing OXAPAY_KEY")
             return False, 0.0, "Missing API Key"
-
+            
         url = "https://api.oxapay.com/merchants/inquiry"
         payload = {"merchant": OXAPAY_KEY, "trackId": track_id}
         r = requests.post(url, json=payload, timeout=10)
         data = r.json()
-
+        
         # --- SECURE CHECK: Return True ONLY if confirmed paid by Gateway ---
         if data.get('result') == 100:
             status = data.get('status', '').lower()
-            if status in ['paid', 'complete']:
+            if status in ['paid', 'complete']: 
                 # FIX: Use 'amount' (The original requested USD value)
                 usd_val = float(data.get('amount', 0))
                 return True, usd_val, "Paid"
@@ -397,8 +400,8 @@ def verify_oxapay_payment(track_id):
                 return False, 0.0, f"Status: {status.upper()}"
         else:
             return False, 0.0, f"Gateway Error: {data.get('message', 'Unknown')}"
-
-    except Exception as e:
+            
+    except Exception as e: 
         print(f"[PAYMENT ERROR] {e}")
         return False, 0.0, "Connection Error"
 
@@ -419,18 +422,18 @@ def manual_check_deposit(txn_id):
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
     row = c.fetchone()
-
-    if not row:
+    
+    if not row: 
         conn.close()
         return jsonify({"error": "Transaction not found"}), 404
-
-    if row[1] == 'PAID':
+        
+    if row[1] == 'PAID': 
         conn.close()
         return jsonify({"status": "success", "message": "Already Paid"})
-
+    
     # --- FIX: USE VERIFIED AMOUNT, IGNORE DB/ID AMOUNT ---
     is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
-
+    
     if is_valid and paid_amount > 0:
         current_user.update_balance(paid_amount)
         # Update row to match what was actually paid
@@ -444,7 +447,7 @@ def manual_check_deposit(txn_id):
             if clean_status in ['EXPIRED', 'FAILED']:
                 c.execute("UPDATE deposit_history SET status=? WHERE id=?", (clean_status, row[0]))
                 conn.commit()
-
+        
         conn.close()
         return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
 
@@ -472,11 +475,11 @@ def create_deposit():
 def deposit_webhook():
     try:
         data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
-
+        
         if status in ['paid', 'complete']: # Only credit on explicit success
             # --- FIX: Verify amount with Gateway. Do NOT trust ID. ---
             is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
-
+            
             if is_valid and verified_amount > 0:
                 parts = order_id.split('_')
                 if len(parts) >= 2:
@@ -486,30 +489,44 @@ def deposit_webhook():
                         conn = get_db(); c = conn.cursor()
                         c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
                         existing = c.fetchone()
-
+                        
                         if existing:
                             if existing[1] != 'PAID':
                                 user.update_balance(verified_amount) # Use VERIFIED Amount
-                                c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?",
+                                c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?", 
                                           (data.get('currency', 'USDT'), verified_amount, existing[0]))
                                 conn.commit()
                         else:
                             user.update_balance(verified_amount)
-                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
                                       (user_id, verified_amount, data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                             conn.commit()
                         conn.close()
                         return jsonify({"status": "ok"}), 200
-
+        
         elif status in ['expired', 'failed', 'rejected']:
              conn = get_db(); c = conn.cursor()
              c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),)); conn.commit(); conn.close()
-
-    except Exception as e:
+             
+    except Exception as e: 
         print(f"[WEBHOOK ERROR] {e}")
         return jsonify({"status": "error"}), 500
-
+    
     return jsonify({"status": "ok"}), 200
+
+# --- ADDED: PUBLIC CONFIG ROUTE TO FIX 404 ---
+@main_bp.route('/api/automation/public_config')
+@login_required
+def public_automation_config():
+    sys_config = get_system_config()
+    monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
+    lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
+    return jsonify({
+        "monthly_left": monthly_left,
+        "lifetime_left": lifetime_left,
+        "monthly_price": sys_config.get('automation_price_monthly', '29.99'),
+        "lifetime_price": sys_config.get('automation_price_lifetime', '499.00')
+    })
 
 @main_bp.route('/api/automation/save', methods=['POST'])
 @login_required
@@ -562,7 +579,7 @@ def automation_confirm():
                 c.execute("UPDATE batches SET status = 'CONFIRMING' WHERE batch_id = ?", (batch_id,)); conn.commit(); conn.close()
                 run_confirmation(batch_id, raw_cookies, raw_csrf)
             except Exception as e: print(f"[CONFIRM] CRITICAL ERROR: {e}")
-            finally:
+            finally: 
                 if batch_id in ACTIVE_CONFIRMATIONS: ACTIVE_CONFIRMATIONS.remove(batch_id)
     thread = threading.Thread(target=task, args=(current_app._get_current_object().app_context(),)); thread.start()
     return jsonify({"status": "success", "message": "JOB STARTED - MONITORING"})
@@ -616,9 +633,9 @@ def get_addresses_list():
 @login_required
 def add_new_address():
     d = request.json; conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM sender_addresses WHERE user_id = ?", (current_user.id,));
+    c.execute("SELECT COUNT(*) FROM sender_addresses WHERE user_id = ?", (current_user.id,)); 
     if c.fetchone()[0] >= 8: conn.close(); return jsonify({"error": "PROFILE LIMIT REACHED (8/8)"}), 400
-    c.execute("INSERT INTO sender_addresses (user_id, name, company, street1, street2, city, state, zip, phone) VALUES (?,?,?,?,?,?,?,?,?)",
+    c.execute("INSERT INTO sender_addresses (user_id, name, company, street1, street2, city, state, zip, phone) VALUES (?,?,?,?,?,?,?,?,?)", 
               (current_user.id, d['name'], d.get('company',''), d['street1'], d.get('street2', ''), d['city'], d['state'], d['zip'], d['phone']))
     conn.commit(); conn.close(); return jsonify({"status":"success"})
 
@@ -666,11 +683,11 @@ def buy_automation_license():
         c = conn.cursor()
         expiry = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE users SET subscription_end = ?, is_subscribed = 1 WHERE id = ?", (expiry, current_user.id))
-
+        
         # Add Notification
         msg = f"PURCHASE SUCCESSFUL: {plan.upper()} ACCESS ACTIVATED"
         try:
-            c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)",
+            c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)", 
                       (current_user.id, msg, 'SUCCESS', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
         except:
             pass # Ignore if table is missing to prevent crash
