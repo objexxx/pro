@@ -60,8 +60,6 @@ class User(UserMixin):
         conn = get_db()
         c = conn.cursor()
         # Note: This query returns raw tuple including password_hash, which is handled in login route
-        # We don't use the User class constructor here directly in login route logic usually
-        # But for consistency in models, we typically only use this for checking auth
         c.execute("""
             SELECT id, username, email, password_hash, balance, price_per_label, is_admin, is_banned, 
                    api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, 
@@ -77,17 +75,36 @@ class User(UserMixin):
         conn = get_db()
         c = conn.cursor()
         try:
+            # --- 1. FETCH CURRENT ADMIN PRICES ---
+            c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_price_%'")
+            system_prices = dict(c.fetchall())
+            
+            # Determine base price (Fall back to 3.00 if admin hasn't set anything)
+            # This sets the 'Legacy' price column to whatever you set for 95055
+            base_price = float(system_prices.get('ver_price_95055', '3.00'))
+
             new_key = "sk_live_" + str(uuid.uuid4()).replace('-','')[:24]
             now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             created_date = datetime.utcnow().strftime("%Y-%m-%d")
 
-            # 1. Insert User
+            # --- 2. INSERT USER ---
             c.execute("INSERT INTO users (username, email, password_hash, price_per_label, api_key, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                      (username, email, password_hash, 3.00, new_key, created_date))
+                      (username, email, password_hash, base_price, new_key, created_date))
             
-            # 2. Add to Admin Audit Log (admin_id 0 represents 'SYSTEM')
+            user_id = c.lastrowid
+            
+            # --- 3. POPULATE INDIVIDUAL VERSION PRICES ---
+            # This ensures the user gets your configured $0.05 (or whatever is set) for every version immediately
+            versions = ['95055', '94888', '94019', '95888', '91149', '93055']
+            for ver in versions:
+                # Fetch price for this specific version from config, default to 3.00 if missing
+                p = float(system_prices.get(f"ver_price_{ver}", '3.00'))
+                c.execute("INSERT INTO user_pricing (user_id, label_type, version, price) VALUES (?, 'priority', ?, ?)", 
+                          (user_id, ver, p))
+
+            # --- 4. AUDIT LOG ---
             c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
-                      (0, 'NEW_USER', f"New Registration: {username} ({email})", now_ts))
+                      (0, 'NEW_USER', f"New Registration: {username} ({email}) - Base Price: ${base_price}", now_ts))
             
             conn.commit()
             return True
