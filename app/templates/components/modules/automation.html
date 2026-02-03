@@ -102,8 +102,12 @@
                         <div class="pt-4 border-t border-gray-200 dark:border-[#1E1E1E]">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Unshipped Data (.TXT)</label>
                             <input type="file" id="in_file" accept=".txt" class="hidden" onchange="handleFileSelect(this)">
-                            <button onclick="document.getElementById('in_file').click()" class="w-full py-6 border border-dashed border-gray-300 dark:border-[#333] hover:border-black dark:hover:border-white text-[9px] font-mono text-gray-400 hover:text-black dark:hover:text-white transition-all uppercase group bg-gray-50 dark:bg-[#050505]">
-                                <span id="selectedFileName">Select Amazon Report</span>
+                            
+                            <button id="amazon-drop-zone" onclick="document.getElementById('in_file').click()" class="w-full py-6 border-2 border-dashed border-gray-300 dark:border-[#333] hover:border-black dark:hover:border-white text-[9px] font-mono text-gray-400 hover:text-black dark:hover:text-white transition-all uppercase group bg-gray-50 dark:bg-[#050505]">
+                                <span id="selectedFileName" class="pointer-events-none flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    <span>Select Amazon Report (Drag & Drop)</span>
+                                </span>
                             </button>
                         </div>
                     </div>
@@ -198,6 +202,53 @@
     let fileSelected = false;
     let addressesAvailable = false;
     window.confirmedSessionIds = []; 
+
+    document.addEventListener("DOMContentLoaded", function() {
+        // --- AMAZON REPORT DRAG AND DROP ---
+        const dropZone = document.getElementById('amazon-drop-zone');
+        const fileInput = document.getElementById('in_file');
+
+        if (dropZone && fileInput) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight(e) {
+                dropZone.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/10', 'text-blue-500');
+                dropZone.classList.remove('border-gray-300', 'dark:border-[#333]', 'text-gray-400');
+            }
+
+            function unhighlight(e) {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/10', 'text-blue-500');
+                dropZone.classList.add('border-gray-300', 'dark:border-[#333]', 'text-gray-400');
+            }
+
+            dropZone.addEventListener('drop', handleDrop, false);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    handleFileSelect(fileInput); // Trigger existing handler to update UI
+                }
+            }
+        }
+    });
 
     async function syncConfig() {
         try {
