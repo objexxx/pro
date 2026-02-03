@@ -15,7 +15,7 @@ def create_app():
     # --- SECURITY: FORCE SECRET KEY ---
     app.secret_key = os.getenv('SECRET_KEY') or 'dev_key_for_testing_only'
 
-    app.config['VERSION'] = 'v1.0.1' 
+    app.config['VERSION'] = 'v1.0.2' 
     
     # --- FIX FOR LOCALHOST LOGIN LOOP ---
     app.config['SESSION_COOKIE_SECURE'] = True
