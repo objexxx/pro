@@ -35,9 +35,21 @@ STRICT_HEADERS = [
 OXAPAY_KEY = os.getenv('OXAPAY_KEY')
 ACTIVE_CONFIRMATIONS = set() 
 
+# --- SECURITY LOCKS ---
+# These prevent race conditions (e.g. Postman spamming requests to bypass balance checks)
+processing_lock = threading.Lock()
+address_lock = threading.Lock()
+
 # --- HELPER: LOGGING ---
 def log_debug(message):
     print(f"[{datetime.now()}] [ROUTES] {message}")
+
+# --- HELPER: DB CONNECTION ---
+def get_db_conn():
+    """Opens a DB connection with a high timeout to prevent locking errors."""
+    conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 # --- HELPER: DATAFRAME ---
 def normalize_dataframe(df):
@@ -80,7 +92,7 @@ def normalize_dataframe(df):
     return df, None
 
 def get_system_config():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     try:
         c.execute("SELECT key, value FROM system_config")
         rows = dict(c.fetchall())
@@ -90,7 +102,7 @@ def get_system_config():
 
 def get_price(user_id, label_type, version, default_price):
     try:
-        conn = get_db(); c = conn.cursor()
+        conn = get_db_conn(); c = conn.cursor()
         c.execute("SELECT price FROM user_pricing WHERE user_id = ? AND label_type = ? AND version = ?", (user_id, label_type, version))
         row = c.fetchone(); conn.close()
         if row: return float(row[0])
@@ -107,7 +119,7 @@ def to_est(date_str):
 
 # --- HELPER: CHECK ENABLED VERSIONS ---
 def get_enabled_versions():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_en_%'")
     rows = dict(c.fetchall())
     conn.close()
@@ -147,7 +159,7 @@ def login():
             login_user(user, remember=remember)
             
             try:
-                conn = get_db(); c = conn.cursor()
+                conn = get_db_conn(); c = conn.cursor()
                 ip = request.headers.get('X-Forwarded-For', request.remote_addr)
                 ua = request.headers.get('User-Agent', '')[:200]
                 c.execute("INSERT INTO login_history (user_id, ip_address, user_agent, created_at) VALUES (?, ?, ?, ?)",
@@ -182,7 +194,7 @@ def dashboard_root(): return redirect(url_for('main.purchase'))
 @login_required
 def purchase(): 
     # [WALMART] Added addresses for dropdown
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
     rows = c.fetchall()
     conn.close()
@@ -228,7 +240,7 @@ def addresses():
 @main_bp.route('/api/user')
 @login_required
 def api_user():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT version, price FROM user_pricing WHERE user_id = ? AND label_type = 'priority'", (current_user.id,))
     prices = {row[0]: float(row[1]) for row in c.fetchall()}
     conn.close()
@@ -251,7 +263,7 @@ def api_user():
 @login_required
 def poll_notifications():
     try:
-        conn = get_db(); c = conn.cursor()
+        conn = get_db_conn(); c = conn.cursor()
         c.execute("SELECT id, message, type FROM user_notifications WHERE user_id = ?", (current_user.id,))
         rows = c.fetchall()
         notifs = [{"id": r[0], "msg": r[1], "type": r[2]} for r in rows]
@@ -276,7 +288,7 @@ def api_batches():
     search = request.args.get('search', '').strip(); sort_by = request.args.get('sort', 'recent')
     view = request.args.get('view', '') 
     
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     
     if view == 'history':
         query = "SELECT * FROM batches WHERE user_id = ?"
@@ -318,7 +330,7 @@ def api_batches():
 @main_bp.route('/api/stats')
 @login_required
 def api_stats():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT SUM(success_count) FROM batches WHERE user_id = ?", (current_user.id,)); total = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ?", (current_user.id,)); batches = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM batches WHERE user_id = ? AND status = 'READY'", (current_user.id,)); ready = c.fetchone()[0] or 0
@@ -335,7 +347,7 @@ def process():
     file = request.files['file']
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
     
-    upload_mode = request.form.get('upload_mode', 'bulk') # 'bulk' or 'walmart'
+    upload_mode = request.form.get('upload_mode', 'bulk') 
     req_version = request.form.get('tracking_version')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
@@ -354,7 +366,6 @@ def process():
         if count == 0: return jsonify({"error": "No valid rows found in XLSX"}), 400
         
         df = pd.DataFrame(data)
-        # Rename keys to CSV Headers
         mapping = {
             'to_name': 'ToName', 'to_phone': 'PhoneTo', 'to_street1': 'Street1To', 'to_street2': 'Street2To', 
             'to_city': 'CityTo', 'to_state': 'StateTo', 'to_zip': 'ZipTo',
@@ -367,21 +378,14 @@ def process():
         
         df['No'] = range(1, len(df) + 1)
         df['Length'] = 10; df['Width'] = 6; df['Height'] = 4
-        
-        # Explicitly CLEAR Ref01 and Ref02 from being mapped incorrectly
-        # Ref02 is now handled directly from 'Ref02' key in data dict if present
-        # but to be safe, we just let pandas handle it since it's already in 'data'
-        
         df['Contains Hazard'] = 'False'
         df['Shipment Date'] = datetime.now().strftime("%m/%d/%Y")
         
-        # Ensure only strict headers are present/ordered
         for col in STRICT_HEADERS:
             if col not in df.columns: df[col] = ''
         df = df[STRICT_HEADERS]
         
         file_prefix = "WALMART_"
-        # Save Original XLSX for history download
         file.stream.seek(0)
         
     else:
@@ -398,48 +402,50 @@ def process():
         file_prefix = ""
 
     cost = len(df) * price
-    if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
     
-    try:
-        batch_id = None
-        for _ in range(10): 
-            temp_id = str(random.randint(100000, 999999))
-            conn = get_db(); c = conn.cursor()
-            c.execute("SELECT 1 FROM batches WHERE batch_id = ?", (temp_id,))
-            exists = c.fetchone(); conn.close()
-            if not exists: batch_id = temp_id; break
+    # --- SECURITY LOCK START (Prevent Balance Race Conditions) ---
+    with processing_lock:
+        if not current_user.update_balance(-cost): 
+            return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
         
-        if not batch_id:
-            current_user.update_balance(cost) 
-            return jsonify({"error": "System Busy: Could not allocate Batch ID. Please try again."}), 500
+        try:
+            batch_id = None
+            for _ in range(10): 
+                temp_id = str(random.randint(100000, 999999))
+                conn = get_db_conn(); c = conn.cursor()
+                c.execute("SELECT 1 FROM batches WHERE batch_id = ?", (temp_id,))
+                exists = c.fetchone(); conn.close()
+                if not exists: batch_id = temp_id; break
+            
+            if not batch_id:
+                current_user.update_balance(cost) 
+                return jsonify({"error": "System Busy: Could not allocate Batch ID. Please try again."}), 500
 
-        # Create Filename
-        clean_name = secure_filename(file.filename)
-        if not clean_name: clean_name = "upload.csv"
-        # If it was XLSX, force .csv extension for the worker file
-        if clean_name.lower().endswith('.xlsx'): clean_name = clean_name[:-5] + ".csv"
-        
-        final_filename = f"{file_prefix}{batch_id}_{clean_name}"
-        save_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', final_filename)
-        df.to_csv(save_path, index=False)
-        
-        # Save Original XLSX if Walmart
-        if upload_mode == 'walmart':
-            orig_name = f"{file_prefix}{batch_id}_ORIG.xlsx"
-            orig_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', orig_name)
-            file.stream.seek(0)
-            file.save(orig_path)
-        
-        conn = get_db(); c = conn.cursor()
-        c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                  (batch_id, current_user.id, final_filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
-        conn.commit(); conn.close()
-        log_debug(f"Batch {batch_id} Queued Successfully")
-        return jsonify({"status": "success", "batch_id": batch_id})
-    except Exception as e:
-        log_debug(f"[CRITICAL ERROR] /process endpoint: {str(e)}")
-        current_user.update_balance(cost)
-        return jsonify({"error": "Internal System Error. Please try again later."}), 500
+            clean_name = secure_filename(file.filename)
+            if not clean_name: clean_name = "upload.csv"
+            if clean_name.lower().endswith('.xlsx'): clean_name = clean_name[:-5] + ".csv"
+            
+            final_filename = f"{file_prefix}{batch_id}_{clean_name}"
+            save_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', final_filename)
+            df.to_csv(save_path, index=False)
+            
+            if upload_mode == 'walmart':
+                orig_name = f"{file_prefix}{batch_id}_ORIG.xlsx"
+                orig_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', orig_name)
+                file.stream.seek(0)
+                file.save(orig_path)
+            
+            conn = get_db_conn(); c = conn.cursor()
+            c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                      (batch_id, current_user.id, final_filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
+            conn.commit(); conn.close()
+            log_debug(f"Batch {batch_id} Queued Successfully")
+            return jsonify({"status": "success", "batch_id": batch_id})
+        except Exception as e:
+            log_debug(f"[CRITICAL ERROR] /process endpoint: {str(e)}")
+            current_user.update_balance(cost) # Refund on crash
+            return jsonify({"error": "Internal System Error. Please try again later."}), 500
+    # --- SECURITY LOCK END ---
 
 @main_bp.route('/verify-csv', methods=['POST'])
 @login_required
@@ -475,18 +481,15 @@ def verify_csv():
 @main_bp.route('/api/download/xlsx/<batch_id>')
 @login_required
 def download_xlsx(batch_id):
-    # 1. Verify Ownership
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: conn.close(); return jsonify({"error": "UNAUTHORIZED"}), 403
     if not batch_row[0].startswith("WALMART_"): conn.close(); return jsonify({"error": "NOT A WALMART BATCH"}), 400
     
-    # 2. Get Tracking Data (Map Order# -> Tracking)
     c.execute("SELECT ref02, tracking FROM history WHERE batch_id = ? AND status = 'SUCCESS'", (batch_id,))
     tracking_map = {str(row[0]).strip(): row[1] for row in c.fetchall()}
     conn.close()
 
-    # 3. Load Original Excel
     orig_name = f"WALMART_{batch_id}_ORIG.xlsx"
     path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', orig_name)
     if not os.path.exists(path): return jsonify({"error": "ORIGINAL FILE NOT FOUND"}), 404
@@ -496,7 +499,6 @@ def download_xlsx(batch_id):
         wb = openpyxl.load_workbook(path)
         sheet = wb.active
 
-        # 4. Iterate and Fill
         for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=False), start=2):
             try:
                 order_num_cell = row[1].value # Column B
@@ -508,15 +510,10 @@ def download_xlsx(batch_id):
                 tracking = tracking_map.get(order_id)
 
                 if tracking:
-                    # AN (40) -> Update Status
                     sheet.cell(row=row_idx, column=40).value = "Ship"
-                    # AO (41) -> Update Qty
                     sheet.cell(row=row_idx, column=41).value = qty_cell
-                    # AP (42) -> Update Carrier
                     sheet.cell(row=row_idx, column=42).value = "USPS"
-                    # AQ (43) -> Tracking Number
                     sheet.cell(row=row_idx, column=43).value = tracking
-                    # AR (44) -> Tracking URL
                     sheet.cell(row=row_idx, column=44).value = "www.usps.com"
             except Exception:
                 continue
@@ -560,7 +557,7 @@ def verify_oxapay_payment(track_id):
 @main_bp.route('/api/deposit/history', methods=['GET'])
 @login_required
 def get_deposit_history():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     try: c.execute("UPDATE deposit_history SET status='FAILED' WHERE status='PROCESSING' AND created_at < ?", ((datetime.utcnow()-timedelta(minutes=60)).strftime("%Y-%m-%d %H:%M:%S"),)); conn.commit()
     except: pass
     c.execute("SELECT amount, currency, txn_id, status, created_at FROM deposit_history WHERE user_id = ? ORDER BY id DESC LIMIT 10", (current_user.id,))
@@ -571,7 +568,7 @@ def get_deposit_history():
 @main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
 @login_required
 def manual_check_deposit(txn_id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
     row = c.fetchone()
     
@@ -614,7 +611,7 @@ def create_deposit():
         r = requests.post(url, json=payload); result = r.json()
         if result.get('result') == 100:
             track_id = result.get('trackId')
-            conn = get_db(); c = conn.cursor()
+            conn = get_db_conn(); c = conn.cursor()
             c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", (current_user.id, usd_amount, 'USDT', str(track_id), 'PROCESSING', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
             conn.commit(); conn.close()
             return jsonify({"status": "success", "pay_link": result.get('payLink')})
@@ -635,7 +632,7 @@ def deposit_webhook():
                     user_id = int(parts[1])
                     user = User.get(user_id)
                     if user:
-                        conn = get_db(); c = conn.cursor()
+                        conn = get_db_conn(); c = conn.cursor()
                         c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
                         existing = c.fetchone()
                         
@@ -654,7 +651,7 @@ def deposit_webhook():
                         return jsonify({"status": "ok"}), 200
         
         elif status in ['expired', 'failed', 'rejected']:
-             conn = get_db(); c = conn.cursor()
+             conn = get_db_conn(); c = conn.cursor()
              c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),)); conn.commit(); conn.close()
              
     except Exception as e: 
@@ -693,7 +690,7 @@ def automation_format():
     if not file: return jsonify({"error": "NO FILE UPLOADED"}), 400
     address_id = request.form.get('address_id'); sender_address = None
     if address_id:
-        conn = get_db(); c = conn.cursor()
+        conn = get_db_conn(); c = conn.cursor()
         c.execute("SELECT name, company, street1, street2, city, state, zip, phone FROM sender_addresses WHERE id = ? AND user_id = ?", (address_id, current_user.id))
         row = c.fetchone(); conn.close()
         if row: sender_address = {'name': row[0], 'company': row[1], 'street1': row[2], 'street2': row[3], 'city': row[4], 'state': row[5], 'zip': row[6], 'phone': row[7]}
@@ -709,7 +706,7 @@ def automation_format():
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
     batch_id = request.json.get('batch_id')
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); row = c.fetchone()
     if row and row[0] == 'REFUNDED': conn.close(); return jsonify({'error': 'ACCESS REVOKED: THIS BATCH WAS REFUNDED'}), 403
     conn.close()
@@ -735,7 +732,7 @@ def automation_confirm():
 @main_bp.route('/api/download/csv/<batch_id>')
 @login_required
 def download_csv(batch_id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: conn.close(); return jsonify({"error": "UNAUTHORIZED"}), 403
     if batch_row[1] == 'REFUNDED': conn.close(); return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
@@ -753,7 +750,7 @@ def download_csv(batch_id):
 @main_bp.route('/api/download/pdf/<batch_id>')
 @login_required
 def download_pdf(batch_id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: return jsonify({"error": "UNAUTHORIZED ACCESS"}), 403
     if batch_row[1] == 'REFUNDED': return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
@@ -772,7 +769,7 @@ def download_sample_csv():
 @main_bp.route('/api/addresses', methods=['GET'])
 @login_required
 def get_addresses_list():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
     data = [{"id": r[0], "name": r[2], "company": r[3], "phone": r[4], "street1": r[5], "street2": r[6], "city": r[7], "state": r[8], "zip": r[9]} for r in c.fetchall()]
     conn.close(); return jsonify(data)
@@ -780,24 +777,25 @@ def get_addresses_list():
 @main_bp.route('/api/addresses', methods=['POST'])
 @login_required
 def add_new_address():
-    d = request.json; conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM sender_addresses WHERE user_id = ?", (current_user.id,)); 
-    if c.fetchone()[0] >= 8: conn.close(); return jsonify({"error": "PROFILE LIMIT REACHED (8/8)"}), 400
-    c.execute("INSERT INTO sender_addresses (user_id, name, company, street1, street2, city, state, zip, phone) VALUES (?,?,?,?,?,?,?,?,?)", 
-              (current_user.id, d['name'], d.get('company',''), d['street1'], d.get('street2', ''), d['city'], d['state'], d['zip'], d['phone']))
-    conn.commit(); conn.close(); return jsonify({"status":"success"})
+    with address_lock: # Prevent race condition (Spam saving)
+        d = request.json; conn = get_db_conn(); c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM sender_addresses WHERE user_id = ?", (current_user.id,)); 
+        if c.fetchone()[0] >= 8: conn.close(); return jsonify({"error": "PROFILE LIMIT REACHED (8/8)"}), 400
+        c.execute("INSERT INTO sender_addresses (user_id, name, company, street1, street2, city, state, zip, phone) VALUES (?,?,?,?,?,?,?,?,?)", 
+                  (current_user.id, d['name'], d.get('company',''), d['street1'], d.get('street2', ''), d['city'], d['state'], d['zip'], d['phone']))
+        conn.commit(); conn.close(); return jsonify({"status":"success"})
 
 @main_bp.route('/api/addresses/<int:id>', methods=['DELETE'])
 @login_required
 def delete_single_address(id):
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("DELETE FROM sender_addresses WHERE id=? AND user_id=?", (id, current_user.id)); conn.commit(); conn.close()
     return jsonify({"status":"success"})
 
 @main_bp.route('/api/addresses/all', methods=['DELETE'])
 @login_required
 def delete_all_user_addresses():
-    conn = get_db(); c = conn.cursor()
+    conn = get_db_conn(); c = conn.cursor()
     c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,)); conn.commit(); conn.close()
     return jsonify({"status":"success"})
 
@@ -822,7 +820,7 @@ def buy_automation_license():
         return jsonify({'error': 'TRANSACTION FAILED'}), 500
 
     try:
-        conn = get_db()
+        conn = get_db_conn()
         c = conn.cursor()
         expiry = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE users SET subscription_end = ?, is_subscribed = 1 WHERE id = ?", (expiry, current_user.id))
