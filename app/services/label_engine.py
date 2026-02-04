@@ -259,7 +259,7 @@ class LabelEngine:
             attempts = 0
             while attempts < 10:
                 try:
-                    res = requests.post(f"http://api.labelary.com/v1/printers/8dpmm/labels/{label_size}/", 
+                    res = requests.post(f"https://api.labelary.com/v1/printers/8dpmm/labels/{label_size}/", 
                                         data=lbl.encode('utf-8'), headers={'Accept': 'application/pdf'}, timeout=30)
                     if res.status_code == 200:
                         return res.content, {

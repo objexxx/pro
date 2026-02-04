@@ -531,6 +531,7 @@ def process():
 
 @main_bp.route('/verify-csv', methods=['POST'])
 @login_required
+@limiter.limit("20 per minute")
 def verify_csv():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
