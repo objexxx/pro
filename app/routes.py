@@ -77,10 +77,17 @@ def send_otp_email(user):
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
     
+    # --- FIX: Check for required columns BEFORE accessing them ---
+    required_cols = ['ToName', 'Street1To']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        return None, f"Invalid CSV Format. Missing columns: {', '.join(missing_cols)}"
+
     if 'No' in df.columns:
         if df['No'].isnull().any() or (df['No'] == '').any():
             return None, "Row Error: Missing Order Number in 'No' column."
 
+    # Now safe to access columns
     incomplete_rows = df[df['ToName'].isnull() | (df['ToName'].astype(str).str.strip() == '') | 
                           df['Street1To'].isnull() | (df['Street1To'].astype(str).str.strip() == '')]
     if not incomplete_rows.empty:
@@ -544,6 +551,8 @@ def verify_csv():
             file.stream.seek(0)
             df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
         except Exception as e: return jsonify({"error": "Invalid CSV Format"}), 400
+        
+        # --- FIXED CALL HERE ---
         df, error_msg = normalize_dataframe(df)
         if error_msg: return jsonify({"error": error_msg}), 400
         count = len(df)

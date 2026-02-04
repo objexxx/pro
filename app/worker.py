@@ -7,7 +7,7 @@ import pandas as pd
 import csv
 from datetime import datetime, timedelta
 from flask import current_app
-import PyPDF2  # Needs to be in requirements.txt
+import PyPDF2  
 from .services.label_engine import LabelEngine
 
 # --- GLOBAL THREAD LOCK ---
@@ -31,10 +31,8 @@ def safe_write(db_path, query, args=()):
                 return True
             except sqlite3.OperationalError as e:
                 if conn:
-                    try: 
-                        conn.close() 
-                    except: 
-                        pass
+                    try: conn.close() 
+                    except: pass
                 
                 if "locked" in str(e):
                     time.sleep(random.uniform(0.5, 2.0)) 
@@ -44,10 +42,8 @@ def safe_write(db_path, query, args=()):
                     return False
             except Exception as e:
                 if conn:
-                    try: 
-                        conn.close() 
-                    except: 
-                        pass
+                    try: conn.close() 
+                    except: pass
                 print(f"[DB UNKNOWN ERROR] {e}")
                 return False
         print(f"[DB FAIL] Could not write to DB after 10 attempts.")
@@ -150,6 +146,9 @@ def combine_pdfs(batch_id, folder, file_paths):
 def worker_loop(app, worker_id):
     log_debug(f"Worker Thread {worker_id} Started.")
     
+    # Initialize Heartbeat Timer
+    last_heartbeat_time = 0
+    
     with app.app_context():
         try:
             db_path = current_app.config['DB_PATH']
@@ -169,9 +168,11 @@ def worker_loop(app, worker_id):
                 data_folder = current_app.config['DATA_FOLDER']
                 db_path = current_app.config['DB_PATH']
                 
-                # Check Pause & Heartbeat every 5 seconds
-                if int(time.time()) % 5 == 0:
-                    safe_write(db_path, "INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),))
+                # --- HEARTBEAT CHECK (IDLE) ---
+                if time.time() - last_heartbeat_time > 5:
+                    safe_write(db_path, "INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", 
+                             (datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),))
+                    last_heartbeat_time = time.time()
 
             task = get_next_batch(db_path, worker_id)
 
@@ -193,6 +194,13 @@ def worker_loop(app, worker_id):
                     buffer_size = 5 
                     
                     for index, row in df.iterrows():
+                        # --- HEARTBEAT CHECK (ACTIVE) ---
+                        # Critical Fix: Update heartbeat while processing loop runs
+                        if time.time() - last_heartbeat_time > 5:
+                            safe_write(db_path, "INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", 
+                                     (datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),))
+                            last_heartbeat_time = time.time()
+
                         try:
                             row_data = row.to_dict()
                             pdf_path, tracking, ref = LabelEngine.create_label(row_data, ltype, version, template, data_folder=data_folder)
