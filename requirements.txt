@@ -1,9 +1,10 @@
 flask
 flask-login
 flask-limiter
-pandas
-requests
-gunicorn
-python-dotenv
-pypdf
 werkzeug
+requests
+python-dotenv
+stripe
+reportlab
+pandas
+openpyxl

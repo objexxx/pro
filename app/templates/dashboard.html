@@ -122,6 +122,18 @@
             const verifyBtn = document.getElementById('verifyBtn'); const originalText = verifyBtn.innerText;
             verifyBtn.innerText = "SCANNING..."; 
             const formData = new FormData(); formData.append('file', fileInput.files[0]); 
+            
+            // --- FIX FOR VERIFY ---
+            const modeEl = document.getElementById('upload_mode');
+            if(modeEl) formData.append('upload_mode', modeEl.value);
+            
+            formData.append('label_type', document.querySelector('[name="label_type"]').value);
+            formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
+
+            const senderEl = document.getElementById('sender_id');
+            if(senderEl && senderEl.value) formData.append('sender_id', senderEl.value);
+            // ----------------------
+
             try { 
                 const res = await fetch('/verify-csv', { method: 'POST', body: formData }); 
                 const data = await res.json(); 
@@ -145,6 +157,19 @@
             formData.append('label_type', document.querySelector('[name="label_type"]').value);
             formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
             formData.append('template_choice', document.querySelector('[name="template_choice"]').value);
+            
+            // --- NEW: WALMART SUPPORT ---
+            const modeEl = document.getElementById('upload_mode');
+            if (modeEl) {
+                formData.append('upload_mode', modeEl.value);
+            }
+            
+            const senderEl = document.getElementById('sender_id');
+            if (senderEl && senderEl.value) {
+                formData.append('sender_id', senderEl.value);
+            }
+            // -----------------------------
+
             const originalText = btn.innerText; btn.innerText = "PROCESSING...";
             const res = await fetch('/process', { method: 'POST', body: formData });
             const data = await res.json();
@@ -274,7 +299,8 @@
                         const sVal = document.getElementById('historySearchInput') ? document.getElementById('historySearchInput').value : '';
 
                         try {
-                            const response = await fetch(`/api/batches?page=${window.histCurrentPage}&limit=10&search=${sVal}`);
+                            // --- FIX: Added view=history ---
+                            const response = await fetch(`/api/batches?page=${window.histCurrentPage}&limit=10&search=${sVal}&view=history`);
                             const result = await response.json();
                             
                             let rowHtml = '';
@@ -327,35 +353,32 @@
                                         badgeTxt = 'FAILED';
                                     }
 
-                                    let pdfButton = '';
-                                    let csvButton = '';
-
-                                    const safeStatus = ['CONFIRMING', 'CONFIRMED', 'AUTH_ERROR', 'CONFIRM_FAILED', 'COMPLETED', 'PARTIAL'];
-
+                                    let buttons = [];
+                                    
                                     if (isRefunded) {
-                                        pdfButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
-                                        csvButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
+                                        buttons.push(`<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`);
                                     }
                                     else if (isProcessing && batch.status !== 'CONFIRMING') {
-                                        // Standard processing (making labels) - Button Hidden
-                                        pdfButton = `
-                                            <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
-                                                <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                </svg> 
-                                                WAIT
-                                            </span>`;
-                                        csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
+                                        buttons.push(`<span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">WAIT</span>`);
                                     } 
-                                    else if (batch.success_count > 0 || safeStatus.includes(batch.status)) {
-                                        // Buttons ENABLED even if count is 0 (during confirming)
-                                        pdfButton = `<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
-                                        csvButton = `<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
+                                    else if (batch.success_count > 0 || ['CONFIRMING', 'CONFIRMED', 'AUTH_ERROR', 'CONFIRM_FAILED', 'COMPLETED', 'PARTIAL'].includes(batch.status)) {
+                                        // 1. PDF BUTTON
+                                        buttons.push(`<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`);
+                                        buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                                        
+                                        // 2. WALMART XLSX BUTTON (MOVED HERE)
+                                        if (batch.is_walmart) {
+                                            buttons.push(`<a href="/api/download/xlsx/${batch.batch_id}" class="text-green-600 hover:text-green-500 font-black uppercase text-[9px] leading-none transition-colors">XLSX</a>`);
+                                            buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                                        }
+
+                                        // 3. CSV BUTTON
+                                        buttons.push(`<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`);
                                     } 
                                     else {
-                                        pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
-                                        csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
+                                        buttons.push(`<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`);
+                                        buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                                        buttons.push(`<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`);
                                     }
 
                                     rowHtml += `
@@ -374,9 +397,7 @@
                                         </td>
                                         <td class="px-8 py-5 text-right font-mono">
                                             <div class="flex justify-end items-center gap-3">
-                                                ${pdfButton}
-                                                <span class="text-gray-300 text-[9px] leading-none select-none">|</span>
-                                                ${csvButton}
+                                                ${buttons.join('')}
                                             </div>
                                         </td>
                                     </tr>`;

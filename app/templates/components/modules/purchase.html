@@ -7,7 +7,7 @@
         <div class="flex items-center gap-3">
             <div class="px-4 py-2 bg-gray-100 dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-center min-w-[120px]">
                 <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest">Operation Mode</p>
-                <p class="text-xs font-mono font-bold text-black dark:text-white uppercase">BATCH_UPLOAD</p>
+                <p id="op-mode-display" class="text-xs font-mono font-bold text-black dark:text-white uppercase">BATCH_UPLOAD</p>
             </div>
         </div>
     </div>
@@ -16,6 +16,15 @@
         <div class="w-full max-w-xl bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow relative overflow-hidden">
             <div class="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-black dark:via-white to-transparent opacity-20"></div>
             
+            <div class="flex border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505]">
+                <button onclick="switchMode('bulk')" id="tab-bulk" class="flex-1 py-3 text-[10px] font-bold uppercase tracking-widest border-b-2 border-black dark:border-white text-black dark:text-white transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111]">
+                    Standard CSV
+                </button>
+                <button onclick="switchMode('walmart')" id="tab-walmart" class="flex-1 py-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">
+                    Walmart XLSX
+                </button>
+            </div>
+
             <div class="p-8 space-y-6">
                 <div class="flex justify-between items-end border-b border-gray-50 dark:border-[#151515] pb-4">
                     <div>
@@ -23,11 +32,24 @@
                         <p class="text-[9px] text-gray-500 font-mono mt-1 uppercase">Allocating Token: <span id="allocation-status" class="text-gray-400 font-bold">READY</span></p>
                     </div>
                     <div id="protocol-badge" class="px-2 py-1 bg-blue-500/5 border border-blue-500/20 text-blue-500 text-[9px] font-bold uppercase tracking-tighter">
-                        PRO-9505-ACTIVE
+                        95055-ACTIVE
                     </div>
                 </div>
 
                 <form id="purchaseForm" onsubmit="return false;" class="space-y-5">
+                    <input type="hidden" name="upload_mode" id="upload_mode" value="bulk">
+
+                    <div id="sender-section" class="space-y-2 hidden animate-in fade-in slide-in-from-top-1 duration-300">
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Select Sender Profile</label>
+                        <select name="sender_id" id="sender_id" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
+                            {% for addr in addresses %}
+                                <option value="{{ addr.id }}">{{ addr.name }} ({{ addr.street1 }})</option>
+                            {% else %}
+                                <option value="" disabled selected>NO ADDRESSES FOUND (ADD IN ADDRESS TAB)</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
                     <div class="grid grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Service Type</label>
@@ -39,32 +61,32 @@
                             <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Tracking Version</label>
                             <select name="tracking_version" onchange="updateProtocolBadge(this.value)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
                                 {% if version_status['95055'] %}
-                                <option value="95055" {% if user.default_version == '95055' %}selected{% endif %}>95055 (Standard)</option>
+                                <option value="95055" {% if user.default_version == '95055' %}selected{% endif %}>95055</option>
                                 {% endif %}
                                 
                                 {% if version_status['94888'] %}
-                                <option value="94888" {% if user.default_version == '94888' %}selected{% endif %}>94888 (Legacy)</option>
+                                <option value="94888" {% if user.default_version == '94888' %}selected{% endif %}>94888</option>
                                 {% endif %}
                                 
                                 {% if version_status['94019'] %}
-                                <option value="94019" {% if user.default_version == '94019' %}selected{% endif %}>94019 (Test)</option>
+                                <option value="94019" {% if user.default_version == '94019' %}selected{% endif %}>94019 (Beta)</option>
                                 {% endif %}
 
                                 {% if version_status['95888'] %}
-                                <option value="95888" {% if user.default_version == '95888' %}selected{% endif %}>95888 (Test)</option>
+                                <option value="95888" {% if user.default_version == '95888' %}selected{% endif %}>95888 (Beta)</option>
                                 {% endif %}
 
                                 {% if version_status['91149'] %}
-                                <option value="91149" {% if user.default_version == '91149' %}selected{% endif %}>91149 (Test)</option>
+                                <option value="91149" {% if user.default_version == '91149' %}selected{% endif %}>91149 (Beta)</option>
                                 {% endif %}
 
                                 {% if version_status['93055'] %}
-                                <option value="93055" {% if user.default_version == '93055' %}selected{% endif %}>93055 (Test)</option>
+                                <option value="93055" {% if user.default_version == '93055' %}selected{% endif %}>93055 (Beta)</option>
                                 {% endif %}
                             </select>
                         </div>
                     </div>
-                    
+
                     <div class="space-y-2">
                         <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest ml-1">Label Template</label>
                         <select name="template_choice" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-xs font-mono text-black dark:text-white uppercase outline-none focus:border-black transition-all cursor-pointer">
@@ -76,15 +98,16 @@
 
                     <div class="space-y-2">
                         <div class="flex justify-between items-center px-1">
-                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Input Manifest (.CSV)</label>
-                            <a href="/api/download/sample-csv" class="text-[9px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest hover:underline transition-all font-mono">Download_Template</a>
+                            <label id="manifest-label" class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Input Manifest (.CSV)</label>
+                            <a href="/api/download/sample-csv" id="template-link" class="text-[9px] font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest hover:underline transition-all font-mono">Download_Template</a>
                         </div>
+                        
                         <input type="file" id="csvUpload" class="hidden" accept=".csv" onchange="handleFileDisplay(this)">
                         
                         <button id="drop-zone" onclick="document.getElementById('csvUpload').click()" class="w-full py-6 bg-gray-50 dark:bg-[#050505] border-2 border-dashed border-gray-200 dark:border-[#1E1E1E] hover:border-black dark:hover:border-white text-xs font-mono font-bold uppercase text-gray-400 hover:text-black dark:hover:text-white transition-all group">
                             <span id="fileName" class="flex items-center justify-center gap-2 pointer-events-none">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                                <span>Attach Manifest File (Drag & Drop)</span>
+                                <span id="drop-text">Attach Manifest File (Drag & Drop)</span>
                             </span>
                         </button>
                     </div>
@@ -101,13 +124,94 @@
             </div>
             
             <div class="bg-gray-50 dark:bg-[#050505] p-4 border-t border-gray-200 dark:border-[#1E1E1E] text-center">
-                <p class="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Ensure addresses follow the strict CSV normalization guidelines</p>
+                <p id="footer-note" class="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Ensure addresses follow the strict CSV normalization guidelines</p>
             </div>
         </div>
     </div>
 </div>
 
 <script>
+    // --- MODE SWITCHING LOGIC ---
+    function switchMode(mode) {
+        // Update Hidden Input
+        const modeInput = document.getElementById('upload_mode');
+        if(modeInput) modeInput.value = mode;
+
+        // Toggle Tab Styles
+        const tBulk = document.getElementById('tab-bulk');
+        const tWal = document.getElementById('tab-walmart');
+        const senderSec = document.getElementById('sender-section');
+        const fInput = document.getElementById('csvUpload');
+        
+        // Active/Inactive Classes
+        const activeClasses = ['border-black', 'dark:border-white', 'text-black', 'dark:text-white'];
+        const inactiveClasses = ['text-gray-400', 'border-transparent'];
+        
+        // Elements to update
+        const uiOpMode = document.getElementById('op-mode-display');
+        const uiLabel = document.getElementById('manifest-label');
+        const uiTemplate = document.getElementById('template-link');
+        const uiDropText = document.getElementById('drop-text');
+        const uiNote = document.getElementById('footer-note');
+
+        if (mode === 'walmart') {
+            // Activate Walmart
+            tWal.classList.add(...activeClasses);
+            tWal.classList.remove(...inactiveClasses);
+            
+            // Deactivate Bulk
+            tBulk.classList.remove(...activeClasses);
+            tBulk.classList.add(...inactiveClasses);
+
+            // Show Sender Dropdown
+            senderSec.classList.remove('hidden');
+
+            // Update UI Text
+            if(uiOpMode) uiOpMode.innerText = 'WALMART_SYNC';
+            if(uiLabel) uiLabel.innerText = 'Input Manifest (.XLSX)';
+            if(uiTemplate) {
+                uiTemplate.innerText = 'Download_Walmart_Template';
+                uiTemplate.href = '#'; 
+            }
+            if(uiDropText) uiDropText.innerText = 'Attach Walmart Sheet (.XLSX)';
+            if(uiNote) uiNote.innerText = 'Ensure XLSX follows Walmart Seller Central format';
+            
+            // Update File Input - FORCE ATTRIBUTE UPDATE
+            if(fInput) {
+                fInput.setAttribute('accept', '.xlsx'); 
+                fInput.value = ""; 
+            }
+            
+        } else {
+            // Activate Bulk
+            tBulk.classList.add(...activeClasses);
+            tBulk.classList.remove(...inactiveClasses);
+            
+            // Deactivate Walmart
+            tWal.classList.remove(...activeClasses);
+            tWal.classList.add(...inactiveClasses);
+
+            // Hide Sender Dropdown
+            senderSec.classList.add('hidden');
+
+            // Update UI Text
+            if(uiOpMode) uiOpMode.innerText = 'BATCH_UPLOAD';
+            if(uiLabel) uiLabel.innerText = 'Input Manifest (.CSV)';
+            if(uiTemplate) {
+                uiTemplate.innerText = 'Download_Template';
+                uiTemplate.href = '/api/download/sample-csv';
+            }
+            if(uiDropText) uiDropText.innerText = 'Attach Manifest File (Drag & Drop)';
+            if(uiNote) uiNote.innerText = 'Ensure addresses follow the strict CSV normalization guidelines';
+
+            // Update File Input - FORCE ATTRIBUTE UPDATE
+            if(fInput) {
+                fInput.setAttribute('accept', '.csv'); 
+                fInput.value = ""; 
+            }
+        }
+    }
+
     function updateAllocationStatus(status) {
         const el = document.getElementById('allocation-status');
         el.innerText = status;
@@ -122,22 +226,73 @@
 
     function updateProtocolBadge(version) {
         const badge = document.getElementById('protocol-badge');
-        
-        // Reset classes
         badge.className = 'px-2 py-1 border text-[9px] font-bold uppercase tracking-tighter';
-        
         if (version === '94888') {
-            badge.innerText = 'PRO-9488-LEGACY';
+            badge.innerText = '94888-ACTIVE';
             badge.classList.add('bg-yellow-500/5', 'border-yellow-500/20', 'text-yellow-500');
         } 
-        else if (version === '94019' || version === '95888' || version === '91149' || version === '93055') {
-            // Group all test versions under the purple TEST badge
-            badge.innerText = 'TEST-VERSION-BETA';
+        else if (['94019', '95888', '91149', '93055'].includes(version)) {
+            badge.innerText = 'BETA-VERSION';
             badge.classList.add('bg-purple-500/5', 'border-purple-500/20', 'text-purple-500');
         } 
         else {
-            badge.innerText = 'PRO-9505-ACTIVE';
+            badge.innerText = '95055-ACTIVE';
             badge.classList.add('bg-blue-500/5', 'border-blue-500/20', 'text-blue-500');
+        }
+    }
+
+    // --- FIX: Restore UI state after purchase ---
+    async function handlePurchase() {
+        const btn = document.getElementById('confirmBtn'); 
+        const fileInput = document.getElementById('csvUpload');
+        const formData = new FormData(); 
+        formData.append('file', fileInput.files[0]);
+        formData.append('label_type', document.querySelector('[name="label_type"]').value);
+        formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
+        formData.append('template_choice', document.querySelector('[name="template_choice"]').value);
+        
+        const modeEl = document.getElementById('upload_mode');
+        if (modeEl) formData.append('upload_mode', modeEl.value);
+        
+        const senderEl = document.getElementById('sender_id');
+        if (senderEl && senderEl.value) formData.append('sender_id', senderEl.value);
+
+        const originalText = btn.innerText; btn.innerText = "PROCESSING...";
+        
+        try {
+            const res = await fetch('/process', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if(data.status === 'success') {
+                showNotification("BATCH SUBMITTED", 'queued'); 
+                loadUserData(); 
+                
+                // 1. Reset File Input
+                fileInput.value = ""; 
+                
+                // 2. Restore Button HTML (This was missing!)
+                const fSpan = document.getElementById('fileName');
+                if(fSpan) {
+                    fSpan.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg> <span id="drop-text">Attach Manifest File (Drag & Drop)</span>`;
+                    fSpan.classList.remove('text-black', 'dark:text-white', 'font-bold');
+                    fSpan.classList.add('text-gray-400'); 
+                }
+
+                // 3. Re-Trigger Mode Switch to ensure text is correct
+                const currentMode = modeEl ? modeEl.value : 'bulk';
+                switchMode(currentMode);
+
+                btn.disabled = true; 
+                btn.classList.add('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
+                btn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
+                btn.innerText = "EXECUTE";
+            } else { 
+                showNotification("ERROR: " + data.error, 'error'); 
+                btn.innerText = originalText; 
+            }
+        } catch(e) {
+            showNotification("NETWORK ERROR", 'error'); 
+            btn.innerText = originalText;
         }
     }
 
@@ -145,7 +300,6 @@
         const savedVersion = document.querySelector('select[name="tracking_version"]').value;
         updateProtocolBadge(savedVersion);
         
-        // --- DRAG AND DROP LOGIC ---
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('csvUpload');
 
@@ -155,10 +309,7 @@
                 document.body.addEventListener(eventName, preventDefaults, false);
             });
 
-            function preventDefaults(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
+            function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
 
             ['dragenter', 'dragover'].forEach(eventName => {
                 dropZone.addEventListener(eventName, highlight, false);
@@ -169,16 +320,12 @@
             });
 
             function highlight(e) {
-                // Add highlight styles (blue border/bg)
                 dropZone.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/10', 'text-blue-500');
-                // Remove default border styles
                 dropZone.classList.remove('border-gray-200', 'dark:border-[#1E1E1E]', 'text-gray-400');
             }
 
             function unhighlight(e) {
-                // Remove highlight styles
                 dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/10', 'text-blue-500');
-                // Revert to default
                 dropZone.classList.add('border-gray-200', 'dark:border-[#1E1E1E]', 'text-gray-400');
             }
 
@@ -187,13 +334,9 @@
             function handleDrop(e) {
                 const dt = e.dataTransfer;
                 const files = dt.files;
-                
                 if (files.length > 0) {
                     fileInput.files = files;
-                    // Trigger the existing display handler from dashboard.html
-                    if (typeof handleFileDisplay === 'function') {
-                        handleFileDisplay(fileInput);
-                    }
+                    if (typeof handleFileDisplay === 'function') handleFileDisplay(fileInput);
                 }
             }
         }
@@ -203,38 +346,9 @@
         updateAllocationStatus('ALLOCATED');
         if (typeof verifyData === 'function') verifyData();
     }
-    
-    window.verifyData = async function() {
-        const fileInput = document.getElementById('csvUpload'); 
-        if (!fileInput.files[0]) return; 
-        
-        const verifyBtn = document.getElementById('verifyBtn'); 
-        const originalText = verifyBtn.innerText;
-        verifyBtn.innerText = "SCANNING..."; 
-        
-        const formData = new FormData(); 
-        formData.append('file', fileInput.files[0]); 
-        
-        formData.append('label_type', document.querySelector('[name="label_type"]').value);
-        formData.append('tracking_version', document.querySelector('[name="tracking_version"]').value);
-        
-        try { 
-            const res = await fetch('/verify-csv', { method: 'POST', body: formData }); 
-            const data = await res.json(); 
-            verifyBtn.innerText = originalText;
-            if (res.ok && data.count) { 
-                showNotification(`SCAN COMPLETE: ${data.count} LABELS`, 'success'); 
-                const confirmBtn = document.getElementById('confirmBtn'); 
-                confirmBtn.disabled = false; 
-                confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-200', 'dark:bg-[#111]', 'text-gray-500');
-                confirmBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'shadow-glow');
-                confirmBtn.innerText = `EXECUTE ($${data.cost.toFixed(2)})`; 
-            } else { showNotification("ERROR: " + (data.error || "Unknown"), 'error'); } 
-        } catch (error) { showNotification("NETWORK ERROR", 'error'); verifyBtn.innerText = originalText; } 
-    };
 
     function triggerExecution() {
         updateAllocationStatus('ALLOCATED');
-        if (typeof handlePurchase === 'function') handlePurchase();
+        handlePurchase();
     }
 </script>

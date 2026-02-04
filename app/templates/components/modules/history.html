@@ -68,7 +68,8 @@
         const sVal = document.getElementById('historySearchInput') ? document.getElementById('historySearchInput').value : '';
 
         try {
-            const response = await fetch(`/api/batches?page=${histCurrentPage}&limit=10&search=${sVal}&t=${Date.now()}`);
+            // FIX: Added 'view=history' so the backend knows to include Walmart batches
+            const response = await fetch(`/api/batches?page=${histCurrentPage}&limit=10&search=${sVal}&view=history&t=${Date.now()}`);
             const result = await response.json();
             
             let rowHtml = '';
@@ -84,12 +85,19 @@
                         isRefunded = true;
                         colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
                         badgeTxt = 'REFUNDED';
-                    }
+                    } 
                     else if (batch.status === 'CONFIRMING') {
                         isProcessing = true;
-                        // Blue pulsing style
                         colorStyles = 'text-blue-500 border-blue-500/30 bg-blue-500/10 animate-pulse';
                         badgeTxt = 'CONFIRMING...';
+                    }
+                    else if (batch.status === 'AUTH_ERROR') {
+                        colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
+                        badgeTxt = 'AUTH FAILED';
+                    }
+                    else if (batch.status === 'CONFIRM_FAILED') {
+                        colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
+                        badgeTxt = 'CONFIRM FAIL';
                     }
                     else if (batch.status === 'COMPLETED' || batch.status === 'CONFIRMED') {
                         colorStyles = 'text-green-600 dark:text-green-400 border-green-500/20 bg-green-500/5';
@@ -115,32 +123,44 @@
                     }
 
                     // --- BUTTON LOGIC ---
-                    let pdfButton = '';
-                    let csvButton = '';
+                    let buttons = [];
 
                     if (isRefunded) {
-                        pdfButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
-                        csvButton = `<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`;
+                        buttons.push(`<span class="text-red-500/50 font-black uppercase text-[9px] leading-none cursor-not-allowed select-none">REVOKED</span>`);
                     }
                     else if (isProcessing) {
-                        // Shows "WAIT" spinner for both PROCESSING and CONFIRMING
-                        pdfButton = `
+                        buttons.push(`
                             <span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">
                                 <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg> 
                                 WAIT
-                            </span>`;
-                        csvButton = `<span class="text-[9px] leading-none font-mono font-bold text-gray-300 dark:text-gray-700 cursor-not-allowed select-none">CSV</span>`;
+                            </span>`);
                     } 
                     else if (batch.success_count > 0) {
-                        pdfButton = `<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`;
-                        csvButton = `<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`;
+                        // 1. PDF BUTTON
+                        buttons.push(`<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`);
+                        buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                        
+                        // 2. WALMART XLSX BUTTON (MOVED HERE)
+                        if (batch.is_walmart) {
+                            buttons.push(`<a href="/api/download/xlsx/${batch.batch_id}" class="text-green-600 hover:text-green-500 font-black uppercase text-[9px] leading-none transition-colors">XLSX</a>`);
+                            buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                        }
+
+                        // 3. CSV BUTTON
+                        buttons.push(`<a href="/api/download/csv/${batch.batch_id}" class="text-gray-500 hover:text-black dark:hover:text-white font-black uppercase text-[9px] leading-none transition-colors">CSV</a>`);
                     } 
                     else {
-                        pdfButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`;
-                        csvButton = `<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`;
+                        // Placeholders for visual consistency
+                        if (batch.is_walmart) {
+                            buttons.push(`<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">XLSX</span>`);
+                            buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                        }
+                        buttons.push(`<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">PDF</span>`);
+                        buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
+                        buttons.push(`<span class="text-gray-300 font-black uppercase text-[9px] leading-none cursor-not-allowed">CSV</span>`);
                     }
 
                     rowHtml += `
@@ -159,9 +179,7 @@
                         </td>
                         <td class="px-8 py-5 text-right font-mono">
                             <div class="flex justify-end items-center gap-3">
-                                ${pdfButton}
-                                <span class="text-gray-300 text-[9px] leading-none select-none">|</span>
-                                ${csvButton}
+                                ${buttons.join('')}
                             </div>
                         </td>
                     </tr>`;

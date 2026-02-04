@@ -80,7 +80,6 @@ class User(UserMixin):
             system_prices = dict(c.fetchall())
             
             # Determine base price (Fall back to 3.00 if admin hasn't set anything)
-            # This sets the 'Legacy' price column to whatever you set for 95055
             base_price = float(system_prices.get('ver_price_95055', '3.00'))
 
             new_key = "sk_live_" + str(uuid.uuid4()).replace('-','')[:24]
@@ -94,10 +93,8 @@ class User(UserMixin):
             user_id = c.lastrowid
             
             # --- 3. POPULATE INDIVIDUAL VERSION PRICES ---
-            # This ensures the user gets your configured $0.05 (or whatever is set) for every version immediately
             versions = ['95055', '94888', '94019', '95888', '91149', '93055']
             for ver in versions:
-                # Fetch price for this specific version from config, default to 3.00 if missing
                 p = float(system_prices.get(f"ver_price_{ver}", '3.00'))
                 c.execute("INSERT INTO user_pricing (user_id, label_type, version, price) VALUES (?, 'priority', ?, ?)", 
                           (user_id, ver, p))
@@ -159,3 +156,28 @@ class User(UserMixin):
                   (l_type, ver, tmpl, self.id))
         conn.commit()
         conn.close()
+
+class SenderAddress:
+    def __init__(self, id, user_id, name, company, street1, street2, city, state, zip, phone):
+        self.id = id
+        self.user_id = user_id
+        self.name = name
+        self.company = company
+        self.street1 = street1
+        self.street2 = street2
+        self.city = city
+        self.state = state
+        self.zip = zip
+        self.phone = phone
+
+    @staticmethod
+    def get(id):
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("SELECT * FROM sender_addresses WHERE id = ?", (id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            # DB schema order: id, user_id, name, company, phone, street1, street2, city, state, zip
+            return SenderAddress(row[0], row[1], row[2], row[3], row[5], row[6], row[7], row[8], row[9], row[4])
+        return None

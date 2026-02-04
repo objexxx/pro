@@ -6,6 +6,7 @@ import json
 import time
 import sqlite3
 import re
+import uuid
 from datetime import datetime, timedelta
 from pypdf import PdfWriter
 import pandas as pd
@@ -281,6 +282,62 @@ class LabelEngine:
         except Exception as e: 
             print(f" > [CRASH] {e}")
             return None, None
+
+    # --- BRIDGE FOR WORKER (RESTORED) ---
+    @classmethod
+    def create_label(cls, row, label_type, version, template_choice, data_folder=None):
+        # 1. Instantiate Engine
+        engine = cls()
+        
+        # 2. Handle Data Folder
+        if not data_folder:
+            try: data_folder = current_app.config['DATA_FOLDER']
+            except: return None, None, None
+
+        # 3. Load Templates
+        templates = {}
+        try:
+            if "stamps_v2" in str(template_choice):
+                base_path = os.path.join(data_folder, 'zpl_templates', 'stamps_v2.zpl')
+                heavy_path = os.path.join(data_folder, 'zpl_templates', 'stamps_v2_2digit.zpl')
+                if os.path.exists(base_path):
+                    with open(base_path, 'r', encoding='utf-8') as f: templates['base'] = f.read().strip()
+                else: templates['base'] = ""
+                if os.path.exists(heavy_path):
+                    with open(heavy_path, 'r', encoding='utf-8') as f: templates['heavy'] = f.read().strip()
+                else: templates['heavy'] = templates['base']
+            else:
+                t_name = str(template_choice)
+                if not t_name.endswith('.zpl'): t_name += ".zpl"
+                zpl_path = os.path.join(data_folder, 'zpl_templates', t_name)
+                if os.path.exists(zpl_path):
+                    with open(zpl_path, 'r', encoding='utf-8') as f: templates['default'] = f.read().strip()
+                else:
+                    return None, None, None
+        except Exception as e:
+            return None, None, None
+
+        # 4. Prepare Context
+        now = datetime.now()
+        today = now.strftime("%m/%d/%Y")
+        batch_seq_code = now.strftime('%j')
+
+        # 5. Process
+        pdf_bytes, meta = engine.process_single_label(row, version, templates, template_choice, batch_seq_code, now, today, data_folder)
+        
+        if not pdf_bytes or not meta:
+            return None, None, None
+            
+        # 6. Save Temp File
+        try:
+            temp_filename = f"worker_temp_{uuid.uuid4()}.pdf"
+            pdf_dir = os.path.join(data_folder, 'pdfs')
+            if not os.path.exists(pdf_dir): os.makedirs(pdf_dir)
+            temp_path = os.path.join(pdf_dir, temp_filename)
+            with open(temp_path, 'wb') as f: f.write(pdf_bytes)
+            return temp_path, meta['tracking'], meta['ref_id']
+        except:
+            return None, None, None
 
     def process_batch(self, df, label_type, version, batch_id, db_path, user_id, template_choice="pitney_v2", data_folder=None):
         merger = PdfWriter()

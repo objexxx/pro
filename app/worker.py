@@ -7,52 +7,76 @@ import pandas as pd
 import csv
 from datetime import datetime, timedelta
 from flask import current_app
+import PyPDF2  # Needs to be in requirements.txt
+from .services.label_engine import LabelEngine
+
+# --- GLOBAL THREAD LOCK ---
+db_lock = threading.Lock()
+
+# --- DATABASE HELPER (EXTREME PATIENCE) ---
+def safe_write(db_path, query, args=()):
+    """Thread-safe, retry-heavy database writer."""
+    with db_lock: 
+        retries = 10 
+        while retries > 0:
+            conn = None
+            try:
+                conn = sqlite3.connect(db_path, timeout=60)
+                conn.execute("PRAGMA journal_mode=WAL") 
+                conn.execute("PRAGMA synchronous=NORMAL")
+                c = conn.cursor()
+                c.execute(query, args)
+                conn.commit()
+                conn.close()
+                return True
+            except sqlite3.OperationalError as e:
+                if conn:
+                    try: 
+                        conn.close() 
+                    except: 
+                        pass
+                
+                if "locked" in str(e):
+                    time.sleep(random.uniform(0.5, 2.0)) 
+                    retries -= 1
+                else:
+                    print(f"[DB WRITE ERROR] {e}")
+                    return False
+            except Exception as e:
+                if conn:
+                    try: 
+                        conn.close() 
+                    except: 
+                        pass
+                print(f"[DB UNKNOWN ERROR] {e}")
+                return False
+        print(f"[DB FAIL] Could not write to DB after 10 attempts.")
+        return False
 
 # --- ERROR LOGGING HELPER ---
 def log_server_error(db_path, source, msg, batch_id=None):
-    try:
-        conn = sqlite3.connect(db_path, timeout=10)
-        c = conn.cursor()
-        c.execute("INSERT INTO server_errors (source, batch_id, error_msg, created_at) VALUES (?, ?, ?, ?)", 
-                  (source, batch_id, str(msg), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"[META ERROR] Failed to log error: {e}")
+    safe_write(db_path, 
+               "INSERT INTO server_errors (source, batch_id, error_msg, created_at) VALUES (?, ?, ?, ?)", 
+               (source, batch_id, str(msg), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
 
 def log_debug(message):
     print(f"[{datetime.now()}] [WORKER] {message}")
 
 def get_worker_price(db_path, user_id, label_type, version):
-    conn = sqlite3.connect(db_path)
-    c = conn.cursor()
-    c.execute("SELECT price FROM user_pricing WHERE user_id = ? AND label_type = ? AND version = ?", (user_id, label_type, version))
-    row = c.fetchone()
-    if row:
-        conn.close()
-        return float(row[0])
-    c.execute("SELECT price_per_label FROM users WHERE id = ?", (user_id,))
-    row = c.fetchone()
-    conn.close()
-    return float(row[0]) if row else 3.00
-
-def check_auto_renewals(app):
     try:
-        with app.app_context():
-            db_path = current_app.config['DB_PATH']
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-            c.execute("SELECT id, balance FROM users WHERE auto_renew = 1 AND subscription_end < ?", (now,))
-            expired = c.fetchall()
-            for uid, bal in expired:
-                if bal >= 29.99:
-                    new_end = (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-                    c.execute("UPDATE users SET balance = balance - 29.99, subscription_end = ? WHERE id = ?", (new_end, uid))
-                else:
-                    c.execute("UPDATE users SET auto_renew = 0 WHERE id = ?", (uid,))
-            conn.commit(); conn.close()
-    except: pass
+        conn = sqlite3.connect(db_path, timeout=60)
+        c = conn.cursor()
+        c.execute("SELECT price FROM user_pricing WHERE user_id = ? AND label_type = ? AND version = ?", (user_id, label_type, version))
+        row = c.fetchone()
+        if row:
+            conn.close()
+            return float(row[0])
+        c.execute("SELECT price_per_label FROM users WHERE id = ?", (user_id,))
+        row = c.fetchone()
+        conn.close()
+        return float(row[0]) if row else 3.00
+    except:
+        return 3.00
 
 def archive_and_purge(app):
     try:
@@ -60,67 +84,71 @@ def archive_and_purge(app):
             db_path = current_app.config['DB_PATH']
             cutoff_date = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
             
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            
-            c.execute("SELECT batch_id, user_id, success_count, filename FROM batches WHERE created_at < ? AND status IN ('COMPLETED', 'PARTIAL', 'FAILED')", (cutoff_date,))
-            old_batches = c.fetchall()
-            
-            if not old_batches:
-                conn.close(); return
-            
-            batch_ids = [b[0] for b in old_batches]
-            batch_placeholders = ','.join(['?'] * len(batch_ids))
-            
-            total_revenue_to_archive = 0.0
-            for bid, uid, count, fname in old_batches:
-                c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,)); res = c.fetchone(); price = res[0] if res else 3.00
-                total_revenue_to_archive += (count * price)
-            
-            c.execute("UPDATE system_config SET value = CAST((CAST(value AS REAL) + ?) AS TEXT) WHERE key = 'archived_revenue'", (total_revenue_to_archive,))
-            
-            for bid, _, _, fname in old_batches:
-                try: os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"))
-                except: pass
+            with db_lock:
+                conn = sqlite3.connect(db_path, timeout=60)
+                c = conn.cursor()
+                c.execute("SELECT batch_id, user_id, success_count, filename FROM batches WHERE created_at < ? AND status IN ('COMPLETED', 'PARTIAL', 'FAILED')", (cutoff_date,))
+                old_batches = c.fetchall()
+                if not old_batches:
+                    conn.close(); return
                 
-                try: 
-                    if fname:
-                        os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname))
-                except: pass
-            
-            c.execute(f"DELETE FROM history WHERE batch_id IN ({batch_placeholders})", batch_ids)
-            c.execute(f"DELETE FROM batches WHERE batch_id IN ({batch_placeholders})", batch_ids)
-            conn.commit(); conn.execute("VACUUM"); conn.close()
-            
-            log_debug(f"Purged {len(batch_ids)} old batches (>14 days).")
-            
+                batch_ids = [b[0] for b in old_batches]
+                batch_placeholders = ','.join(['?'] * len(batch_ids))
+                
+                for bid, _, _, fname in old_batches:
+                    try: os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs', f"{bid}.pdf"))
+                    except: pass
+                    try: 
+                        if fname: os.remove(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', fname))
+                    except: pass
+                
+                c.execute(f"DELETE FROM history WHERE batch_id IN ({batch_placeholders})", batch_ids)
+                c.execute(f"DELETE FROM batches WHERE batch_id IN ({batch_placeholders})", batch_ids)
+                conn.commit()
+                conn.close()
+                log_debug(f"Purged {len(batch_ids)} old batches.")
     except Exception as e:
         print(f"[ARCHIVE ERROR] {e}")
 
 def get_next_batch(db_path, worker_id):
-    conn = sqlite3.connect(db_path, timeout=60)
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        c = conn.cursor()
-        c.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1")
-        row = c.fetchone()
-        
-        if row:
-            batch_id = row[0]
-            c.execute("UPDATE batches SET status = 'PROCESSING' WHERE batch_id = ?", (batch_id,))
-            conn.commit(); conn.close()
-            return row
-        else:
-            conn.commit(); conn.close()
+    with db_lock:
+        try:
+            conn = sqlite3.connect(db_path, timeout=60)
+            c = conn.cursor()
+            c.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1")
+            row = c.fetchone()
+            
+            if row:
+                batch_id = row[0]
+                c.execute("UPDATE batches SET status = 'PROCESSING' WHERE batch_id = ?", (batch_id,))
+                conn.commit(); conn.close()
+                return row
+            else:
+                conn.commit(); conn.close()
+                return None
+        except Exception:
             return None
+
+def combine_pdfs(batch_id, folder, file_paths):
+    try:
+        merger = PyPDF2.PdfMerger()
+        count = 0
+        for path in file_paths:
+            if os.path.exists(path):
+                merger.append(path)
+                count += 1
+        
+        if count > 0:
+            output_path = os.path.join(folder, 'pdfs', f"{batch_id}.pdf")
+            merger.write(output_path)
+            merger.close()
+            return True
     except Exception as e:
-        try: conn.rollback(); conn.close() 
-        except: pass
-        return None
+        print(f"[WORKER] Merge Failed: {e}")
+    return False
 
 def worker_loop(app, worker_id):
     log_debug(f"Worker Thread {worker_id} Started.")
-    from .services.label_engine import LabelEngine
     
     with app.app_context():
         try:
@@ -141,25 +169,9 @@ def worker_loop(app, worker_id):
                 data_folder = current_app.config['DATA_FOLDER']
                 db_path = current_app.config['DB_PATH']
                 
-                if worker_id == 1 and int(time.time()) % 3600 < 5:
-                    archive_and_purge(app)
-                    time.sleep(5)
-                
-                conn = sqlite3.connect(db_path)
-                c = conn.cursor()
-                
-                # --- HEARTBEAT UPDATE (FIXED) ---
-                # This line ensures the admin panel sees the worker as "ONLINE"
-                now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-                c.execute("INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (now_str,))
-                conn.commit()
-                # --------------------------------
-
-                c.execute("SELECT value FROM system_config WHERE key='worker_paused'")
-                paused = c.fetchone()
-                conn.close()
-                if paused and paused[0] == '1':
-                    time.sleep(5); continue
+                # Check Pause & Heartbeat every 5 seconds
+                if int(time.time()) % 5 == 0:
+                    safe_write(db_path, "INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", (datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),))
 
             task = get_next_batch(db_path, worker_id)
 
@@ -171,44 +183,92 @@ def worker_loop(app, worker_id):
 
                 try:
                     csv_path = os.path.join(data_folder, 'uploads', fname)
-                    if not os.path.exists(csv_path): 
-                        raise Exception(f"File {fname} missing")
+                    if not os.path.exists(csv_path): raise Exception(f"File {fname} missing")
 
                     df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
-                    engine = LabelEngine()
+                    generated_files = []
+                    success = 0
                     
-                    pdf_bytes, success = engine.process_batch(
-                        df, ltype, version, bid, db_path, uid, template, data_folder=data_folder
-                    )
+                    history_buffer = [] 
+                    buffer_size = 5 
+                    
+                    for index, row in df.iterrows():
+                        try:
+                            row_data = row.to_dict()
+                            pdf_path, tracking, ref = LabelEngine.create_label(row_data, ltype, version, template, data_folder=data_folder)
+                            
+                            if tracking and pdf_path:
+                                success += 1
+                                generated_files.append(pdf_path)
+                                
+                                history_buffer.append((
+                                    bid, uid, ref, tracking, 'SUCCESS', 
+                                    row_data.get('FromName',''), row_data.get('ToName',''), row_data.get('Street1To',''), 
+                                    version, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), row_data.get('Ref02', '')
+                                ))
+                                
+                            else:
+                                print(f"[WORKER] Row {index+1} Skipped (No PDF returned)")
+                                
+                        except Exception as row_err:
+                            print(f"[WORKER] Row {index+1} Failed: {row_err}")
+                            
+                        # --- FLUSH BUFFER ---
+                        if len(history_buffer) >= buffer_size:
+                            with db_lock:
+                                try:
+                                    conn = sqlite3.connect(db_path, timeout=60)
+                                    c = conn.cursor()
+                                    c.executemany("""
+                                        INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """, history_buffer)
+                                    c.execute("UPDATE batches SET success_count = ? WHERE batch_id = ?", (success, bid))
+                                    conn.commit()
+                                    conn.close()
+                                    history_buffer = [] 
+                                except Exception as e:
+                                    print(f"[DB FLUSH FAIL] {e}")
 
-                    if success > 0 and pdf_bytes:
-                        with open(os.path.join(data_folder, 'pdfs', f"{bid}.pdf"), 'wb') as f: f.write(pdf_bytes)
+                    # --- FLUSH REMAINING ---
+                    if history_buffer:
+                        safe_write(db_path, "UPDATE batches SET success_count = ? WHERE batch_id = ?", (success, bid))
+                        with db_lock:
+                            try:
+                                conn = sqlite3.connect(db_path, timeout=60)
+                                c = conn.cursor()
+                                c.executemany("""
+                                    INSERT INTO history (batch_id, user_id, ref_id, tracking, status, from_name, to_name, address_to, version, created_at, ref02)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, history_buffer)
+                                conn.commit(); conn.close()
+                            except: pass
+
+                    if generated_files:
+                        combine_pdfs(bid, data_folder, generated_files)
+                        for f in generated_files:
+                            try: os.remove(f)
+                            except: pass
 
                     status = 'COMPLETED'
                     if success == 0: status = 'FAILED'
                     elif success < count: status = 'PARTIAL'
 
-                    conn = sqlite3.connect(db_path, timeout=60)
-                    c = conn.cursor()
-                    failed = count - success
-                    if failed > 0:
-                        refund = failed * price
-                        c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
+                    failed_count = count - success
+                    
+                    if failed_count > 0:
+                        refund = failed_count * price
+                        safe_write(db_path, "UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
                         if success == 0:
                             log_server_error(db_path, f"Worker-{worker_id}", f"Batch {bid} Failed completely. Refunded ${refund}", bid)
 
-                    c.execute("UPDATE batches SET status = ?, success_count = ? WHERE batch_id = ?", (status, success, bid))
-                    conn.commit(); conn.close()
+                    safe_write(db_path, "UPDATE batches SET status = ?, success_count = ? WHERE batch_id = ?", (status, success, bid))
                     
                 except Exception as e:
                     log_server_error(db_path, f"Worker-{worker_id}", f"CRASH: {str(e)}", bid)
-                    
-                    conn = sqlite3.connect(db_path, timeout=60)
-                    c = conn.cursor()
                     refund = count * price
-                    c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
-                    c.execute("UPDATE batches SET status = 'FAILED', success_count = 0 WHERE batch_id = ?", (bid,))
-                    conn.commit(); conn.close()
+                    safe_write(db_path, "UPDATE users SET balance = balance + ? WHERE id = ?", (refund, uid))
+                    safe_write(db_path, "UPDATE batches SET status = 'FAILED', success_count = 0 WHERE batch_id = ?", (bid,))
             else:
                 time.sleep(1) 
         

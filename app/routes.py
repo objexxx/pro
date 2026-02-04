@@ -11,13 +11,13 @@ import time
 import requests
 import json
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, request, send_from_directory, jsonify, redirect, url_for, current_app, Response
+from flask import Blueprint, render_template, request, send_from_directory, jsonify, redirect, url_for, current_app, Response, send_file
 from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from .models import User, get_db
+from .models import User, get_db, SenderAddress
 from .extensions import limiter
-from .services.parser import OrderParser
+from .services import parser 
 from .services.label_engine import LabelEngine
 from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf, validate_session
 
@@ -42,12 +42,7 @@ def log_debug(message):
 # --- HELPER: DATAFRAME ---
 def normalize_dataframe(df):
     df.columns = [str(c).strip() for c in df.columns]
-    current_headers = list(df.columns)
     
-    if current_headers != STRICT_HEADERS:
-        log_debug(f"Header Mismatch. Got: {current_headers}")
-        return None, "Format Error: Please use the updated 'Download Format' template."
-
     if 'No' in df.columns:
         if df['No'].isnull().any() or (df['No'] == '').any():
             return None, "Row Error: Missing Order Number in 'No' column."
@@ -186,7 +181,13 @@ def dashboard_root(): return redirect(url_for('main.purchase'))
 @main_bp.route('/purchase')
 @login_required
 def purchase(): 
-    return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions())
+    # [WALMART] Added addresses for dropdown
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
+    rows = c.fetchall()
+    conn.close()
+    addrs = [{"id": r[0], "name": r[2], "street1": r[5]} for r in rows]
+    return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions(), addresses=addrs)
 
 @main_bp.route('/history')
 @login_required
@@ -273,20 +274,45 @@ def save_defaults():
 def api_batches():
     page = int(request.args.get('page', 1)); limit = 10; offset = (page-1)*limit
     search = request.args.get('search', '').strip(); sort_by = request.args.get('sort', 'recent')
+    view = request.args.get('view', '') 
+    
     conn = get_db(); c = conn.cursor()
-    query = "SELECT * FROM batches WHERE user_id = ?"; params = [current_user.id]
+    
+    if view == 'history':
+        query = "SELECT * FROM batches WHERE user_id = ?"
+    else:
+        query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%'"
+        
+    params = [current_user.id]
+    
     if search: query += " AND (batch_id LIKE ? OR filename LIKE ?)"; params.extend([f"%{search}%", f"%{search}%"])
     query += " ORDER BY created_at ASC" if sort_by == 'oldest' else " ORDER BY count DESC" if sort_by == 'high' else " ORDER BY created_at DESC"
+    
     c.execute(query.replace("SELECT *", "SELECT COUNT(*)"), params); total_items = c.fetchone()[0]
     query += " LIMIT ? OFFSET ?"; params.extend([limit, offset])
     c.execute(query, params); rows = c.fetchall(); conn.close()
+    
     data = []
     for r in rows:
         b_id=r[0]; est_date=to_est(r[9]); is_exp=False
         try: 
             if (datetime.utcnow() - datetime.strptime(r[9], "%Y-%m-%d %H:%M:%S")).days >= 7: is_exp = True
         except: pass
-        data.append({"batch_id": b_id, "batch_name": r[2].split('_',1)[1] if '_' in r[2] else r[2], "count": r[3], "success_count": r[4], "status": r[5], "date": est_date, "is_expired": is_exp})
+        
+        filename_val = r[2]
+        is_walmart_batch = filename_val.startswith("WALMART_")
+        clean_display_name = filename_val.split('_',1)[1] if '_' in filename_val else filename_val
+        
+        data.append({
+            "batch_id": b_id, 
+            "batch_name": clean_display_name, 
+            "count": r[3], 
+            "success_count": r[4], 
+            "status": r[5], 
+            "date": est_date, 
+            "is_expired": is_exp,
+            "is_walmart": is_walmart_batch
+        })
     return jsonify({"data": data, "pagination": {"current_page": page, "total_pages": math.ceil(total_items/limit)}})
 
 @main_bp.route('/api/stats')
@@ -309,28 +335,72 @@ def process():
     file = request.files['file']
     if file.filename == '': return jsonify({"error": "No selected file"}), 400
     
+    upload_mode = request.form.get('upload_mode', 'bulk') # 'bulk' or 'walmart'
     req_version = request.form.get('tracking_version')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
 
-    log_debug(f"Processing Upload: {file.filename}")
-
-    try:
-        file.stream.seek(0)
-        df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
-    except Exception as e:
-        log_debug(f"CSV Read Fail: {e}")
-        return jsonify({"error": "Could not read CSV file. Please ensure it is a valid CSV format."}), 400
-
-    df, error_msg = normalize_dataframe(df)
-    if error_msg: return jsonify({"error": error_msg}), 400
-    
+    log_debug(f"Processing Upload: {file.filename} Mode: {upload_mode}")
     price = get_price(current_user.id, request.form.get('label_type'), req_version, current_user.price_per_label)
+
+    # --- WALMART LOGIC ---
+    if upload_mode == 'walmart':
+        sender_id = request.form.get('sender_id')
+        if not sender_id: return jsonify({"error": "Sender Profile Required"}), 400
+        sender = SenderAddress.get(sender_id)
+        if not sender or sender.user_id != current_user.id: return jsonify({"error": "Invalid Sender"}), 400
+        
+        data, count, _ = parser.parse_walmart_xlsx(file, sender)
+        if count == 0: return jsonify({"error": "No valid rows found in XLSX"}), 400
+        
+        df = pd.DataFrame(data)
+        # Rename keys to CSV Headers
+        mapping = {
+            'to_name': 'ToName', 'to_phone': 'PhoneTo', 'to_street1': 'Street1To', 'to_street2': 'Street2To', 
+            'to_city': 'CityTo', 'to_state': 'StateTo', 'to_zip': 'ZipTo',
+            'from_name': 'FromName', 'from_phone': 'PhoneFrom', 'from_street1': 'Street1From', 
+            'from_company': 'CompanyFrom', 'from_street2': 'Street2From', 'from_city': 'CityFrom', 
+            'from_state': 'StateFrom', 'from_zip': 'PostalCodeFrom',
+            'weight': 'Weight', 'reference': 'Description'
+        }
+        df.rename(columns=mapping, inplace=True)
+        
+        df['No'] = range(1, len(df) + 1)
+        df['Length'] = 10; df['Width'] = 6; df['Height'] = 4
+        
+        # Explicitly CLEAR Ref01 and Ref02 from being mapped incorrectly
+        # Ref02 is now handled directly from 'Ref02' key in data dict if present
+        # but to be safe, we just let pandas handle it since it's already in 'data'
+        
+        df['Contains Hazard'] = 'False'
+        df['Shipment Date'] = datetime.now().strftime("%m/%d/%Y")
+        
+        # Ensure only strict headers are present/ordered
+        for col in STRICT_HEADERS:
+            if col not in df.columns: df[col] = ''
+        df = df[STRICT_HEADERS]
+        
+        file_prefix = "WALMART_"
+        # Save Original XLSX for history download
+        file.stream.seek(0)
+        
+    else:
+        # --- NORMAL CSV LOGIC ---
+        try:
+            file.stream.seek(0)
+            df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
+        except Exception as e:
+            log_debug(f"CSV Read Fail: {e}")
+            return jsonify({"error": "Could not read CSV file. Please ensure it is a valid CSV format."}), 400
+
+        df, error_msg = normalize_dataframe(df)
+        if error_msg: return jsonify({"error": error_msg}), 400
+        file_prefix = ""
+
     cost = len(df) * price
     if not current_user.update_balance(-cost): return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
     
     try:
-        # Collision Check for Batch ID
         batch_id = None
         for _ in range(10): 
             temp_id = str(random.randint(100000, 999999))
@@ -343,12 +413,26 @@ def process():
             current_user.update_balance(cost) 
             return jsonify({"error": "System Busy: Could not allocate Batch ID. Please try again."}), 500
 
-        filename = f"{batch_id}_{secure_filename(file.filename)}"
-        df.to_csv(os.path.join(current_app.config['DATA_FOLDER'], 'uploads', filename), index=False)
+        # Create Filename
+        clean_name = secure_filename(file.filename)
+        if not clean_name: clean_name = "upload.csv"
+        # If it was XLSX, force .csv extension for the worker file
+        if clean_name.lower().endswith('.xlsx'): clean_name = clean_name[:-5] + ".csv"
+        
+        final_filename = f"{file_prefix}{batch_id}_{clean_name}"
+        save_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', final_filename)
+        df.to_csv(save_path, index=False)
+        
+        # Save Original XLSX if Walmart
+        if upload_mode == 'walmart':
+            orig_name = f"{file_prefix}{batch_id}_ORIG.xlsx"
+            orig_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', orig_name)
+            file.stream.seek(0)
+            file.save(orig_path)
         
         conn = get_db(); c = conn.cursor()
         c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                  (batch_id, current_user.id, filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
+                  (batch_id, current_user.id, final_filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
         conn.commit(); conn.close()
         log_debug(f"Batch {batch_id} Queued Successfully")
         return jsonify({"status": "success", "batch_id": batch_id})
@@ -362,20 +446,90 @@ def process():
 def verify_csv():
     if 'file' not in request.files: return jsonify({"error": "No file uploaded"}), 400
     file = request.files['file']
-    try: 
-        file.stream.seek(0)
-        df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
-    except Exception as e: return jsonify({"error": "Invalid CSV Format"}), 400
-    df, error_msg = normalize_dataframe(df)
-    if error_msg: return jsonify({"error": error_msg}), 400
-    
+    upload_mode = request.form.get('upload_mode', 'bulk')
     req_version = request.form.get('tracking_version', '95055')
-    if not is_version_enabled(req_version):
-        return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
+    if not is_version_enabled(req_version): return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
+    
+    count = 0
+    if upload_mode == 'walmart':
+        sender_id = request.form.get('sender_id')
+        if not sender_id: return jsonify({"error": "Sender Profile Required"}), 400
+        sender = SenderAddress.get(sender_id)
+        if not sender or sender.user_id != current_user.id: return jsonify({"error": "Invalid Sender"}), 400
+        _, count, _ = parser.parse_walmart_xlsx(file, sender)
+        if count == 0: return jsonify({"error": "No valid rows found in XLSX"}), 400
+    else:
+        try: 
+            file.stream.seek(0)
+            df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
+        except Exception as e: return jsonify({"error": "Invalid CSV Format"}), 400
+        df, error_msg = normalize_dataframe(df)
+        if error_msg: return jsonify({"error": error_msg}), 400
+        count = len(df)
 
     label_type = request.form.get('label_type', 'priority')
     price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
-    return jsonify({"count": len(df), "cost": len(df) * price})
+    return jsonify({"count": count, "cost": count * price})
+
+# --- UPDATED: WALMART XLSX EXPORT ---
+@main_bp.route('/api/download/xlsx/<batch_id>')
+@login_required
+def download_xlsx(batch_id):
+    # 1. Verify Ownership
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
+    if not batch_row: conn.close(); return jsonify({"error": "UNAUTHORIZED"}), 403
+    if not batch_row[0].startswith("WALMART_"): conn.close(); return jsonify({"error": "NOT A WALMART BATCH"}), 400
+    
+    # 2. Get Tracking Data (Map Order# -> Tracking)
+    c.execute("SELECT ref02, tracking FROM history WHERE batch_id = ? AND status = 'SUCCESS'", (batch_id,))
+    tracking_map = {str(row[0]).strip(): row[1] for row in c.fetchall()}
+    conn.close()
+
+    # 3. Load Original Excel
+    orig_name = f"WALMART_{batch_id}_ORIG.xlsx"
+    path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', orig_name)
+    if not os.path.exists(path): return jsonify({"error": "ORIGINAL FILE NOT FOUND"}), 404
+
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path)
+        sheet = wb.active
+
+        # 4. Iterate and Fill
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=False), start=2):
+            try:
+                order_num_cell = row[1].value # Column B
+                qty_cell = row[24].value      # Column Y
+
+                order_id = str(order_num_cell).strip()
+                if order_id.endswith('.0'): order_id = order_id[:-2]
+
+                tracking = tracking_map.get(order_id)
+
+                if tracking:
+                    # AN (40) -> Update Status
+                    sheet.cell(row=row_idx, column=40).value = "Ship"
+                    # AO (41) -> Update Qty
+                    sheet.cell(row=row_idx, column=41).value = qty_cell
+                    # AP (42) -> Update Carrier
+                    sheet.cell(row=row_idx, column=42).value = "USPS"
+                    # AQ (43) -> Tracking Number
+                    sheet.cell(row=row_idx, column=43).value = tracking
+                    # AR (44) -> Tracking URL
+                    sheet.cell(row=row_idx, column=44).value = "www.usps.com"
+            except Exception:
+                continue
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        return send_file(output, as_attachment=True, download_name=f"Walmart_Fulfilled_{batch_id}.xlsx", mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    except Exception as e:
+        print(f"XLSX Gen Error: {e}")
+        return jsonify({"error": "FAILED TO GENERATE FILE"}), 500
 
 # --- OXAPAY: VERIFY HELPER (FIXED) ---
 def verify_oxapay_payment(track_id):
@@ -389,11 +543,9 @@ def verify_oxapay_payment(track_id):
         r = requests.post(url, json=payload, timeout=10)
         data = r.json()
         
-        # --- SECURE CHECK: Return True ONLY if confirmed paid by Gateway ---
         if data.get('result') == 100:
             status = data.get('status', '').lower()
             if status in ['paid', 'complete']: 
-                # FIX: Use 'amount' (The original requested USD value)
                 usd_val = float(data.get('amount', 0))
                 return True, usd_val, "Paid"
             else:
@@ -431,12 +583,10 @@ def manual_check_deposit(txn_id):
         conn.close()
         return jsonify({"status": "success", "message": "Already Paid"})
     
-    # --- FIX: USE VERIFIED AMOUNT, IGNORE DB/ID AMOUNT ---
     is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
     
     if is_valid and paid_amount > 0:
         current_user.update_balance(paid_amount)
-        # Update row to match what was actually paid
         c.execute("UPDATE deposit_history SET status='PAID', amount=? WHERE id=?", (paid_amount, row[0]))
         conn.commit()
         conn.close()
@@ -476,8 +626,7 @@ def deposit_webhook():
     try:
         data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
         
-        if status in ['paid', 'complete']: # Only credit on explicit success
-            # --- FIX: Verify amount with Gateway. Do NOT trust ID. ---
+        if status in ['paid', 'complete']: 
             is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
             
             if is_valid and verified_amount > 0:
@@ -492,7 +641,7 @@ def deposit_webhook():
                         
                         if existing:
                             if existing[1] != 'PAID':
-                                user.update_balance(verified_amount) # Use VERIFIED Amount
+                                user.update_balance(verified_amount) 
                                 c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?", 
                                           (data.get('currency', 'USDT'), verified_amount, existing[0]))
                                 conn.commit()
@@ -514,7 +663,6 @@ def deposit_webhook():
     
     return jsonify({"status": "ok"}), 200
 
-# --- ADDED: PUBLIC CONFIG ROUTE TO FIX 404 ---
 @main_bp.route('/api/automation/public_config')
 @login_required
 def public_automation_config():
@@ -653,53 +801,45 @@ def delete_all_user_addresses():
     c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,)); conn.commit(); conn.close()
     return jsonify({"status":"success"})
 
-# --- NEW: AUTOMATION SUBSCRIPTION PURCHASE (WITH LEDGER TRACKING) ---
 @main_bp.route('/api/automation/purchase', methods=['POST'])
 @login_required
 def buy_automation_license():
     data = request.json
-    plan = data.get('plan') # 'monthly' or 'lifetime'
+    plan = data.get('plan') 
     sys_config = get_system_config()
 
-    # Determine Price
     if plan == 'lifetime':
         cost = float(sys_config.get('automation_price_lifetime', 499.00))
-        days = 36500 # 100 years
+        days = 36500 
     else:
         cost = float(sys_config.get('automation_price_monthly', 29.99))
         days = 30
 
-    # Check Balance (Using User Balance, NOT Oxapay)
     if current_user.balance < cost:
         return jsonify({'error': 'INSUFFICIENT BALANCE'}), 400
 
-    # Deduct Balance
     if not current_user.update_balance(-cost):
         return jsonify({'error': 'TRANSACTION FAILED'}), 500
 
-    # Activate Subscription in Database
     try:
         conn = get_db()
         c = conn.cursor()
         expiry = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE users SET subscription_end = ?, is_subscribed = 1 WHERE id = ?", (expiry, current_user.id))
         
-        # --- NEW: Record Revenue in Ledger so Admin Panel sees it ---
         try:
             c.execute("INSERT INTO revenue_ledger (user_id, amount, description, type, created_at) VALUES (?, ?, ?, ?, ?)",
                       (current_user.id, cost, f"Subscription: {plan.upper()}", "SUBSCRIPTION", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
         except Exception as led_err:
             print(f"[LEDGER ERROR] {led_err}")
 
-        # Add Notification
         msg = f"PURCHASE SUCCESSFUL: {plan.upper()} ACCESS ACTIVATED"
         try:
             c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)", 
                       (current_user.id, msg, 'SUCCESS', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
         except:
-            pass # Ignore if table is missing to prevent crash
+            pass 
 
-        # Update Slot Usage
         slot_key = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'
         c.execute("UPDATE system_config SET value = CAST(value AS INTEGER) + 1 WHERE key = ?", (slot_key,))
 

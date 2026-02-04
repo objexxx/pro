@@ -3,6 +3,7 @@ import io
 import zipfile
 import json
 import re
+import pandas as pd
 from datetime import datetime
 
 # --- SMART STATE MAPPING ---
@@ -188,3 +189,97 @@ class OrderParser:
 
         except Exception as e:
             return None, str(e)
+
+# ==========================================
+#   NEW FUNCTIONS FOR BULK / WALMART
+# ==========================================
+
+def parse_walmart_xlsx(file_stream, sender_profile):
+    try:
+        # Load the XLSX file
+        xls = pd.ExcelFile(file_stream)
+        target_sheet = None
+        for sheet_name in xls.sheet_names:
+            if "po details" in sheet_name.lower():
+                target_sheet = sheet_name
+                break
+        
+        if not target_sheet:
+            target_sheet = xls.sheet_names[0]
+
+        df = pd.read_excel(xls, sheet_name=target_sheet)
+        
+        # Validation
+        if len(df.columns) <= 25:
+             print("Walmart XLSX: Not enough columns found.")
+             return [], 0, 0.0
+
+        # Sort by SKU (Column Z / Index 25)
+        sku_col_name = df.columns[25] 
+        df = df.sort_values(by=sku_col_name)
+        
+        data = []
+        
+        for index, row in df.iterrows():
+            try:
+                # --- 1. GHOST ROW KILLER ---
+                raw_name = str(row.iloc[5]).strip()
+                raw_street = str(row.iloc[8]).strip()
+                
+                # Skip empty rows
+                if not raw_name or raw_name.lower() == 'nan' or not raw_street or raw_street.lower() == 'nan':
+                    continue 
+
+                # --- 2. QUANTITY LOGIC (Column Y / Index 24) ---
+                try:
+                    raw_qty = row.iloc[24]
+                    qty = int(raw_qty) if pd.notna(raw_qty) else 1
+                except:
+                    qty = 1
+                
+                if qty < 1: qty = 1
+
+                # --- 3. ZIP CODE FIX ---
+                raw_zip = str(row.iloc[13]).strip()
+                if raw_zip.endswith('.0'): raw_zip = raw_zip[:-2]
+                final_zip = raw_zip.zfill(5)
+
+                # --- 4. ORDER ID FIX (Column B / Index 1) ---
+                # We need this ID to map tracking numbers back to the Excel file later
+                order_number = str(row.iloc[1]).strip()
+                if order_number.endswith('.0'): order_number = order_number[:-2]
+
+                # --- 5. MAP DATA ---
+                entry = {
+                    'to_name': raw_name,
+                    'to_phone': str(row.iloc[7]).strip() if pd.notna(row.iloc[7]) else "",
+                    'to_street1': raw_street,
+                    'to_street2': str(row.iloc[9]).strip() if pd.notna(row.iloc[9]) else "",
+                    'to_city': str(row.iloc[11]).strip(),
+                    'to_state': str(row.iloc[12]).strip(),
+                    'to_zip': final_zip,
+                    'to_country': 'US',
+                    'weight': float(qty) * 1.0,  # 1 lb per item
+                    'Ref01': str(row.iloc[25]).strip(), # SKU
+                    'Ref02': order_number,              # WALMART ORDER NUMBER (Saved to DB)
+                    'from_name': sender_profile.name,
+                    'from_company': sender_profile.company,
+                    'from_phone': sender_profile.phone,
+                    'from_street1': sender_profile.street1,
+                    'from_street2': sender_profile.street2,
+                    'from_city': sender_profile.city,
+                    'from_state': sender_profile.state,
+                    'from_zip': sender_profile.zip
+                }
+                
+                data.append(entry)
+
+            except Exception as e:
+                print(f"Skipping row {index}: {e}")
+                continue
+        
+        return data, len(data), 0.0
+        
+    except Exception as e:
+        print(f"Walmart Parsing Error: {e}")
+        return [], 0, 0.0
