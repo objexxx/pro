@@ -10,7 +10,8 @@ def get_db():
 class User(UserMixin):
     def __init__(self, id, username, email, balance, price_per_label, is_admin, is_banned, api_key, 
                  subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, 
-                 inventory_json, default_label_type, default_version, default_template):
+                 inventory_json, default_label_type, default_version, default_template, 
+                 is_verified=False, otp_code=None, otp_created_at=None):
         self.id = id
         self.username = username
         self.email = email
@@ -27,10 +28,23 @@ class User(UserMixin):
         self.auth_file_path = auth_file_path
         self.inventory_json = inventory_json
         
-        # New Defaults
+        # Defaults
         self.default_label_type = default_label_type or 'priority'
         self.default_version = default_version or '95055'
         self.default_template = default_template or 'pitney_v2'
+
+        # 2FA Fields
+        self.is_verified = bool(is_verified)
+        self.otp_code = otp_code
+        
+        # Handle OTP Timestamp
+        if otp_created_at and isinstance(otp_created_at, str):
+            try:
+                self.otp_created_at = datetime.strptime(otp_created_at, "%Y-%m-%d %H:%M:%S")
+            except:
+                self.otp_created_at = None
+        else:
+            self.otp_created_at = otp_created_at
 
     @property
     def is_subscribed(self):
@@ -44,55 +58,66 @@ class User(UserMixin):
     def get(user_id):
         conn = get_db()
         c = conn.cursor()
-        c.execute("""
-            SELECT id, username, email, balance, price_per_label, is_admin, is_banned, api_key, 
-                   subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, 
-                   inventory_json, default_label_type, default_version, default_template 
-            FROM users WHERE id = ?
-        """, (user_id,))
-        data = c.fetchone()
-        conn.close()
-        if data: return User(*data)
-        return None
+        try:
+            c.execute("""
+                SELECT id, username, email, balance, price_per_label, is_admin, is_banned, api_key, 
+                       subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, auth_file_path, 
+                       inventory_json, default_label_type, default_version, default_template,
+                       is_verified, otp_code, otp_created_at
+                FROM users WHERE id = ?
+            """, (user_id,))
+            data = c.fetchone()
+            conn.close()
+            if data: return User(*data)
+            return None
+        except Exception as e:
+            print(f"[DB WARN] Schema mismatch in get(): {e}")
+            conn.close()
+            return None
 
     @staticmethod
     def get_by_username(username):
         conn = get_db()
         c = conn.cursor()
-        # Note: This query returns raw tuple including password_hash, which is handled in login route
-        c.execute("""
-            SELECT id, username, email, password_hash, balance, price_per_label, is_admin, is_banned, 
-                   api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, 
-                   auth_file_path, inventory_json, default_label_type, default_version, default_template 
-            FROM users WHERE username = ?
-        """, (username,))
-        data = c.fetchone()
-        conn.close()
-        return data
+        try:
+            c.execute("""
+                SELECT id, username, email, password_hash, balance, price_per_label, is_admin, is_banned, 
+                       api_key, subscription_end, auto_renew, auth_cookies, auth_csrf, auth_url, 
+                       auth_file_path, inventory_json, default_label_type, default_version, default_template,
+                       is_verified, otp_code, otp_created_at
+                FROM users WHERE username = ?
+            """, (username,))
+            data = c.fetchone()
+            conn.close()
+            return data
+        except:
+            conn.close()
+            return None
 
     @staticmethod
     def create(username, email, password_hash):
         conn = get_db()
         c = conn.cursor()
         try:
-            # --- 1. FETCH CURRENT ADMIN PRICES ---
+            # --- 1. FETCH SYSTEM PRICES ---
             c.execute("SELECT key, value FROM system_config WHERE key LIKE 'ver_price_%'")
             system_prices = dict(c.fetchall())
-            
-            # Determine base price (Fall back to 3.00 if admin hasn't set anything)
             base_price = float(system_prices.get('ver_price_95055', '3.00'))
 
             new_key = "sk_live_" + str(uuid.uuid4()).replace('-','')[:24]
             now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             created_date = datetime.utcnow().strftime("%Y-%m-%d")
 
-            # --- 2. INSERT USER ---
-            c.execute("INSERT INTO users (username, email, password_hash, price_per_label, api_key, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                      (username, email, password_hash, base_price, new_key, created_date))
+            # --- 2. INSERT USER (UNVERIFIED) ---
+            # is_verified = 0 (False) by default
+            c.execute("""
+                INSERT INTO users (username, email, password_hash, price_per_label, api_key, created_at, is_verified) 
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+            """, (username, email, password_hash, base_price, new_key, created_date))
             
             user_id = c.lastrowid
             
-            # --- 3. POPULATE INDIVIDUAL VERSION PRICES ---
+            # --- 3. SET VERSION PRICES ---
             versions = ['95055', '94888', '94019', '95888', '91149', '93055']
             for ver in versions:
                 p = float(system_prices.get(f"ver_price_{ver}", '3.00'))
@@ -101,13 +126,16 @@ class User(UserMixin):
 
             # --- 4. AUDIT LOG ---
             c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
-                      (0, 'NEW_USER', f"New Registration: {username} ({email}) - Base Price: ${base_price}", now_ts))
+                      (0, 'NEW_USER', f"New Registration: {username} ({email})", now_ts))
             
             conn.commit()
-            return True
+            
+            # Return new user
+            return User.get(user_id)
+            
         except Exception as e:
             print(f"User Create Error: {e}")
-            return False
+            return None
         finally: conn.close()
 
     def update_balance(self, amount):
@@ -178,6 +206,5 @@ class SenderAddress:
         row = c.fetchone()
         conn.close()
         if row:
-            # DB schema order: id, user_id, name, company, phone, street1, street2, city, state, zip
             return SenderAddress(row[0], row[1], row[2], row[3], row[5], row[6], row[7], row[8], row[9], row[4])
         return None

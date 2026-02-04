@@ -10,13 +10,15 @@ import threading
 import time
 import requests
 import json
+import string
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, send_from_directory, jsonify, redirect, url_for, current_app, Response, send_file
 from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from flask_mail import Message # NEW: For Email
 from .models import User, get_db, SenderAddress
-from .extensions import limiter
+from .extensions import limiter, mail # NEW: Added mail
 from .services import parser 
 from .services.label_engine import LabelEngine
 from .services.amazon_confirmer import run_confirmation, parse_cookies_and_csrf, validate_session
@@ -36,7 +38,6 @@ OXAPAY_KEY = os.getenv('OXAPAY_KEY')
 ACTIVE_CONFIRMATIONS = set() 
 
 # --- SECURITY LOCKS ---
-# These prevent race conditions (e.g. Postman spamming requests to bypass balance checks)
 processing_lock = threading.Lock()
 address_lock = threading.Lock()
 
@@ -50,6 +51,27 @@ def get_db_conn():
     conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
+
+# --- HELPER: SEND OTP EMAIL ---
+def send_otp_email(user):
+    otp = ''.join(random.choices(string.digits, k=6)) # Generate 6 digit code
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    # Save OTP to DB
+    c.execute("UPDATE users SET otp_code = ?, otp_created_at = ? WHERE id = ?", 
+              (otp, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), user.id))
+    conn.commit()
+    conn.close()
+
+    try:
+        msg = Message(f"Verification Code: {otp}", recipients=[user.email])
+        msg.body = f"Your verification code is: {otp}\n\nThis code expires in 10 minutes."
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"Email Error: {e}")
+        return False
 
 # --- HELPER: DATAFRAME ---
 def normalize_dataframe(df):
@@ -154,7 +176,21 @@ def login():
         remember = True if request.form.get('remember') else False
         
         user_data = User.get_by_username(username)
+        
         if user_data and check_password_hash(user_data[3], password):
+            # NEW: Check if verified
+            conn = get_db_conn()
+            c = conn.cursor()
+            c.execute("SELECT is_verified, email FROM users WHERE id = ?", (user_data[0],))
+            res = c.fetchone()
+            conn.close()
+            
+            # If is_verified is 0 or NULL
+            if not res or not res[0]:
+                user_obj = User.get(user_data[0])
+                send_otp_email(user_obj) # Resend OTP
+                return render_template('verify.html', email=res[1], error="Unverified Device. Code sent.")
+
             user = User.get(user_data[0]) 
             login_user(user, remember=remember)
             
@@ -173,13 +209,53 @@ def login():
     return render_template('login.html')
 
 @main_bp.route('/register', methods=['GET', 'POST'])
+@limiter.limit("5 per minute") # Global limit to stop spam
 def register():
     if request.method == 'POST':
         username = request.form['username']; email = request.form['email']; password = request.form['password']
         hashed = generate_password_hash(password)
-        if User.create(username, email, hashed): return redirect(url_for('main.login'))
-        else: return render_template('login.html', mode="register", error="USERNAME TAKEN")
+        
+        # 1. Create User (Unverified by default)
+        user = User.create(username, email, hashed)
+        if user:
+            # 2. Send 2FA Code
+            if send_otp_email(user):
+                return render_template('verify.html', email=email, message="Code sent! Check your inbox.")
+            else:
+                return render_template('login.html', mode="register", error="EMAIL FAILED")
+        else: 
+            return render_template('login.html', mode="register", error="USERNAME/EMAIL TAKEN")
     return render_template('login.html', mode="register")
+
+@main_bp.route('/verify', methods=['POST'])
+@limiter.limit("10 per minute")
+def verify_account():
+    email = request.form['email']
+    code = request.form['code']
+    
+    # We must fetch manually because User.get_by_username doesn't expose fields easily via ORM
+    conn = get_db_conn(); c = conn.cursor()
+    c.execute("SELECT id, otp_code, otp_created_at, is_verified FROM users WHERE email = ?", (email,))
+    row = c.fetchone()
+    conn.close()
+    
+    if not row: return render_template('verify.html', error="User not found")
+    
+    user_id, db_code, db_time, is_ver = row
+    
+    if is_ver: return redirect(url_for('main.login'))
+    
+    # Check Code
+    if str(db_code) == str(code):
+        conn = get_db_conn(); c = conn.cursor()
+        c.execute("UPDATE users SET is_verified = 1, otp_code = NULL WHERE id = ?", (user_id,))
+        conn.commit(); conn.close()
+        
+        user = User.get(user_id)
+        login_user(user)
+        return redirect(url_for('main.purchase'))
+    else:
+        return render_template('verify.html', email=email, error="Invalid Code")
 
 @main_bp.route('/logout')
 @login_required
@@ -389,7 +465,6 @@ def process():
         file.stream.seek(0)
         
     else:
-        # --- NORMAL CSV LOGIC ---
         try:
             file.stream.seek(0)
             df = pd.read_csv(file, encoding='utf-8-sig', on_bad_lines='skip', dtype=str)
@@ -443,7 +518,7 @@ def process():
             return jsonify({"status": "success", "batch_id": batch_id})
         except Exception as e:
             log_debug(f"[CRITICAL ERROR] /process endpoint: {str(e)}")
-            current_user.update_balance(cost) # Refund on crash
+            current_user.update_balance(cost)
             return jsonify({"error": "Internal System Error. Please try again later."}), 500
     # --- SECURITY LOCK END ---
 
@@ -477,7 +552,7 @@ def verify_csv():
     price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
     return jsonify({"count": count, "cost": count * price})
 
-# --- UPDATED: WALMART XLSX EXPORT ---
+# --- DOWNLOAD ROUTES ---
 @main_bp.route('/api/download/xlsx/<batch_id>')
 @login_required
 def download_xlsx(batch_id):
@@ -501,8 +576,8 @@ def download_xlsx(batch_id):
 
         for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=False), start=2):
             try:
-                order_num_cell = row[1].value # Column B
-                qty_cell = row[24].value      # Column Y
+                order_num_cell = row[1].value
+                qty_cell = row[24].value
 
                 order_id = str(order_num_cell).strip()
                 if order_id.endswith('.0'): order_id = order_id[:-2]
@@ -521,14 +596,13 @@ def download_xlsx(batch_id):
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
-        
         return send_file(output, as_attachment=True, download_name=f"Walmart_Fulfilled_{batch_id}.xlsx", mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     except Exception as e:
         print(f"XLSX Gen Error: {e}")
         return jsonify({"error": "FAILED TO GENERATE FILE"}), 500
 
-# --- OXAPAY: VERIFY HELPER (FIXED) ---
+# --- OXAPAY: VERIFY HELPER ---
 def verify_oxapay_payment(track_id):
     try:
         if not OXAPAY_KEY: 
@@ -564,7 +638,6 @@ def get_deposit_history():
     data = [{"amount":r[0],"currency":r[1],"txn_id":r[2],"status":r[3],"date":to_est(r[4])} for r in c.fetchall()]
     conn.close(); return jsonify(data)
 
-# --- MANUAL CHECK ---
 @main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
 @login_required
 def manual_check_deposit(txn_id):
@@ -660,6 +733,7 @@ def deposit_webhook():
     
     return jsonify({"status": "ok"}), 200
 
+# --- AUTOMATION PUBLIC ENDPOINTS ---
 @main_bp.route('/api/automation/public_config')
 @login_required
 def public_automation_config():

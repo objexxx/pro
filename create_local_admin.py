@@ -18,30 +18,7 @@ def create_admin():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # 2. Ensure the users table exists (Matches your app/__init__.py)
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT, 
-        password_hash TEXT, balance REAL DEFAULT 0.0, price_per_label REAL DEFAULT 3.00, 
-        is_admin INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, api_key TEXT,
-        is_subscribed BOOLEAN DEFAULT 0, subscription_end TEXT, auto_renew INTEGER DEFAULT 0, 
-        auth_cookies TEXT, auth_csrf TEXT, auth_url TEXT, auth_file_path TEXT, 
-        inventory_json TEXT, created_at TEXT,
-        default_label_type TEXT DEFAULT 'priority', 
-        default_version TEXT DEFAULT '95055', 
-        default_template TEXT DEFAULT 'pitney_v2',
-        archived_count INTEGER DEFAULT 0
-    )''')
-    
-    # Ensure notifications table exists
-    c.execute('''CREATE TABLE IF NOT EXISTS user_notifications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, 
-        message TEXT, type TEXT, created_at TEXT
-    )''')
-    
-    # Ensure system config exists
-    c.execute('''CREATE TABLE IF NOT EXISTS system_config (key TEXT PRIMARY KEY, value TEXT)''')
-    
-    # 3. Get Credentials
+    # 2. Get Credentials
     username = input("Enter Admin Username: ").strip()
     password = input("Enter Admin Password: ").strip()
     
@@ -54,25 +31,25 @@ def create_admin():
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        # 4. Check if user exists
+        # 3. Check if user exists
         c.execute("SELECT id FROM users WHERE username = ?", (username,))
         row = c.fetchone()
 
         if row:
-            # Update existing user to be Admin (Balance untouched)
+            # Update existing user to be Admin AND Verified
             c.execute("""
                 UPDATE users 
-                SET password_hash = ?, is_admin = 1 
+                SET password_hash = ?, is_admin = 1, is_verified = 1 
                 WHERE id = ?
             """, (hashed_pw, row[0]))
-            print(f"\n✅ UPDATED: User '{username}' is now an Admin (Balance unchanged).")
+            print(f"\n✅ UPDATED: User '{username}' is now a Verified Admin.")
         else:
-            # Create new Admin (Balance = 0)
+            # Create new Admin (Balance = 0, Verified = 1)
             c.execute("""
-                INSERT INTO users (username, email, password_hash, balance, is_admin, api_key, created_at) 
-                VALUES (?, ?, ?, 0.0, 1, ?, ?)
+                INSERT INTO users (username, email, password_hash, balance, is_admin, api_key, created_at, is_verified) 
+                VALUES (?, ?, ?, 0.0, 1, ?, ?, 1)
             """, (username, 'admin@localhost', hashed_pw, api_key, now))
-            print(f"\n✅ CREATED: New Admin '{username}' (Balance: $0.00).")
+            print(f"\n✅ CREATED: New Verified Admin '{username}'.")
 
         conn.commit()
     except Exception as e:

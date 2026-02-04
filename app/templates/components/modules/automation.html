@@ -67,11 +67,50 @@
                     
                     <div id="panel-credentials" class="h-full flex flex-col space-y-4 overflow-y-auto custom-scrollbar">
                         <div>
-                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Cookies (JSON String)</label>
+                            <div class="flex items-center mb-2">
+                                <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Cookies (JSON String)</label>
+                                
+                                <div class="relative group ml-2 z-50">
+                                    <svg class="w-3 h-3 text-gray-400 hover:text-blue-500 cursor-help transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    
+                                    <div class="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 p-3 bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#333] shadow-2xl invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 text-center rounded-sm">
+                                        <p class="text-[9px] font-mono text-gray-500 normal-case leading-relaxed break-words">
+                                            Cookies can be grabbed using J2TeamCookies.
+                                            <a href="https://chromewebstore.google.com/detail/okpidcojinmlaakglciglbpcpajaibco?utm_source=item-share-cb" target="_blank" class="text-blue-500 hover:text-blue-400 underline decoration-blue-500/30 underline-offset-2 block mt-1">Click here to get extension</a>
+                                        </p>
+                                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 -mb-[1px] border-4 border-transparent border-b-white dark:border-b-[#151515]"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <textarea id="in_cookies" rows="6" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none resize-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">{{ user.auth_cookies or '' }}</textarea>
                         </div>
+
                         <div>
-                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">CSRF Token</label>
+                            <div class="flex items-center mb-2">
+                                <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">CSRF Token</label>
+                                
+                                <div class="relative group ml-2 z-50">
+                                    <svg class="w-3 h-3 text-gray-400 hover:text-blue-500 cursor-help transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    
+                                    <div class="absolute top-full left-0 mt-2 w-64 p-3 bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#333] shadow-2xl invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 text-left rounded-sm">
+                                        <p class="text-[9px] font-mono text-gray-500 normal-case leading-relaxed break-words">
+                                            Unique authorization token required to confirm orders. <br><br>
+                                            <span class="text-gray-400">HOW TO FIND:</span><br>
+                                            1. Go to Manage Orders<br>
+                                            2. Press F12 (Dev Tools) -> Network Tab<br>
+                                            3. Click any Order ID<br>
+                                            4. Find request named after Order ID<br>
+                                            5. Look for 'anti-csrftoken' in Headers
+                                        </p>
+                                        <div class="absolute bottom-full left-1.5 -mb-[1px] border-4 border-transparent border-b-white dark:border-b-[#151515]"></div>
+                                    </div>
+                                </div>
+                            </div>
                             <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">
                         </div>
                     </div>
@@ -100,7 +139,23 @@
                             <option value="">LOADING...</option>
                         </select>
                         <div class="pt-4 border-t border-gray-200 dark:border-[#1E1E1E]">
-                            <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block mb-2 font-mono">Unshipped Data (.TXT)</label>
+                            <div class="flex items-center mb-2">
+                                <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest font-mono">Unshipped Data (.TXT)</label>
+                                
+                                <div class="relative group ml-2 z-50">
+                                    <svg class="w-3 h-3 text-gray-400 hover:text-blue-500 cursor-help transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    
+                                    <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-white dark:bg-[#151515] border border-gray-200 dark:border-[#333] shadow-2xl invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-50 text-center rounded-sm">
+                                        <p class="text-[9px] font-mono text-gray-500 normal-case leading-relaxed break-words">
+                                            Unshipped data can be grabbed from order report -> fbm unshipped -> request
+                                        </p>
+                                        <div class="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-white dark:border-t-[#151515]"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
                             <input type="file" id="in_file" accept=".txt" class="hidden" onchange="handleFileSelect(this)">
                             
                             <button id="amazon-drop-zone" onclick="document.getElementById('in_file').click()" class="w-full py-6 border-2 border-dashed border-gray-300 dark:border-[#333] hover:border-black dark:hover:border-white text-[9px] font-mono text-gray-400 hover:text-black dark:hover:text-white transition-all uppercase group bg-gray-50 dark:bg-[#050505]">

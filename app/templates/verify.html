@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Account</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Space Mono', monospace; }</style>
+</head>
+<body class="bg-gray-100 dark:bg-[#050505] min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-8 shadow-2xl">
+        <h2 class="text-xl font-bold text-center mb-6 dark:text-white uppercase">Verification Required</h2>
+        
+        {% if message %}
+        <div class="mb-4 p-3 bg-green-500/10 border border-green-500/20 text-green-600 text-xs font-bold text-center uppercase">{{ message }}</div>
+        {% endif %}
+        
+        {% if error %}
+        <div class="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-600 text-xs font-bold text-center uppercase">{{ error }}</div>
+        {% endif %}
+
+        <form action="/verify" method="POST" class="space-y-4">
+            <input type="hidden" name="email" value="{{ email }}">
+            
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Enter 6-Digit Code</label>
+                <input type="text" name="code" required placeholder="123456" maxlength="6" 
+                    class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-center text-2xl tracking-widest font-bold outline-none focus:border-black dark:focus:border-white transition-all dark:text-white">
+            </div>
+
+            <button type="submit" class="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold uppercase tracking-wider hover:opacity-90 transition-opacity text-xs">
+                Activate Account
+            </button>
+        </form>
+    </div>
+</body>
+</html>

@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify, redirect, url_for
 from datetime import datetime
 from dotenv import load_dotenv 
 from werkzeug.middleware.proxy_fix import ProxyFix 
-from .extensions import login_manager, limiter
+from .extensions import login_manager, limiter, mail, db
 
 # Load .env file
 load_dotenv()
@@ -17,22 +17,34 @@ def create_app():
 
     app.config['VERSION'] = 'v1.0.2' 
     
-    # --- FIX FOR LOCALHOST LOGIN LOOP ---
-    app.config['SESSION_COOKIE_SECURE'] = True
-    app.config['SESSION_COOKIE_HTTPONLY'] = True
-    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-    app.config['REMEMBER_COOKIE_SECURE'] = True
-    
-    # Only enable ProxyFix in production
-    if not app.debug:
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-    
+    # --- DATABASE SETUP ---
     app_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(app_dir)
     app.instance_path = os.path.join(app_dir, 'instance')
     app.config['DB_PATH'] = os.path.join(app.instance_path, 'labellab.db')
     app.config['DATA_FOLDER'] = os.path.join(root_dir, 'data')
+
+    # --- CRITICAL FIX FOR LOCALHOST LOGIN ---
+    # If running on localhost (debug mode), allow cookies over HTTP
+    if app.debug:
+        app.config['SESSION_COOKIE_SECURE'] = False
+        app.config['REMEMBER_COOKIE_SECURE'] = False
+    else:
+        app.config['SESSION_COOKIE_SECURE'] = True
+        app.config['REMEMBER_COOKIE_SECURE'] = True
+
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     
+    # SQLAlchemy Config (Silences Runtime Errors)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{app.config['DB_PATH']}"
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
+    # Only enable ProxyFix in production
+    if not app.debug:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    
+    # Ensure directories exist
     for folder in [
         app.instance_path,
         app.config['DATA_FOLDER'],
@@ -42,29 +54,47 @@ def create_app():
     ]:
         if not os.path.exists(folder): os.makedirs(folder)
 
+    # --- EMAIL CONFIGURATION (SMTP) ---
+    app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+    app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+    app.config['MAIL_USE_TLS'] = True
+    app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME') 
+    app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD') 
+    app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME')
+
     @app.context_processor
     def inject_version():
         return dict(version=app.config['VERSION'])
 
+    # Initialize Database (Raw SQLite)
     init_db(app.config['DB_PATH'])
+    
+    # Initialize Extensions
+    db.init_app(app) 
     login_manager.init_app(app)
     login_manager.login_view = 'main.login'
     
-    # 429 Error Handler (Rate Limits)
+    # Initialize Rate Limiter
+    limiter.init_app(app)
+    
+    # Initialize Mail
+    mail.init_app(app) 
+    
+    # 429 Error Handler
     @login_manager.unauthorized_handler
     def unauthorized():
         if '/api/' in request.path:
             return jsonify({"error": "Session Expired", "redirect": url_for('main.login')}), 401
         return redirect(url_for('main.login', next=request.url))
 
-    limiter.init_app(app)
-
+    # Register Blueprints
     from .routes import main_bp
     app.register_blueprint(main_bp)
 
     from .admin_routes import admin_bp
     app.register_blueprint(admin_bp)
 
+    # Start Background Worker
     from .worker import start_worker
     if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         start_worker(app)
@@ -75,7 +105,7 @@ def init_db(db_path):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
-    # Core Tables
+    # --- UPDATED USERS TABLE WITH 2FA COLUMNS ---
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, email TEXT, 
         password_hash TEXT, balance REAL DEFAULT 0.0, price_per_label REAL DEFAULT 3.00, 
@@ -86,7 +116,10 @@ def init_db(db_path):
         default_label_type TEXT DEFAULT 'priority', 
         default_version TEXT DEFAULT '95055', 
         default_template TEXT DEFAULT 'pitney_v2',
-        archived_count INTEGER DEFAULT 0
+        archived_count INTEGER DEFAULT 0,
+        is_verified BOOLEAN DEFAULT 0,
+        otp_code TEXT,
+        otp_created_at TEXT
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS sender_addresses (
@@ -105,7 +138,7 @@ def init_db(db_path):
     c.execute('''CREATE TABLE IF NOT EXISTS login_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ip_address TEXT, user_agent TEXT, created_at TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS deposit_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, currency TEXT, txn_id TEXT, status TEXT, created_at TEXT)''')
     
-    # --- NEW: REVENUE LEDGER ---
+    # Revenue Ledger
     c.execute('''CREATE TABLE IF NOT EXISTS revenue_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         user_id INTEGER, 
