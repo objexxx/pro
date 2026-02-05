@@ -27,8 +27,8 @@ def create_app():
     # --- CRITICAL FIX FOR LOCALHOST LOGIN ---
     # If running on localhost (debug mode), allow cookies over HTTP
     if app.debug:
-        app.config['SESSION_COOKIE_SECURE'] = False
-        app.config['REMEMBER_COOKIE_SECURE'] = False
+        app.config['SESSION_COOKIE_SECURE'] = True
+        app.config['REMEMBER_COOKIE_SECURE'] = True
     else:
         app.config['SESSION_COOKIE_SECURE'] = True
         app.config['REMEMBER_COOKIE_SECURE'] = True
