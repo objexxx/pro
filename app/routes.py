@@ -100,7 +100,7 @@ def normalize_dataframe(df):
         if not bad_states.empty:
             bad_row = bad_states.index[0] + 2
             bad_val = bad_states.iloc[0]['StateTo']
-            return None, f"Row {bad_row} Error: State '{bad_val}' must be a 2-letter code (e.g. 'CA')."
+            return None, f"Row {bad_row} Error: State '{bad_val}' must be 2-letter code (e.g. 'CA')."
 
     if 'StateFrom' in df.columns:
         df['StateFrom'] = df['StateFrom'].astype(str).str.strip().str.upper()
@@ -779,10 +779,15 @@ def automation_format():
         row = c.fetchone(); conn.close()
         if row: sender_address = {'name': row[0], 'company': row[1], 'street1': row[2], 'street2': row[3], 'city': row[4], 'state': row[5], 'zip': row[6], 'phone': row[7]}
     content = file.read()
-    zip_bytes, error = OrderParser.parse_to_zip(content, current_user.inventory_json, sender_address)
-    if error: return jsonify({"error": error}), 400
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    return Response(zip_bytes, mimetype="application/zip", headers={"Content-disposition": f"attachment; filename=Parsed_Orders_{timestamp}.zip"})
+    
+    # --- FIX: USE CORRECT PARSER REFERENCE ---
+    try:
+        zip_bytes, error = parser.OrderParser.parse_to_zip(content, current_user.inventory_json, sender_address)
+        if error: return jsonify({"error": error}), 400
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        return Response(zip_bytes, mimetype="application/zip", headers={"Content-disposition": f"attachment; filename=Parsed_Orders_{timestamp}.zip"})
+    except Exception as e:
+        return jsonify({"error": f"PARSER CRASH: {str(e)}"}), 500
 
 @main_bp.route('/api/automation/confirm', methods=['POST'])
 @login_required

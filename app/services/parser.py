@@ -25,8 +25,11 @@ class OrderParser:
     @staticmethod
     def parse_to_zip(file_content, inventory_json, sender_profile=None):
         try:
-            # Decode file content
-            text_content = file_content.decode('utf-8-sig')
+            # Decode file content (Robust)
+            try:
+                text_content = file_content.decode('utf-8-sig')
+            except UnicodeDecodeError:
+                text_content = file_content.decode('latin-1')
             
             # --- DETECT DELIMITER (Tab vs Comma) ---
             delimiter = ','
