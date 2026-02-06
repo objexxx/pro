@@ -45,11 +45,11 @@ address_lock = threading.Lock()
 def log_debug(message):
     print(f"[{datetime.now()}] [ROUTES] {message}")
 
-# --- HELPER: DB CONNECTION ---
+# --- HELPER: DB CONNECTION (UPDATED FOR HIGH LOAD) ---
 def get_db_conn():
     """Opens a DB connection with a high timeout to prevent locking errors."""
-    conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=60) # Increased to 60s
+    conn.execute("PRAGMA journal_mode=WAL") # Enable Write-Ahead Logging for concurrency
     return conn
 
 # --- HELPER: SEND OTP EMAIL ---

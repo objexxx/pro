@@ -123,7 +123,7 @@
                 </form>
             </div>
             
-            <div class="bg-gray-50 dark:bg-[#050505] p-4 border-t border-gray-200 dark:border-[#1E1E1E] text-center">
+            <div class="bg-gray-5 dark:bg-[#050505] p-4 border-t border-gray-200 dark:border-[#1E1E1E] text-center">
                 <p id="footer-note" class="text-[9px] font-bold text-gray-400 uppercase tracking-[0.2em]">Ensure addresses follow the strict CSV normalization guidelines</p>
             </div>
         </div>
@@ -143,7 +143,7 @@
         const senderSec = document.getElementById('sender-section');
         const fInput = document.getElementById('csvUpload');
         
-        // Active/Inactive Classes
+        // Classes...
         const activeClasses = ['border-black', 'dark:border-white', 'text-black', 'dark:text-white'];
         const inactiveClasses = ['text-gray-400', 'border-transparent'];
         
@@ -165,6 +165,12 @@
 
             // Show Sender Dropdown
             senderSec.classList.remove('hidden');
+
+            // --- BUG FIX: CHECK FOR ADDRESS ---
+            const senderSelect = document.getElementById('sender_id');
+            if (senderSelect && senderSelect.options.length <= 1 && senderSelect.options[0].disabled) {
+               showNotification("NOTE: You must add a Sender Address in 'Address Book' for Walmart Mode.", "processing");
+            }
 
             // Update UI Text
             if(uiOpMode) uiOpMode.innerText = 'WALMART_SYNC';

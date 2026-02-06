@@ -108,7 +108,9 @@ def init_db(db_path):
     max_retries = 5
     for i in range(max_retries):
         try:
-            conn = sqlite3.connect(db_path, timeout=10) # 10s timeout
+            # --- HIGH LOAD OPTIMIZATION (60s Timeout + WAL Mode) ---
+            conn = sqlite3.connect(db_path, timeout=60) 
+            conn.execute("PRAGMA journal_mode=WAL")
             c = conn.cursor()
             
             # Users Table
