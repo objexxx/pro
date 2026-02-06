@@ -40,7 +40,7 @@ ACTIVE_CONFIRMATIONS = set()
 # --- SECURITY LOCKS ---
 processing_lock = threading.Lock()
 address_lock = threading.Lock()
-deposit_lock = threading.Lock() # NEW: Lock for deposit transactions
+deposit_lock = threading.Lock() # [SECURITY FIX] Lock for deposit transactions
 
 # --- HELPER: LOGGING ---
 def log_debug(message):
@@ -65,7 +65,7 @@ def send_otp_email(user):
     
     conn = get_db_conn()
     c = conn.cursor()
-    # Save OTP to DB
+    # Save OTP to DB with TIMESTAMP
     c.execute("UPDATE users SET otp_code = ?, otp_created_at = ? WHERE id = ?", 
               (otp, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), user.id))
     conn.commit()
@@ -178,6 +178,7 @@ def is_version_enabled(version):
 def index():
     if current_user.is_authenticated:
         if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+        # UPDATE: Redirect to Single Label instead of Purchase
         return redirect(url_for('main.single'))
     return redirect(url_for('main.login'))
 
@@ -192,7 +193,7 @@ def login():
         user_data = User.get_by_username(username)
         
         if user_data and check_password_hash(user_data[3], password):
-            # NEW: Check if banned
+            # [SECURITY FIX] Check if banned
             if user_data[7]: # is_banned index
                 return render_template('login.html', error="ACCOUNT SUSPENDED")
 
@@ -222,6 +223,7 @@ def login():
             except: pass
             
             if user.is_admin: return redirect(url_for('admin.dashboard'))
+            # UPDATE: Redirect to Single Label
             return redirect(url_for('main.single'))
         return render_template('login.html', error="INVALID CREDENTIALS")
     return render_template('login.html')
@@ -245,12 +247,53 @@ def register():
             return render_template('login.html', mode="register", error="USERNAME/EMAIL TAKEN")
     return render_template('login.html', mode="register")
 
+# --- NEW: RESEND CODE ROUTE (WITH 90s COOLDOWN) ---
+@main_bp.route('/resend_code', methods=['POST'])
+@limiter.limit("5 per minute")
+def resend_code():
+    email = request.form.get('email')
+    if not email: return jsonify({"status": "error", "message": "Email missing"})
+    
+    conn = get_db_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, username, email, otp_created_at FROM users WHERE email = ?", (email,))
+    row = c.fetchone()
+    
+    if not row: 
+        conn.close()
+        return jsonify({"status": "error", "message": "User not found"})
+    
+    user_id, username, user_email, db_time = row
+
+    # --- CHECK 90s COOLDOWN ---
+    if db_time:
+        try:
+            last_sent = datetime.strptime(db_time, "%Y-%m-%d %H:%M:%S")
+            if (datetime.utcnow() - last_sent).total_seconds() < 90:
+                conn.close()
+                return jsonify({"status": "error", "message": "Please wait 90s before resending"})
+        except: pass
+    
+    conn.close()
+
+    # Create temp user object for email function
+    class TempUser:
+        def __init__(self, uid, em):
+            self.id = uid
+            self.email = em
+    
+    if send_otp_email(TempUser(user_id, user_email)):
+        return jsonify({"status": "success", "message": "Code Resent"})
+    else:
+        return jsonify({"status": "error", "message": "Email failed"})
+
 @main_bp.route('/verify', methods=['POST'])
 @limiter.limit("10 per minute")
 def verify_account():
     email = request.form['email']
     code = request.form['code']
     
+    # We must fetch manually because User.get_by_username doesn't expose fields easily via ORM
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT id, otp_code, otp_created_at, is_verified FROM users WHERE email = ?", (email,))
     row = c.fetchone()
@@ -262,13 +305,13 @@ def verify_account():
     
     if is_ver: return redirect(url_for('main.login'))
     
-    # Check Code and Expiry (10 mins)
+    # [SECURITY FIX] Check Code and Expiry (10 mins)
     valid_code = str(db_code) == str(code)
     not_expired = True
     if db_time:
         try:
             created_at = datetime.strptime(db_time, "%Y-%m-%d %H:%M:%S")
-            if datetime.utcnow() - created_at > timedelta(minutes=10):
+            if (datetime.utcnow() - created_at).total_seconds() > 600: # 10 mins
                 not_expired = False
         except: pass
 
@@ -280,10 +323,13 @@ def verify_account():
         user = User.get(user_id)
         login_user(user)
         
+        # --- FIXED: CHECK FOR ADMIN STATUS AND REDIRECT ---
         if user.is_admin: return redirect(url_for('admin.dashboard'))
+        
+        # UPDATE: Redirect to Single Label
         return redirect(url_for('main.single'))
     elif not not_expired:
-        return render_template('verify.html', email=email, error="Code Expired")
+        return render_template('verify.html', email=email, error="Code Expired (10m)")
     else:
         return render_template('verify.html', email=email, error="Invalid Code")
 
@@ -296,12 +342,16 @@ def logout(): logout_user(); return redirect(url_for('main.login'))
 @login_required
 def dashboard_root(): 
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    # UPDATE: Redirect to Single Label
     return redirect(url_for('main.single'))
 
 @main_bp.route('/purchase')
 @login_required
 def purchase(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    
+    # [WALMART] Added addresses for dropdown
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
     rows = c.fetchall()
@@ -309,10 +359,14 @@ def purchase():
     addrs = [{"id": r[0], "name": r[2], "street1": r[5]} for r in rows]
     return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions(), addresses=addrs)
 
+# --- NEW: SINGLE PURCHASE ROUTE ---
 @main_bp.route('/single')
 @login_required
 def single(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    
+    # Fetch addresses just like /purchase does
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
     rows = c.fetchall()
@@ -323,13 +377,16 @@ def single():
 @main_bp.route('/history')
 @login_required
 def history(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='history', version_status=get_enabled_versions())
 
 @main_bp.route('/automation')
 @login_required
 def automation(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    
     sys_config = get_system_config()
     monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
@@ -337,33 +394,39 @@ def automation():
     p_life = sys_config.get('automation_price_lifetime', '499.00')
     return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, price_monthly=p_month, price_lifetime=p_life, system_status="OPERATIONAL", version_status=get_enabled_versions())
 
+# --- NEW: INVENTORY ROUTE ---
 @main_bp.route('/inventory')
 @login_required
 def inventory(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='inventory', version_status=get_enabled_versions())
 
 @main_bp.route('/stats')
 @login_required
 def stats(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='stats', version_status=get_enabled_versions())
 
 @main_bp.route('/deposit')
 @login_required
 def deposit():
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='deposit', version_status=get_enabled_versions())
 
 @main_bp.route('/settings')
 @login_required
 def settings(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='settings', version_status=get_enabled_versions())
 
 @main_bp.route('/addresses')
 @login_required
 def addresses(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='addresses', version_status=get_enabled_versions())
 
@@ -483,7 +546,7 @@ def process():
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
 
-    # --- FIX: TEMPLATE VALIDATION ---
+    # --- [SECURITY FIX] VALIDATE TEMPLATE INPUT ---
     req_template = request.form.get('template_choice')
     allowed_templates = ['pitney_v2', 'stamps_v2', 'easypost_v2']
     if req_template not in allowed_templates:
@@ -705,7 +768,7 @@ def get_deposit_history():
 @main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
 @login_required
 def manual_check_deposit(txn_id):
-    # --- FIX: DEPOSIT LOCKING ---
+    # --- [SECURITY FIX] DEPOSIT LOCKING ---
     with deposit_lock:
         conn = get_db_conn(); c = conn.cursor()
         c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
@@ -763,8 +826,8 @@ def deposit_webhook():
     try:
         data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
         
-        # --- FIX: DEPOSIT LOCKING ---
         if status in ['paid', 'complete']: 
+            # --- [SECURITY FIX] DEPOSIT LOCKING ---
             with deposit_lock:
                 is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
                 
@@ -947,61 +1010,7 @@ def delete_all_user_addresses():
     c.execute("DELETE FROM sender_addresses WHERE user_id=?", (current_user.id,)); conn.commit(); conn.close()
     return jsonify({"status":"success"})
 
-@main_bp.route('/api/automation/purchase', methods=['POST'])
-@login_required
-def buy_automation_license():
-    data = request.json
-    plan = data.get('plan') 
-    sys_config = get_system_config()
-
-    if plan == 'lifetime':
-        cost = float(sys_config.get('automation_price_lifetime', 499.00))
-        days = 36500 
-    else:
-        cost = float(sys_config.get('automation_price_monthly', 29.99))
-        days = 30
-
-    if current_user.balance < cost:
-        return jsonify({'error': 'INSUFFICIENT BALANCE'}), 400
-
-    if not current_user.update_balance(-cost):
-        return jsonify({'error': 'TRANSACTION FAILED'}), 500
-
-    try:
-        conn = get_db_conn()
-        c = conn.cursor()
-        expiry = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-        c.execute("UPDATE users SET subscription_end = ?, is_subscribed = 1 WHERE id = ?", (expiry, current_user.id))
-        
-        try:
-            c.execute("INSERT INTO revenue_ledger (user_id, amount, description, type, created_at) VALUES (?, ?, ?, ?, ?)",
-                      (current_user.id, cost, f"Subscription: {plan.upper()}", "SUBSCRIPTION", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        except Exception as led_err:
-            print(f"[LEDGER ERROR] {led_err}")
-
-        msg = f"PURCHASE SUCCESSFUL: {plan.upper()} ACCESS ACTIVATED"
-        try:
-            c.execute("INSERT INTO user_notifications (user_id, message, type, created_at) VALUES (?, ?, ?, ?)", 
-                      (current_user.id, msg, 'SUCCESS', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-        except:
-            pass 
-
-        slot_key = 'slots_lifetime_used' if plan == 'lifetime' else 'slots_monthly_used'
-        c.execute("UPDATE system_config SET value = CAST(value AS INTEGER) + 1 WHERE key = ?", (slot_key,))
-
-        conn.commit()
-        conn.close()
-        return jsonify({'status': 'success', 'message': 'LICENSE ACTIVATED'})
-    except Exception as e:
-        log_debug(f"SUB ERROR: {e}")
-        return jsonify({'error': 'DATABASE ERROR'}), 500
-    
-    # [KEEP ALL EXISTING CODE ABOVE]
-
-# ==========================================
-#   NEW: SINGLE LABEL PURCHASE LOGIC
-# ==========================================
-
+# --- SINGLE PURCHASE ROUTE ---
 @main_bp.route('/api/purchase/single', methods=['POST'])
 @login_required
 @limiter.limit("20 per minute")
@@ -1012,6 +1021,18 @@ def purchase_single_label():
     req_version = data.get('version', '95055')
     if not is_version_enabled(req_version):
         return jsonify({"error": f"Version {req_version} is currently disabled."}), 400
+
+    # --- [ISSUE 1 FIX] READ TEMPLATE FROM REQUEST JSON ---
+    # Previously, this might have been missing or read incorrectly.
+    # We now explicitly look for 'template' in the data payload.
+    req_template = data.get('template') 
+    
+    # Allow empty/null to default to Pitney, but if present, validate it.
+    if req_template and req_template not in ['pitney_v2', 'stamps_v2', 'easypost_v2']:
+         return jsonify({"error": "Invalid Template Selection"}), 400
+    
+    # Default fallback if user didn't send one (though frontend should)
+    if not req_template: req_template = 'pitney_v2'
 
     # 2. Sender Logic (Saved vs Manual)
     sender_mode = data.get('sender_mode', 'saved')
@@ -1093,11 +1114,13 @@ def purchase_single_label():
             
             # Insert into DB (Status: QUEUED)
             conn = get_db_conn(); c = conn.cursor()
+            
+            # --- IMPORTANT: Pass 'req_template' to DB ---
             c.execute("""
                 INSERT INTO batches 
                 (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (batch_id, current_user.id, final_filename, 1, 0, 'QUEUED', 'pitney_v2', req_version, label_type, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
+            """, (batch_id, current_user.id, final_filename, 1, 0, 'QUEUED', req_template, req_version, label_type, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
             conn.commit(); conn.close()
             
             log_debug(f"Single Label Batch {batch_id} Queued")

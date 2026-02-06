@@ -296,7 +296,7 @@ class LabelEngine:
             try: data_folder = current_app.config['DATA_FOLDER']
             except: return None, None, None
 
-        # 3. Load Templates (WITH SECURITY CHECK)
+        # 3. Load Templates (WITH SECURITY CHECK & FIX FOR ISSUE 1)
         # --- SECURITY FIX: Whitelist templates to prevent directory traversal ---
         ALLOWED_TEMPLATES = ['pitney_v2', 'stamps_v2', 'easypost_v2', 'stamps_v2_2digit']
         # Extract base name without extension
@@ -306,6 +306,7 @@ class LabelEngine:
             # Fallback to default if malicious/unknown template
             template_choice = 'pitney_v2'
         
+        # --- FIX: Actually LOAD the template content ---
         templates = {}
         try:
             if "stamps_v2" in str(template_choice):

@@ -41,6 +41,14 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Label Template</label>
+                        <select id="single_template_select" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all uppercase">
+                            <option value="pitney_v2" {% if user.default_template == 'pitney_v2' %}selected{% endif %}>Pitney Bowes [V2]</option>
+                            <option value="stamps_v2" {% if user.default_template == 'stamps_v2' %}selected{% endif %}>Stamps.com [V2]</option>
+                            <option value="easypost_v2" {% if user.default_template == 'easypost_v2' %}selected{% endif %}>EasyPost [V2]</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
@@ -266,6 +274,8 @@
         const payload = {
             service: document.getElementById('single_service').value,
             version: document.getElementById('single_version').value,
+            // NEW: SEND TEMPLATE SELECTION
+            template: document.getElementById('single_template_select').value, 
             sender_mode: singleSenderMode,
             sender_id: document.getElementById('single_sender_select').value,
             

@@ -21,7 +21,7 @@
         {% endif %}
 
         <form action="/verify" method="POST" class="space-y-4">
-            <input type="hidden" name="email" value="{{ email }}">
+            <input type="hidden" name="email" value="{{ email }}" id="email_field">
             
             <div>
                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Enter 6-Digit Code</label>
@@ -33,6 +33,67 @@
                 Activate Account
             </button>
         </form>
+
+        <div class="mt-4 pt-4 border-t border-gray-100 dark:border-[#1E1E1E] text-center">
+            <button type="button" onclick="triggerResend()" id="resendBtn" class="text-[10px] font-bold text-gray-400 hover:text-black dark:hover:text-white uppercase tracking-widest transition-colors">
+                Resend Code
+            </button>
+            <p id="resendMsg" class="text-[10px] font-bold text-green-500 uppercase mt-2 hidden"></p>
+        </div>
     </div>
+
+    <script>
+        async function triggerResend() {
+            const btn = document.getElementById('resendBtn');
+            const msg = document.getElementById('resendMsg');
+            const email = document.getElementById('email_field').value;
+            
+            const originalText = btn.innerText;
+            btn.innerText = "SENDING...";
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            try {
+                const formData = new FormData();
+                formData.append('email', email);
+                
+                const res = await fetch('/resend_code', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    btn.innerText = "CODE SENT";
+                    msg.innerText = "CHECK YOUR INBOX (WAIT 60s)";
+                    msg.classList.remove('hidden');
+                    
+                    // Cooldown 60s
+                    setTimeout(() => {
+                        btn.innerText = "RESEND CODE";
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        msg.classList.add('hidden');
+                    }, 60000);
+                } else {
+                    btn.innerText = "ERROR";
+                    msg.innerText = data.message || "FAILED TO SEND";
+                    msg.classList.remove('hidden', 'text-green-500');
+                    msg.classList.add('text-red-500');
+                    
+                    setTimeout(() => {
+                        btn.innerText = originalText;
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        msg.classList.add('hidden');
+                    }, 3000);
+                }
+            } catch (e) {
+                btn.innerText = "NET ERROR";
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }, 3000);
+            }
+        }
+    </script>
 </body>
 </html>
