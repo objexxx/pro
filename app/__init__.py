@@ -16,9 +16,12 @@ def create_app():
     app = Flask(__name__)
     
     # --- SECURITY: SESSION CONFIGURATION ---
-    # Use ENV key if available, otherwise generate a secure random one at runtime.
-    # This prevents session forgery attacks using the old 'dev_key'.
-    app.secret_key = os.getenv('SECRET_KEY') or secrets.token_hex(32)
+    # In production we REQUIRE SECRET_KEY to be explicitly configured.
+    # Random fallback keys rotate across restarts and can invalidate sessions.
+    env_secret = os.getenv('SECRET_KEY')
+    if not app.debug and not env_secret:
+        raise RuntimeError("SECURITY ERROR: SECRET_KEY must be set in production environment")
+    app.secret_key = env_secret or secrets.token_hex(32)
 
     app.config['VERSION'] = 'v1.0.3' 
     
