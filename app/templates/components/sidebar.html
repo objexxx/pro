@@ -3,7 +3,7 @@
         <div class="mb-10 select-none">
             <h1 class="text-2xl font-brand font-bold tracking-tighter text-black dark:text-white leading-none">LabelLab</h1>
             <div class="flex items-center gap-2 mt-2">
-                <span class="text-[9px] font-mono text-gray-400 dark:text-[#444] font-bold uppercase tracking-[0.2em]">Build [ {{ version }} ]</span>
+                <span class="text-[9px] font-mono text-gray-400 dark:text-[#444] font-bold uppercase tracking-[0.2em]">[ {{ version }} ]</span>
             </div>
         </div>
         
@@ -28,6 +28,10 @@
 
             <button id="nav-addresses" onclick="switchTab('addresses')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
                 <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Address Book
+            </button>
+
+            <button id="nav-inventory" onclick="switchTab('inventory')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">
+                <div class="status-dot w-1.5 h-1.5 rounded-full"></div> Inventory
             </button>
             
             <button id="nav-deposit" onclick="switchTab('deposit')" class="nav-btn w-full group flex items-center gap-3 px-3 py-3 text-xs font-mono font-bold uppercase tracking-wider transition-all border border-transparent">

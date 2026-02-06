@@ -46,7 +46,15 @@
     <script>
         // --- GLOBAL STATE ---
         let allBatches = []; 
-        let activeTab = "{{ active_tab|default('purchase') }}";
+        
+        // --- FIX: Check URL Path first, fallback to default ---
+        let pathTab = window.location.pathname.replace('/', '');
+        // If path matches a known view, use it. Otherwise use Flask default.
+        // ADDED 'inventory' TO LIST
+        let activeTab = (pathTab && ['single', 'purchase', 'history', 'automation', 'inventory', 'addresses', 'deposit', 'settings', 'stats'].includes(pathTab)) 
+                        ? pathTab 
+                        : "{{ active_tab|default('single') }}"; // Default is now single
+
         let batchStatusMemory = {};
         try { batchStatusMemory = JSON.parse(localStorage.getItem('batchStatusMemory')) || {}; } catch(e) { batchStatusMemory = {}; }
         let isFirstLoad = true; 
@@ -72,14 +80,16 @@
         }
 
         function switchTab(tabName) {
-            // --- UPDATED: Included 'view-single' in the toggle list ---
-            ['view-single', 'view-purchase', 'view-automation', 'view-history', 'view-deposit', 'view-settings', 'view-stats', 'view-addresses'].forEach(id => { 
+            // --- UPDATED: Added 'view-inventory' to toggle list ---
+            ['view-single', 'view-purchase', 'view-automation', 'view-history', 'view-inventory', 'view-deposit', 'view-settings', 'view-stats', 'view-addresses'].forEach(id => { 
                 const el = document.getElementById(id); if(el) el.classList.add('hidden-section'); 
             });
             const target = document.getElementById('view-' + tabName); 
             if(target) target.classList.remove('hidden-section');
             
             activeTab = tabName; 
+            
+            // --- FIX: Update URL without reloading ---
             window.history.pushState({path: "/"+tabName}, '', "/"+tabName);
 
             if (tabName === 'history') { if(typeof window.loadFullHistory === 'function') window.loadFullHistory(); }
@@ -264,7 +274,16 @@
         }
 
         setInterval(() => { loadUserData(); pollNotifications(); }, 3000);
-        window.onload = function() { loadUserData(); switchTab(activeTab); const csvIn = document.getElementById('csvUpload'); if(csvIn) { csvIn.addEventListener('change', function() { handleFileDisplay(this); }); } };
+        
+        // --- UPDATED ONLOAD ---
+        window.onload = function() { 
+            loadUserData(); 
+            // Load the correct tab from URL logic above
+            switchTab(activeTab); 
+            
+            const csvIn = document.getElementById('csvUpload'); 
+            if(csvIn) { csvIn.addEventListener('change', function() { handleFileDisplay(this); }); } 
+        };
     </script>
 </head>
 <body class="bg-gray-100 dark:bg-bot-bg text-black dark:text-bot-text h-screen flex overflow-hidden font-sans selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
@@ -429,6 +448,9 @@
             </div>
             
             <div id="view-automation" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/automation.html' %} </div>
+            
+            <div id="view-inventory" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/inventory.html' %} </div>
+
             <div id="view-stats" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/stats.html' %} </div>
             <div id="view-deposit" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/deposit.html' %} </div>
             <div id="view-settings" class="hidden-section w-full h-full overflow-y-auto"> {% include 'components/modules/settings.html' %} </div>

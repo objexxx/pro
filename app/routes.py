@@ -171,7 +171,8 @@ def is_version_enabled(version):
 def index():
     if current_user.is_authenticated:
         if current_user.is_admin: return redirect(url_for('admin.dashboard'))
-        return redirect(url_for('main.purchase'))
+        # UPDATE: Redirect to Single Label instead of Purchase
+        return redirect(url_for('main.single'))
     return redirect(url_for('main.login'))
 
 @main_bp.route('/login', methods=['GET', 'POST'])
@@ -211,7 +212,8 @@ def login():
             except: pass
             
             if user.is_admin: return redirect(url_for('admin.dashboard'))
-            return redirect(url_for('main.purchase'))
+            # UPDATE: Redirect to Single Label
+            return redirect(url_for('main.single'))
         return render_template('login.html', error="INVALID CREDENTIALS")
     return render_template('login.html')
 
@@ -260,7 +262,8 @@ def verify_account():
         
         user = User.get(user_id)
         login_user(user)
-        return redirect(url_for('main.purchase'))
+        # UPDATE: Redirect to Single Label
+        return redirect(url_for('main.single'))
     else:
         return render_template('verify.html', email=email, error="Invalid Code")
 
@@ -271,7 +274,9 @@ def logout(): logout_user(); return redirect(url_for('main.login'))
 # --- DASHBOARD ROUTES ---
 @main_bp.route('/dashboard')
 @login_required
-def dashboard_root(): return redirect(url_for('main.purchase'))
+def dashboard_root(): 
+    # UPDATE: Redirect to Single Label
+    return redirect(url_for('main.single'))
 
 @main_bp.route('/purchase')
 @login_required
@@ -283,6 +288,18 @@ def purchase():
     conn.close()
     addrs = [{"id": r[0], "name": r[2], "street1": r[5]} for r in rows]
     return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions(), addresses=addrs)
+
+# --- NEW: SINGLE PURCHASE ROUTE ---
+@main_bp.route('/single')
+@login_required
+def single(): 
+    # Fetch addresses just like /purchase does
+    conn = get_db_conn(); c = conn.cursor()
+    c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
+    rows = c.fetchall()
+    conn.close()
+    addrs = [{"id": r[0], "name": r[2], "street1": r[5]} for r in rows]
+    return render_template('dashboard.html', user=current_user, active_tab='single', version_status=get_enabled_versions(), addresses=addrs)
 
 @main_bp.route('/history')
 @login_required
@@ -298,6 +315,12 @@ def automation():
     p_month = sys_config.get('automation_price_monthly', '29.99')
     p_life = sys_config.get('automation_price_lifetime', '499.00')
     return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, price_monthly=p_month, price_lifetime=p_life, system_status="OPERATIONAL", version_status=get_enabled_versions())
+
+# --- NEW: INVENTORY ROUTE ---
+@main_bp.route('/inventory')
+@login_required
+def inventory(): 
+    return render_template('dashboard.html', user=current_user, active_tab='inventory', version_status=get_enabled_versions())
 
 @main_bp.route('/stats')
 @login_required
@@ -689,7 +712,8 @@ def create_deposit():
     if usd_amount < 10: return jsonify({"error": "Minimum deposit is $10"}), 400
     url = "https://api.oxapay.com/merchants/request"
     custom_order_id = f"USER_{current_user.id}_{int(time.time())}_{usd_amount}"
-    payload = {"merchant": OXAPAY_KEY, "amount": usd_amount, "currency": "USDT", "lifeTime": 60, "feePaidByPayer": 0, "underPaidCover": 2.0, "callbackUrl": url_for('main.deposit_webhook', _external=True), "returnUrl": url_for('main.purchase', _external=True), "description": f"Deposit ${usd_amount}", "orderId": custom_order_id}
+    # UPDATE: Redirect to Single Label on return
+    payload = {"merchant": OXAPAY_KEY, "amount": usd_amount, "currency": "USDT", "lifeTime": 60, "feePaidByPayer": 0, "underPaidCover": 2.0, "callbackUrl": url_for('main.deposit_webhook', _external=True), "returnUrl": url_for('main.single', _external=True), "description": f"Deposit ${usd_amount}", "orderId": custom_order_id}
     try:
         r = requests.post(url, json=payload); result = r.json()
         if result.get('result') == 100:

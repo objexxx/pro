@@ -1,12 +1,15 @@
 <div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6 space-y-6 animate-in fade-in duration-500">
-    <div class="flex items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4">
+    
+    <div class="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4 gap-4">
         <div>
             <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Single Label</h2>
             <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Create individual shipment</p>
         </div>
-        <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E]">
-            <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Estimated Cost</p>
-            <p id="single_est_price" class="text-lg font-mono font-bold text-black dark:text-white">$0.00</p>
+        <div class="flex items-center gap-3">
+            <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] min-w-[120px] text-center">
+                <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Estimated Cost</p>
+                <p id="single_est_price" class="text-lg font-mono font-bold text-black dark:text-white">$0.00</p>
+            </div>
         </div>
     </div>
 
@@ -20,8 +23,6 @@
                         <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Service Type</label>
                         <select id="single_service" onchange="updateSinglePrice()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all uppercase">
                             <option value="priority">USPS Priority Mail</option>
-                            <option value="ground">USPS Ground Advantage</option>
-                            <option value="express">USPS Priority Express</option>
                         </select>
                     </div>
                     <div>
@@ -29,7 +30,13 @@
                         <select id="single_version" onchange="updateSinglePrice()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all uppercase">
                             {% for ver, enabled in version_status.items() %}
                                 {% if enabled %}
-                                <option value="{{ ver }}">Legacy {{ ver }}</option>
+                                    <option value="{{ ver }}">
+                                        {% if ver in ['94019', '95888', '91149', '93055'] %}
+                                            {{ ver }} (BETA)
+                                        {% else %}
+                                            {{ ver }}
+                                        {% endif %}
+                                    </option>
                                 {% endif %}
                             {% endfor %}
                         </select>
@@ -59,16 +66,25 @@
                 </div>
 
                 <div id="sender_manual_panel" class="hidden space-y-3">
-                    <input type="text" id="s_name" placeholder="Sender Name" class="single-input">
+                    <input type="text" id="s_name" placeholder="Sender Name *" class="single-input">
                     <input type="text" id="s_company" placeholder="Company (Optional)" class="single-input">
-                    <input type="text" id="s_phone" placeholder="Phone Number" class="single-input">
-                    <input type="text" id="s_street1" placeholder="Street Address 1" class="single-input">
+                    
+                    <div class="flex group">
+                        <input type="text" id="s_phone" placeholder="10-Digit Phone" maxlength="10" 
+                            class="flex-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none transition-all border-r-0 uppercase" 
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <button type="button" onclick="document.getElementById('s_phone').value = generatePhone()" class="bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#1E1E1E] px-3 text-[8px] font-bold text-gray-500 hover:text-black dark:hover:text-white transition-all uppercase cursor-pointer font-mono">
+                            Random
+                        </button>
+                    </div>
+
+                    <input type="text" id="s_street1" placeholder="Street Address 1 *" class="single-input">
                     <input type="text" id="s_street2" placeholder="Street 2 (Unit, Apt)" class="single-input">
                     <div class="grid grid-cols-2 gap-3">
-                        <input type="text" id="s_city" placeholder="City" class="single-input">
-                        <input type="text" id="s_state" placeholder="State (e.g NY)" class="single-input" maxlength="2">
+                        <input type="text" id="s_city" placeholder="City *" class="single-input">
+                        <input type="text" id="s_state" placeholder="State (NY) *" class="single-input" maxlength="2">
                     </div>
-                    <input type="text" id="s_zip" placeholder="Zip Code" class="single-input">
+                    <input type="text" id="s_zip" placeholder="Zip Code *" class="single-input" maxlength="5">
                 </div>
             </div>
         </div>
@@ -78,16 +94,25 @@
             <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 shadow-glow">
                 <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono mb-4 border-b border-gray-200 dark:border-[#1E1E1E] pb-2">To Address</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input type="text" id="r_name" placeholder="Recipient Name" class="single-input">
+                    <input type="text" id="r_name" placeholder="Recipient Name *" class="single-input">
                     <input type="text" id="r_company" placeholder="Company (Optional)" class="single-input">
-                    <input type="text" id="r_phone" placeholder="Phone Number" class="single-input">
-                    <div class="hidden md:block"></div> <input type="text" id="r_street1" placeholder="Street Address 1" class="single-input md:col-span-2">
+                    
+                    <div class="flex group">
+                        <input type="text" id="r_phone" placeholder="10-Digit Phone" maxlength="10" 
+                            class="flex-1 p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white focus:border-black dark:focus:border-white outline-none transition-all border-r-0 uppercase" 
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <button type="button" onclick="document.getElementById('r_phone').value = generatePhone()" class="bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#1E1E1E] px-3 text-[8px] font-bold text-gray-500 hover:text-black dark:hover:text-white transition-all uppercase cursor-pointer font-mono">
+                            Random
+                        </button>
+                    </div>
+
+                    <div class="hidden md:block"></div> <input type="text" id="r_street1" placeholder="Street Address 1 *" class="single-input md:col-span-2">
                     <input type="text" id="r_street2" placeholder="Street 2 (Unit, Apt)" class="single-input md:col-span-2">
                     
-                    <input type="text" id="r_city" placeholder="City" class="single-input">
+                    <input type="text" id="r_city" placeholder="City *" class="single-input">
                     <div class="grid grid-cols-2 gap-4">
-                        <input type="text" id="r_state" placeholder="State (e.g CA)" class="single-input" maxlength="2">
-                        <input type="text" id="r_zip" placeholder="Zip Code" class="single-input">
+                        <input type="text" id="r_state" placeholder="State (CA) *" class="single-input" maxlength="2">
+                        <input type="text" id="r_zip" placeholder="Zip Code *" class="single-input" maxlength="5">
                     </div>
                 </div>
             </div>
@@ -96,7 +121,7 @@
                 <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono mb-4 border-b border-gray-200 dark:border-[#1E1E1E] pb-2">Package Details</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Weight (Lbs)</label>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Weight (Lbs) *</label>
                         <input type="number" id="pkg_weight" value="1" class="single-input">
                     </div>
                     <div>
@@ -162,6 +187,13 @@
         } catch(e) {}
     }
 
+    function generatePhone() {
+        const p1 = Math.floor(Math.random() * 800) + 200; // 200-999
+        const p2 = Math.floor(Math.random() * 900) + 100; // 100-999
+        const p3 = Math.floor(Math.random() * 9000) + 1000; // 1000-9999
+        return `${p1}${p2}${p3}`;
+    }
+
     function toggleSenderMode(mode) {
         singleSenderMode = mode;
         const savedPanel = document.getElementById('sender_saved_panel');
@@ -195,7 +227,42 @@
     async function submitSingleOrder() {
         const btn = document.getElementById('btn_single_purchase');
         
-        // Harvest Data
+        // --- 1. VALIDATION STEP ---
+        // Harvest Data for Validation
+        const r_name = document.getElementById('r_name').value.trim();
+        const r_street1 = document.getElementById('r_street1').value.trim();
+        const r_city = document.getElementById('r_city').value.trim();
+        const r_state = document.getElementById('r_state').value.trim();
+        const r_zip = document.getElementById('r_zip').value.trim();
+        const weight = document.getElementById('pkg_weight').value.trim();
+
+        // Check Receiver
+        if(!r_name || !r_street1 || !r_city || !r_state || !r_zip) {
+            showNotification("MISSING RECIPIENT FIELDS", "error");
+            return;
+        }
+        if(r_state.length !== 2) { showNotification("STATE MUST BE 2 LETTERS", "error"); return; }
+        if(r_zip.length < 5) { showNotification("ZIP CODE INVALID", "error"); return; }
+        if(!weight) { showNotification("ENTER WEIGHT", "error"); return; }
+
+        // Check Sender
+        if(singleSenderMode === 'saved') {
+            const s_id = document.getElementById('single_sender_select').value;
+            if(!s_id) { showNotification("SELECT SENDER PROFILE", "error"); return; }
+        } else {
+            const s_name = document.getElementById('s_name').value.trim();
+            const s_street1 = document.getElementById('s_street1').value.trim();
+            const s_city = document.getElementById('s_city').value.trim();
+            const s_state = document.getElementById('s_state').value.trim();
+            const s_zip = document.getElementById('s_zip').value.trim();
+            
+            if(!s_name || !s_street1 || !s_city || !s_state || !s_zip) {
+                showNotification("MISSING SENDER FIELDS", "error");
+                return;
+            }
+        }
+
+        // --- 2. HARVEST PAYLOAD ---
         const payload = {
             service: document.getElementById('single_service').value,
             version: document.getElementById('single_version').value,
@@ -213,17 +280,17 @@
             s_zip: document.getElementById('s_zip').value,
 
             // Receiver
-            r_name: document.getElementById('r_name').value,
+            r_name: r_name,
             r_company: document.getElementById('r_company').value,
             r_phone: document.getElementById('r_phone').value,
-            r_street1: document.getElementById('r_street1').value,
+            r_street1: r_street1,
             r_street2: document.getElementById('r_street2').value,
-            r_city: document.getElementById('r_city').value,
-            r_state: document.getElementById('r_state').value,
-            r_zip: document.getElementById('r_zip').value,
+            r_city: r_city,
+            r_state: r_state,
+            r_zip: r_zip,
 
             // Package
-            weight: document.getElementById('pkg_weight').value,
+            weight: weight,
             description: document.getElementById('pkg_desc').value,
             ref1: document.getElementById('pkg_ref1').value,
             ref2: document.getElementById('pkg_ref2').value
