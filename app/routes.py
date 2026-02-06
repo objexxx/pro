@@ -45,11 +45,11 @@ address_lock = threading.Lock()
 def log_debug(message):
     print(f"[{datetime.now()}] [ROUTES] {message}")
 
-# --- HELPER: DB CONNECTION (UPDATED FOR HIGH LOAD) ---
+# --- HELPER: DB CONNECTION ---
 def get_db_conn():
     """Opens a DB connection with a high timeout to prevent locking errors."""
-    conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=60) # Increased to 60s
-    conn.execute("PRAGMA journal_mode=WAL") # Enable Write-Ahead Logging for concurrency
+    conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=60) # High Load Optimization
+    conn.execute("PRAGMA journal_mode=WAL") # Write-Ahead Logging
     return conn
 
 # --- HELPER: SEND OTP EMAIL ---
@@ -262,6 +262,10 @@ def verify_account():
         
         user = User.get(user_id)
         login_user(user)
+        
+        # --- FIXED: CHECK FOR ADMIN STATUS AND REDIRECT ---
+        if user.is_admin: return redirect(url_for('admin.dashboard'))
+        
         # UPDATE: Redirect to Single Label
         return redirect(url_for('main.single'))
     else:
@@ -275,12 +279,15 @@ def logout(): logout_user(); return redirect(url_for('main.login'))
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): 
-    # UPDATE: Redirect to Single Label
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return redirect(url_for('main.single'))
 
 @main_bp.route('/purchase')
 @login_required
 def purchase(): 
+    # --- ADMIN REDIRECT ---
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    
     # [WALMART] Added addresses for dropdown
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
@@ -293,6 +300,9 @@ def purchase():
 @main_bp.route('/single')
 @login_required
 def single(): 
+    # --- ADMIN REDIRECT ---
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    
     # Fetch addresses just like /purchase does
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
@@ -304,11 +314,13 @@ def single():
 @main_bp.route('/history')
 @login_required
 def history(): 
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='history', version_status=get_enabled_versions())
 
 @main_bp.route('/automation')
 @login_required
 def automation(): 
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     sys_config = get_system_config()
     monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
@@ -320,26 +332,31 @@ def automation():
 @main_bp.route('/inventory')
 @login_required
 def inventory(): 
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='inventory', version_status=get_enabled_versions())
 
 @main_bp.route('/stats')
 @login_required
 def stats(): 
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='stats', version_status=get_enabled_versions())
 
 @main_bp.route('/deposit')
 @login_required
 def deposit():
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='deposit', version_status=get_enabled_versions())
 
 @main_bp.route('/settings')
 @login_required
 def settings(): 
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='settings', version_status=get_enabled_versions())
 
 @main_bp.route('/addresses')
 @login_required
 def addresses(): 
+    if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='addresses', version_status=get_enabled_versions())
 
 # --- API ENDPOINTS ---

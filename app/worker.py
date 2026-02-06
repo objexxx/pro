@@ -111,7 +111,31 @@ def get_next_batch(db_path, worker_id):
         try:
             conn = sqlite3.connect(db_path, timeout=60)
             c = conn.cursor()
-            c.execute("SELECT batch_id, user_id, filename, count, template, version, label_type, created_at FROM batches WHERE status = 'QUEUED' ORDER BY created_at ASC LIMIT 1")
+            
+            query = ""
+            # --- DEDICATED LANE LOGIC ---
+            # Worker 4: ONLY processes Single Labels (Instant Access)
+            if worker_id == 4:
+                query = """
+                    SELECT batch_id, user_id, filename, count, template, version, label_type, created_at 
+                    FROM batches 
+                    WHERE status = 'QUEUED' AND batch_id LIKE 'SINGLE_%'
+                    ORDER BY created_at ASC 
+                    LIMIT 1
+                """
+            else:
+                # Workers 1, 2, 3: Process everything, but prioritize Single Labels
+                query = """
+                    SELECT batch_id, user_id, filename, count, template, version, label_type, created_at 
+                    FROM batches 
+                    WHERE status = 'QUEUED' 
+                    ORDER BY 
+                        CASE WHEN batch_id LIKE 'SINGLE_%' THEN 0 ELSE 1 END ASC, 
+                        created_at ASC 
+                    LIMIT 1
+                """
+            
+            c.execute(query)
             row = c.fetchone()
             
             if row:
@@ -195,7 +219,6 @@ def worker_loop(app, worker_id):
                     
                     for index, row in df.iterrows():
                         # --- HEARTBEAT CHECK (ACTIVE) ---
-                        # Critical Fix: Update heartbeat while processing loop runs
                         if time.time() - last_heartbeat_time > 5:
                             safe_write(db_path, "INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", 
                                      (datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),))
@@ -285,7 +308,8 @@ def worker_loop(app, worker_id):
             time.sleep(5)
 
 def start_worker(app):
-    for i in range(2):
+    # --- UPGRADE: 4 THREADS (Thread 4 is Dedicated Single Label Lane) ---
+    for i in range(4):
         t = threading.Thread(target=worker_loop, args=(app, i+1))
         t.daemon = True
         t.start()
