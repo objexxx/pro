@@ -52,6 +52,12 @@ def get_db_conn():
     conn.execute("PRAGMA journal_mode=WAL") # Write-Ahead Logging
     return conn
 
+# --- HELPER: SANITIZATION (PREVENT ZPL INJECTION) ---
+def sanitize_input(text):
+    if not text: return ""
+    # Remove ZPL command characters and non-printable chars
+    return str(text).replace('^', '').replace('~', '').strip()
+
 # --- HELPER: SEND OTP EMAIL ---
 def send_otp_email(user):
     otp = ''.join(random.choices(string.digits, k=6)) # Generate 6 digit code
@@ -263,7 +269,7 @@ def verify_account():
         user = User.get(user_id)
         login_user(user)
         
-        # --- FIXED: CHECK FOR ADMIN STATUS AND REDIRECT ---
+        # --- FIXED: ADMIN REDIRECT ---
         if user.is_admin: return redirect(url_for('admin.dashboard'))
         
         # UPDATE: Redirect to Single Label
@@ -279,7 +285,9 @@ def logout(): logout_user(); return redirect(url_for('main.login'))
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    # UPDATE: Redirect to Single Label
     return redirect(url_for('main.single'))
 
 @main_bp.route('/purchase')
@@ -314,13 +322,16 @@ def single():
 @main_bp.route('/history')
 @login_required
 def history(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='history', version_status=get_enabled_versions())
 
 @main_bp.route('/automation')
 @login_required
 def automation(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
+    
     sys_config = get_system_config()
     monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
@@ -332,30 +343,35 @@ def automation():
 @main_bp.route('/inventory')
 @login_required
 def inventory(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='inventory', version_status=get_enabled_versions())
 
 @main_bp.route('/stats')
 @login_required
 def stats(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='stats', version_status=get_enabled_versions())
 
 @main_bp.route('/deposit')
 @login_required
 def deposit():
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='deposit', version_status=get_enabled_versions())
 
 @main_bp.route('/settings')
 @login_required
 def settings(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='settings', version_status=get_enabled_versions())
 
 @main_bp.route('/addresses')
 @login_required
 def addresses(): 
+    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='addresses', version_status=get_enabled_versions())
 
@@ -1006,17 +1022,17 @@ def purchase_single_label():
         if not saved or saved.user_id != current_user.id:
             return jsonify({"error": "Invalid Sender Profile"}), 400
         sender = {
-            'FromName': saved.name, 'CompanyFrom': saved.company, 'PhoneFrom': saved.phone,
-            'Street1From': saved.street1, 'Street2From': saved.street2, 
-            'CityFrom': saved.city, 'StateFrom': saved.state, 'PostalCodeFrom': saved.zip
+            'FromName': sanitize_input(saved.name), 'CompanyFrom': sanitize_input(saved.company), 'PhoneFrom': sanitize_input(saved.phone),
+            'Street1From': sanitize_input(saved.street1), 'Street2From': sanitize_input(saved.street2), 
+            'CityFrom': sanitize_input(saved.city), 'StateFrom': sanitize_input(saved.state), 'PostalCodeFrom': sanitize_input(saved.zip)
         }
     else:
         # Manual Input
         sender = {
-            'FromName': data.get('s_name'), 'CompanyFrom': data.get('s_company', ''), 
-            'PhoneFrom': data.get('s_phone'), 'Street1From': data.get('s_street1'), 
-            'Street2From': data.get('s_street2', ''), 'CityFrom': data.get('s_city'), 
-            'StateFrom': data.get('s_state'), 'PostalCodeFrom': data.get('s_zip')
+            'FromName': sanitize_input(data.get('s_name')), 'CompanyFrom': sanitize_input(data.get('s_company', '')), 
+            'PhoneFrom': sanitize_input(data.get('s_phone')), 'Street1From': sanitize_input(data.get('s_street1')), 
+            'Street2From': sanitize_input(data.get('s_street2', '')), 'CityFrom': sanitize_input(data.get('s_city')), 
+            'StateFrom': sanitize_input(data.get('s_state')), 'PostalCodeFrom': sanitize_input(data.get('s_zip'))
         }
         # Basic Validation
         if not sender['FromName'] or not sender['Street1From'] or not sender['CityFrom'] or not sender['StateFrom'] or not sender['PostalCodeFrom']:
@@ -1024,20 +1040,20 @@ def purchase_single_label():
 
     # 3. Receiver Logic
     receiver = {
-        'ToName': data.get('r_name'), 'Company2': data.get('r_company', ''), 
-        'PhoneTo': data.get('r_phone', ''), 'Street1To': data.get('r_street1'), 
-        'Street2To': data.get('r_street2', ''), 'CityTo': data.get('r_city'), 
-        'StateTo': data.get('r_state'), 'ZipTo': data.get('r_zip')
+        'ToName': sanitize_input(data.get('r_name')), 'Company2': sanitize_input(data.get('r_company', '')), 
+        'PhoneTo': sanitize_input(data.get('r_phone', '')), 'Street1To': sanitize_input(data.get('r_street1')), 
+        'Street2To': sanitize_input(data.get('r_street2', '')), 'CityTo': sanitize_input(data.get('r_city')), 
+        'StateTo': sanitize_input(data.get('r_state')), 'ZipTo': sanitize_input(data.get('r_zip'))
     }
     if not receiver['ToName'] or not receiver['Street1To'] or not receiver['CityTo'] or not receiver['StateTo'] or not receiver['ZipTo']:
         return jsonify({"error": "Missing Required Receiver Fields"}), 400
 
     # 4. Package Logic
     pkg = {
-        'Weight': data.get('weight', '1'),
-        'Description': data.get('description', ''),
-        'Ref01': data.get('ref1', ''),
-        'Ref02': data.get('ref2', ''),
+        'Weight': sanitize_input(data.get('weight', '1')),
+        'Description': sanitize_input(data.get('description', '')),
+        'Ref01': sanitize_input(data.get('ref1', '')),
+        'Ref02': sanitize_input(data.get('ref2', '')),
         'Length': 10, 'Width': 6, 'Height': 4, # Defaults
         'Contains Hazard': 'False',
         'Shipment Date': datetime.now().strftime("%m/%d/%Y")

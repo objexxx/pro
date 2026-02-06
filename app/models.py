@@ -4,8 +4,11 @@ from flask import current_app
 from flask_login import UserMixin
 from datetime import datetime
 
+# --- UPDATED DB CONNECTION (High Load & Security) ---
 def get_db():
-    return sqlite3.connect(current_app.config['DB_PATH'], timeout=30)
+    conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=60)
+    conn.execute("PRAGMA journal_mode=WAL") # Enable concurrency
+    return conn
 
 class User(UserMixin):
     def __init__(self, id, username, email, balance, price_per_label, is_admin, is_banned, api_key, 
@@ -139,17 +142,23 @@ class User(UserMixin):
         finally: conn.close()
 
     def update_balance(self, amount):
+        """
+        ATOMIC BALANCE UPDATE (SECURE)
+        Prevents race conditions where users could double-spend balance.
+        """
         conn = get_db()
         c = conn.cursor()
         try:
             if amount < 0:
                 cost = abs(amount)
+                # Ensure balance allows for deduction
                 c.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?", (cost, self.id, cost))
             else:
                 c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, self.id))
             
             if c.rowcount > 0:
                 conn.commit()
+                # Update local object state only if DB update succeeded
                 self.balance += amount 
                 conn.close()
                 return True
@@ -186,7 +195,7 @@ class User(UserMixin):
         conn.close()
 
 class SenderAddress:
-    def __init__(self, id, user_id, name, company, street1, street2, city, state, zip, phone):
+    def __init__(self, id, user_id, name, company, phone, street1, street2, city, state, zip, phone_alt=None):
         self.id = id
         self.user_id = user_id
         self.name = name
@@ -206,5 +215,7 @@ class SenderAddress:
         row = c.fetchone()
         conn.close()
         if row:
-            return SenderAddress(row[0], row[1], row[2], row[3], row[5], row[6], row[7], row[8], row[9], row[4])
+            # Map DB columns to Object (Handle 10 columns)
+            # id, user_id, name, company, phone, street1, street2, city, state, zip
+            return SenderAddress(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
         return None
