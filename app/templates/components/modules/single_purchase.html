@@ -1,0 +1,311 @@
+<div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6 space-y-6 animate-in fade-in duration-500">
+    <div class="flex items-center justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-4">
+        <div>
+            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Single Label</h2>
+            <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Create individual shipment</p>
+        </div>
+        <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E]">
+            <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Estimated Cost</p>
+            <p id="single_est_price" class="text-lg font-mono font-bold text-black dark:text-white">$0.00</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto pb-20">
+        <div class="lg:col-span-4 space-y-6">
+            
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 shadow-glow">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono mb-4 border-b border-gray-200 dark:border-[#1E1E1E] pb-2">Configuration</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Service Type</label>
+                        <select id="single_service" onchange="updateSinglePrice()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all uppercase">
+                            <option value="priority">USPS Priority Mail</option>
+                            <option value="ground">USPS Ground Advantage</option>
+                            <option value="express">USPS Priority Express</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Tracking Version</label>
+                        <select id="single_version" onchange="updateSinglePrice()" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all uppercase">
+                            {% for ver, enabled in version_status.items() %}
+                                {% if enabled %}
+                                <option value="{{ ver }}">Legacy {{ ver }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 shadow-glow">
+                <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-[#1E1E1E] pb-2">
+                    <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono">From Address</h3>
+                    <div class="flex gap-2">
+                        <button onclick="toggleSenderMode('saved')" id="btn_mode_saved" class="text-[8px] font-bold uppercase px-2 py-1 bg-black text-white dark:bg-white dark:text-black font-mono transition-all">Saved</button>
+                        <button onclick="toggleSenderMode('manual')" id="btn_mode_manual" class="text-[8px] font-bold uppercase px-2 py-1 bg-transparent text-gray-400 font-mono transition-all">Manual</button>
+                    </div>
+                </div>
+
+                <div id="sender_saved_panel">
+                    <select id="single_sender_select" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all uppercase">
+                        <option value="">Select Sender Profile...</option>
+                        {% for addr in addresses %}
+                        <option value="{{ addr.id }}">{{ addr.name }} | {{ addr.street1 }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if not addresses %}
+                    <p class="text-[9px] text-red-500 font-mono mt-2 uppercase">No Saved Profiles Found.</p>
+                    {% endif %}
+                </div>
+
+                <div id="sender_manual_panel" class="hidden space-y-3">
+                    <input type="text" id="s_name" placeholder="Sender Name" class="single-input">
+                    <input type="text" id="s_company" placeholder="Company (Optional)" class="single-input">
+                    <input type="text" id="s_phone" placeholder="Phone Number" class="single-input">
+                    <input type="text" id="s_street1" placeholder="Street Address 1" class="single-input">
+                    <input type="text" id="s_street2" placeholder="Street 2 (Unit, Apt)" class="single-input">
+                    <div class="grid grid-cols-2 gap-3">
+                        <input type="text" id="s_city" placeholder="City" class="single-input">
+                        <input type="text" id="s_state" placeholder="State (e.g NY)" class="single-input" maxlength="2">
+                    </div>
+                    <input type="text" id="s_zip" placeholder="Zip Code" class="single-input">
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-8 space-y-6">
+            
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 shadow-glow">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono mb-4 border-b border-gray-200 dark:border-[#1E1E1E] pb-2">To Address</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" id="r_name" placeholder="Recipient Name" class="single-input">
+                    <input type="text" id="r_company" placeholder="Company (Optional)" class="single-input">
+                    <input type="text" id="r_phone" placeholder="Phone Number" class="single-input">
+                    <div class="hidden md:block"></div> <input type="text" id="r_street1" placeholder="Street Address 1" class="single-input md:col-span-2">
+                    <input type="text" id="r_street2" placeholder="Street 2 (Unit, Apt)" class="single-input md:col-span-2">
+                    
+                    <input type="text" id="r_city" placeholder="City" class="single-input">
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="text" id="r_state" placeholder="State (e.g CA)" class="single-input" maxlength="2">
+                        <input type="text" id="r_zip" placeholder="Zip Code" class="single-input">
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 shadow-glow">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-mono mb-4 border-b border-gray-200 dark:border-[#1E1E1E] pb-2">Package Details</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Weight (Lbs)</label>
+                        <input type="number" id="pkg_weight" value="1" class="single-input">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Description (Safe)</label>
+                        <input type="text" id="pkg_desc" placeholder="e.g. Health Products" class="single-input">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Reference 1</label>
+                        <input type="text" id="pkg_ref1" placeholder="Optional" class="single-input">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-bold text-gray-500 uppercase tracking-widest block font-mono mb-2">Reference 2</label>
+                        <input type="text" id="pkg_ref2" placeholder="Optional" class="single-input">
+                    </div>
+                </div>
+            </div>
+
+            <button id="btn_single_purchase" onclick="submitSingleOrder()" class="w-full py-4 bg-black dark:bg-white text-white dark:text-black font-bold text-xs uppercase tracking-[0.2em] hover:opacity-90 transition-all font-mono shadow-lg">
+                PURCHASE LABEL
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .single-input {
+        width: 100%;
+        padding: 0.75rem;
+        background-color: #f9fafb;
+        border: 1px solid #e5e7eb;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: black;
+        outline: none;
+        transition: all 0.2s;
+        text-transform: uppercase;
+    }
+    .dark .single-input {
+        background-color: #050505;
+        border-color: #1E1E1E;
+        color: white;
+    }
+    .single-input:focus {
+        border-color: black;
+    }
+    .dark .single-input:focus {
+        border-color: white;
+    }
+</style>
+
+<script>
+    let singleSenderMode = 'saved';
+    let userPrices = {};
+
+    async function initSinglePage() {
+        // Fetch User Pricing
+        try {
+            const res = await fetch('/api/user');
+            const data = await res.json();
+            userPrices = data.prices || {};
+            userPrices['default'] = data.price_per_label;
+            updateSinglePrice();
+        } catch(e) {}
+    }
+
+    function toggleSenderMode(mode) {
+        singleSenderMode = mode;
+        const savedPanel = document.getElementById('sender_saved_panel');
+        const manualPanel = document.getElementById('sender_manual_panel');
+        const btnSaved = document.getElementById('btn_mode_saved');
+        const btnManual = document.getElementById('btn_mode_manual');
+
+        if (mode === 'saved') {
+            savedPanel.classList.remove('hidden');
+            manualPanel.classList.add('hidden');
+            btnSaved.classList.remove('bg-transparent', 'text-gray-400');
+            btnSaved.classList.add('bg-black', 'text-white', 'dark:bg-white', 'dark:text-black');
+            btnManual.classList.add('bg-transparent', 'text-gray-400');
+            btnManual.classList.remove('bg-black', 'text-white', 'dark:bg-white', 'dark:text-black');
+        } else {
+            savedPanel.classList.add('hidden');
+            manualPanel.classList.remove('hidden');
+            btnManual.classList.remove('bg-transparent', 'text-gray-400');
+            btnManual.classList.add('bg-black', 'text-white', 'dark:bg-white', 'dark:text-black');
+            btnSaved.classList.add('bg-transparent', 'text-gray-400');
+            btnSaved.classList.remove('bg-black', 'text-white', 'dark:bg-white', 'dark:text-black');
+        }
+    }
+
+    function updateSinglePrice() {
+        const ver = document.getElementById('single_version').value;
+        const price = userPrices[ver] || userPrices['default'] || 3.00;
+        document.getElementById('single_est_price').innerText = "$" + parseFloat(price).toFixed(2);
+    }
+
+    async function submitSingleOrder() {
+        const btn = document.getElementById('btn_single_purchase');
+        
+        // Harvest Data
+        const payload = {
+            service: document.getElementById('single_service').value,
+            version: document.getElementById('single_version').value,
+            sender_mode: singleSenderMode,
+            sender_id: document.getElementById('single_sender_select').value,
+            
+            // Sender Manual
+            s_name: document.getElementById('s_name').value,
+            s_company: document.getElementById('s_company').value,
+            s_phone: document.getElementById('s_phone').value,
+            s_street1: document.getElementById('s_street1').value,
+            s_street2: document.getElementById('s_street2').value,
+            s_city: document.getElementById('s_city').value,
+            s_state: document.getElementById('s_state').value,
+            s_zip: document.getElementById('s_zip').value,
+
+            // Receiver
+            r_name: document.getElementById('r_name').value,
+            r_company: document.getElementById('r_company').value,
+            r_phone: document.getElementById('r_phone').value,
+            r_street1: document.getElementById('r_street1').value,
+            r_street2: document.getElementById('r_street2').value,
+            r_city: document.getElementById('r_city').value,
+            r_state: document.getElementById('r_state').value,
+            r_zip: document.getElementById('r_zip').value,
+
+            // Package
+            weight: document.getElementById('pkg_weight').value,
+            description: document.getElementById('pkg_desc').value,
+            ref1: document.getElementById('pkg_ref1').value,
+            ref2: document.getElementById('pkg_ref2').value
+        };
+
+        // UI Loading
+        const originalText = btn.innerText;
+        btn.innerText = "VALIDATING...";
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-wait');
+
+        try {
+            const res = await fetch('/api/purchase/single', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                // Success - Start Polling
+                btn.innerText = "QUEUED (WAITING FOR WORKER)...";
+                showNotification("ORDER QUEUED SUCCESSFULLY", "queued");
+                pollSingleStatus(data.batch_id, btn, originalText);
+            } else {
+                showNotification("ERROR: " + data.error, "error");
+                resetBtn(btn, originalText);
+            }
+        } catch (e) {
+            showNotification("CONNECTION ERROR", "error");
+            resetBtn(btn, originalText);
+        }
+    }
+
+    async function pollSingleStatus(batchId, btn, originalText) {
+        let attempts = 0;
+        const maxAttempts = 60; // 2 minutes max wait
+
+        const interval = setInterval(async () => {
+            attempts++;
+            try {
+                const res = await fetch(`/api/batch/status/${batchId}`);
+                const data = await res.json();
+                
+                if (data.status === 'READY') {
+                    clearInterval(interval);
+                    btn.innerText = "SUCCESS! DOWNLOADING...";
+                    btn.classList.remove('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black');
+                    btn.classList.add('bg-green-500', 'text-white', 'border-green-500');
+                    showNotification("LABEL GENERATED", "success");
+                    
+                    // Trigger Download
+                    window.location.href = `/api/download/pdf/${batchId}`;
+                    
+                    // Reset UI after delay
+                    setTimeout(() => { resetBtn(btn, originalText); }, 5000);
+                } 
+                else if (['FAILED', 'AUTH_ERROR'].includes(data.status)) {
+                    clearInterval(interval);
+                    showNotification("GENERATION FAILED (Check History)", "error");
+                    resetBtn(btn, originalText);
+                }
+                
+                if (attempts >= maxAttempts) {
+                    clearInterval(interval);
+                    showNotification("TIMEOUT: CHECK HISTORY FOR PDF", "error");
+                    resetBtn(btn, originalText);
+                }
+            } catch(e) {
+                clearInterval(interval);
+                resetBtn(btn, originalText);
+            }
+        }, 2000); // Check every 2 seconds
+    }
+
+    function resetBtn(btn, text) {
+        btn.innerText = text;
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-wait', 'bg-green-500', 'text-white', 'border-green-500');
+        btn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black');
+    }
+
+    // Initialize
+    initSinglePage();
+</script>

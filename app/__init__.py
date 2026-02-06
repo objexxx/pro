@@ -17,7 +17,7 @@ def create_app():
     # --- SECURITY: FORCE SECRET KEY ---
     app.secret_key = os.getenv('SECRET_KEY') or 'dev_key_for_testing_only'
 
-    app.config['VERSION'] = 'v1.0.2' 
+    app.config['VERSION'] = 'v1.0.3' 
     
     # --- DATABASE SETUP ---
     app_dir = os.path.dirname(os.path.abspath(__file__))

@@ -936,3 +936,134 @@ def buy_automation_license():
     except Exception as e:
         log_debug(f"SUB ERROR: {e}")
         return jsonify({'error': 'DATABASE ERROR'}), 500
+    
+    # [KEEP ALL EXISTING CODE ABOVE]
+
+# ==========================================
+#   NEW: SINGLE LABEL PURCHASE LOGIC
+# ==========================================
+
+@main_bp.route('/api/purchase/single', methods=['POST'])
+@login_required
+@limiter.limit("20 per minute")
+def purchase_single_label():
+    data = request.json
+    
+    # 1. Validate Version Availability
+    req_version = data.get('version', '95055')
+    if not is_version_enabled(req_version):
+        return jsonify({"error": f"Version {req_version} is currently disabled."}), 400
+
+    # 2. Sender Logic (Saved vs Manual)
+    sender_mode = data.get('sender_mode', 'saved')
+    sender = {}
+    
+    if sender_mode == 'saved':
+        s_id = data.get('sender_id')
+        if not s_id: return jsonify({"error": "Please select a Sender Profile"}), 400
+        saved = SenderAddress.get(s_id)
+        if not saved or saved.user_id != current_user.id:
+            return jsonify({"error": "Invalid Sender Profile"}), 400
+        sender = {
+            'FromName': saved.name, 'CompanyFrom': saved.company, 'PhoneFrom': saved.phone,
+            'Street1From': saved.street1, 'Street2From': saved.street2, 
+            'CityFrom': saved.city, 'StateFrom': saved.state, 'PostalCodeFrom': saved.zip
+        }
+    else:
+        # Manual Input
+        sender = {
+            'FromName': data.get('s_name'), 'CompanyFrom': data.get('s_company', ''), 
+            'PhoneFrom': data.get('s_phone'), 'Street1From': data.get('s_street1'), 
+            'Street2From': data.get('s_street2', ''), 'CityFrom': data.get('s_city'), 
+            'StateFrom': data.get('s_state'), 'PostalCodeFrom': data.get('s_zip')
+        }
+        # Basic Validation
+        if not sender['FromName'] or not sender['Street1From'] or not sender['CityFrom'] or not sender['StateFrom'] or not sender['PostalCodeFrom']:
+             return jsonify({"error": "Missing Required Sender Fields"}), 400
+
+    # 3. Receiver Logic
+    receiver = {
+        'ToName': data.get('r_name'), 'Company2': data.get('r_company', ''), 
+        'PhoneTo': data.get('r_phone', ''), 'Street1To': data.get('r_street1'), 
+        'Street2To': data.get('r_street2', ''), 'CityTo': data.get('r_city'), 
+        'StateTo': data.get('r_state'), 'ZipTo': data.get('r_zip')
+    }
+    if not receiver['ToName'] or not receiver['Street1To'] or not receiver['CityTo'] or not receiver['StateTo'] or not receiver['ZipTo']:
+        return jsonify({"error": "Missing Required Receiver Fields"}), 400
+
+    # 4. Package Logic
+    pkg = {
+        'Weight': data.get('weight', '1'),
+        'Description': data.get('description', ''),
+        'Ref01': data.get('ref1', ''),
+        'Ref02': data.get('ref2', ''),
+        'Length': 10, 'Width': 6, 'Height': 4, # Defaults
+        'Contains Hazard': 'False',
+        'Shipment Date': datetime.now().strftime("%m/%d/%Y")
+    }
+
+    # 5. Pricing & Balance
+    label_type = data.get('service', 'priority')
+    price = get_price(current_user.id, label_type, req_version, current_user.price_per_label)
+    
+    # --- ATOMIC TRANSACTION ---
+    with processing_lock:
+        if not current_user.update_balance(-price):
+            return jsonify({"error": "INSUFFICIENT FUNDS"}), 402
+            
+        try:
+            # Generate Unique Batch ID
+            batch_id = f"SINGLE_{random.randint(100000, 999999)}"
+            
+            # Create Data Row (Merging all dicts)
+            row = {**sender, **receiver, **pkg, 'No': '1'}
+            
+            # Create CSV File for the Worker
+            final_filename = f"{batch_id}.csv"
+            save_path = os.path.join(current_app.config['DATA_FOLDER'], 'uploads', final_filename)
+            
+            # Use Pandas to write single row CSV efficiently
+            df = pd.DataFrame([row])
+            
+            # Ensure all strict columns exist (Critical for Parser)
+            for col in STRICT_HEADERS:
+                if col not in df.columns: df[col] = ''
+            
+            df = df[STRICT_HEADERS] # Reorder to match template
+            df.to_csv(save_path, index=False)
+            
+            # Insert into DB (Status: QUEUED)
+            conn = get_db_conn(); c = conn.cursor()
+            c.execute("""
+                INSERT INTO batches 
+                (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (batch_id, current_user.id, final_filename, 1, 0, 'QUEUED', 'pitney_v2', req_version, label_type, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
+            conn.commit(); conn.close()
+            
+            log_debug(f"Single Label Batch {batch_id} Queued")
+            return jsonify({"status": "success", "batch_id": batch_id, "message": "Queued for Generation"})
+            
+        except Exception as e:
+            current_user.update_balance(price) # Refund on crash
+            log_debug(f"Single Purchase Error: {e}")
+            return jsonify({"error": "System Error. Please try again."}), 500
+
+# --- NEW: STATUS CHECKER FOR AUTO-DOWNLOAD ---
+@main_bp.route('/api/batch/status/<batch_id>')
+@login_required
+def check_batch_status(batch_id):
+    conn = get_db_conn(); c = conn.cursor()
+    c.execute("SELECT status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id))
+    row = c.fetchone()
+    conn.close()
+    
+    if not row: return jsonify({"status": "NOT_FOUND"})
+    
+    # Map DB status to UI status
+    status = row[0]
+    # 'COMPLETED' is legacy, 'SUCCESS' implies history logic, but for batch table it's usually 'READY'
+    # We check if it is done processing.
+    if status in ['COMPLETED', 'SUCCESS', 'READY']: status = 'READY'
+    
+    return jsonify({"status": status})
