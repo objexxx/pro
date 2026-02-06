@@ -2,6 +2,7 @@ import os
 import sqlite3
 import time
 import random
+import secrets  # NEW: For generating secure keys
 from flask import Flask, request, jsonify, redirect, url_for
 from datetime import datetime
 from dotenv import load_dotenv 
@@ -14,8 +15,10 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     
-    # --- SECURITY: FORCE SECRET KEY ---
-    app.secret_key = os.getenv('SECRET_KEY') or 'dev_key_for_testing_only'
+    # --- SECURITY: SESSION CONFIGURATION ---
+    # Use ENV key if available, otherwise generate a secure random one at runtime.
+    # This prevents session forgery attacks using the old 'dev_key'.
+    app.secret_key = os.getenv('SECRET_KEY') or secrets.token_hex(32)
 
     app.config['VERSION'] = 'v1.0.3' 
     
@@ -144,7 +147,17 @@ def init_db(db_path):
             c.execute('''CREATE TABLE IF NOT EXISTS admin_audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, admin_id INTEGER, action TEXT, details TEXT, created_at TEXT)''')
             c.execute('''CREATE TABLE IF NOT EXISTS config_history (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, old_value TEXT, new_value TEXT, changed_by TEXT, created_at TEXT)''')
             c.execute('''CREATE TABLE IF NOT EXISTS login_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ip_address TEXT, user_agent TEXT, created_at TEXT)''')
-            c.execute('''CREATE TABLE IF NOT EXISTS deposit_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, amount REAL, currency TEXT, txn_id TEXT, status TEXT, created_at TEXT)''')
+            
+            # --- SECURITY FIX: ADD UNIQUE CONSTRAINT TO txn_id ---
+            c.execute('''CREATE TABLE IF NOT EXISTS deposit_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                user_id INTEGER, 
+                amount REAL, 
+                currency TEXT, 
+                txn_id TEXT UNIQUE, 
+                status TEXT, 
+                created_at TEXT
+            )''')
             
             c.execute('''CREATE TABLE IF NOT EXISTS revenue_ledger (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, 

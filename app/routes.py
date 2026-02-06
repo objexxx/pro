@@ -40,6 +40,7 @@ ACTIVE_CONFIRMATIONS = set()
 # --- SECURITY LOCKS ---
 processing_lock = threading.Lock()
 address_lock = threading.Lock()
+deposit_lock = threading.Lock() # NEW: Lock for deposit transactions
 
 # --- HELPER: LOGGING ---
 def log_debug(message):
@@ -177,7 +178,6 @@ def is_version_enabled(version):
 def index():
     if current_user.is_authenticated:
         if current_user.is_admin: return redirect(url_for('admin.dashboard'))
-        # UPDATE: Redirect to Single Label instead of Purchase
         return redirect(url_for('main.single'))
     return redirect(url_for('main.login'))
 
@@ -192,6 +192,10 @@ def login():
         user_data = User.get_by_username(username)
         
         if user_data and check_password_hash(user_data[3], password):
+            # NEW: Check if banned
+            if user_data[7]: # is_banned index
+                return render_template('login.html', error="ACCOUNT SUSPENDED")
+
             # NEW: Check if verified
             conn = get_db_conn()
             c = conn.cursor()
@@ -218,7 +222,6 @@ def login():
             except: pass
             
             if user.is_admin: return redirect(url_for('admin.dashboard'))
-            # UPDATE: Redirect to Single Label
             return redirect(url_for('main.single'))
         return render_template('login.html', error="INVALID CREDENTIALS")
     return render_template('login.html')
@@ -248,7 +251,6 @@ def verify_account():
     email = request.form['email']
     code = request.form['code']
     
-    # We must fetch manually because User.get_by_username doesn't expose fields easily via ORM
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT id, otp_code, otp_created_at, is_verified FROM users WHERE email = ?", (email,))
     row = c.fetchone()
@@ -260,8 +262,17 @@ def verify_account():
     
     if is_ver: return redirect(url_for('main.login'))
     
-    # Check Code
-    if str(db_code) == str(code):
+    # Check Code and Expiry (10 mins)
+    valid_code = str(db_code) == str(code)
+    not_expired = True
+    if db_time:
+        try:
+            created_at = datetime.strptime(db_time, "%Y-%m-%d %H:%M:%S")
+            if datetime.utcnow() - created_at > timedelta(minutes=10):
+                not_expired = False
+        except: pass
+
+    if valid_code and not_expired:
         conn = get_db_conn(); c = conn.cursor()
         c.execute("UPDATE users SET is_verified = 1, otp_code = NULL WHERE id = ?", (user_id,))
         conn.commit(); conn.close()
@@ -269,11 +280,10 @@ def verify_account():
         user = User.get(user_id)
         login_user(user)
         
-        # --- FIXED: ADMIN REDIRECT ---
         if user.is_admin: return redirect(url_for('admin.dashboard'))
-        
-        # UPDATE: Redirect to Single Label
         return redirect(url_for('main.single'))
+    elif not not_expired:
+        return render_template('verify.html', email=email, error="Code Expired")
     else:
         return render_template('verify.html', email=email, error="Invalid Code")
 
@@ -285,18 +295,13 @@ def logout(): logout_user(); return redirect(url_for('main.login'))
 @main_bp.route('/dashboard')
 @login_required
 def dashboard_root(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
-    # UPDATE: Redirect to Single Label
     return redirect(url_for('main.single'))
 
 @main_bp.route('/purchase')
 @login_required
 def purchase(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
-    
-    # [WALMART] Added addresses for dropdown
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
     rows = c.fetchall()
@@ -304,14 +309,10 @@ def purchase():
     addrs = [{"id": r[0], "name": r[2], "street1": r[5]} for r in rows]
     return render_template('dashboard.html', user=current_user, active_tab='purchase', version_status=get_enabled_versions(), addresses=addrs)
 
-# --- NEW: SINGLE PURCHASE ROUTE ---
 @main_bp.route('/single')
 @login_required
 def single(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
-    
-    # Fetch addresses just like /purchase does
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT * FROM sender_addresses WHERE user_id = ?", (current_user.id,))
     rows = c.fetchall()
@@ -322,16 +323,13 @@ def single():
 @main_bp.route('/history')
 @login_required
 def history(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='history', version_status=get_enabled_versions())
 
 @main_bp.route('/automation')
 @login_required
 def automation(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
-    
     sys_config = get_system_config()
     monthly_left = int(sys_config.get('slots_monthly_total', 50)) - int(sys_config.get('slots_monthly_used', 0))
     lifetime_left = int(sys_config.get('slots_lifetime_total', 10)) - int(sys_config.get('slots_lifetime_used', 0))
@@ -339,39 +337,33 @@ def automation():
     p_life = sys_config.get('automation_price_lifetime', '499.00')
     return render_template('dashboard.html', user=current_user, active_tab='automation', monthly_left=monthly_left, lifetime_left=lifetime_left, price_monthly=p_month, price_lifetime=p_life, system_status="OPERATIONAL", version_status=get_enabled_versions())
 
-# --- NEW: INVENTORY ROUTE ---
 @main_bp.route('/inventory')
 @login_required
 def inventory(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='inventory', version_status=get_enabled_versions())
 
 @main_bp.route('/stats')
 @login_required
 def stats(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='stats', version_status=get_enabled_versions())
 
 @main_bp.route('/deposit')
 @login_required
 def deposit():
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='deposit', version_status=get_enabled_versions())
 
 @main_bp.route('/settings')
 @login_required
 def settings(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='settings', version_status=get_enabled_versions())
 
 @main_bp.route('/addresses')
 @login_required
 def addresses(): 
-    # --- ADMIN REDIRECT ---
     if current_user.is_admin: return redirect(url_for('admin.dashboard'))
     return render_template('dashboard.html', user=current_user, active_tab='addresses', version_status=get_enabled_versions())
 
@@ -491,18 +483,24 @@ def process():
     if not is_version_enabled(req_version):
         return jsonify({"error": f"SERVICE UNAVAILABLE: Version {req_version} is currently disabled."}), 400
 
+    # --- FIX: TEMPLATE VALIDATION ---
+    req_template = request.form.get('template_choice')
+    allowed_templates = ['pitney_v2', 'stamps_v2', 'easypost_v2']
+    if req_template not in allowed_templates:
+         return jsonify({"error": "Invalid Template Selection"}), 400
+
     log_debug(f"Processing Upload: {file.filename} Mode: {upload_mode}")
     price = get_price(current_user.id, request.form.get('label_type'), req_version, current_user.price_per_label)
 
     # --- WALMART LOGIC ---
     if upload_mode == 'walmart':
         sender_id = request.form.get('sender_id')
-        if not sender_id: return jsonify({"error": "Sender Profile Required"}), 400
+        if not sender_id: return jsonify({"error": "Sender Profile Required for Walmart Mode"}), 400
         sender = SenderAddress.get(sender_id)
-        if not sender or sender.user_id != current_user.id: return jsonify({"error": "Invalid Sender"}), 400
+        if not sender or sender.user_id != current_user.id: return jsonify({"error": "Invalid Sender Profile"}), 400
         
         data, count, _ = parser.parse_walmart_xlsx(file, sender)
-        if count == 0: return jsonify({"error": "No valid rows found in XLSX"}), 400
+        if count == 0: return jsonify({"error": "No valid rows found in XLSX. Check format."}), 400
         
         df = pd.DataFrame(data)
         mapping = {
@@ -575,13 +573,13 @@ def process():
             
             conn = get_db_conn(); c = conn.cursor()
             c.execute("INSERT INTO batches (batch_id, user_id, filename, count, success_count, status, template, version, label_type, created_at, price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                      (batch_id, current_user.id, final_filename, len(df), 0, 'QUEUED', request.form.get('template_choice'), req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
+                      (batch_id, current_user.id, final_filename, len(df), 0, 'QUEUED', req_template, req_version, request.form.get('label_type'), datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), price))
             conn.commit(); conn.close()
             log_debug(f"Batch {batch_id} Queued Successfully")
             return jsonify({"status": "success", "batch_id": batch_id})
         except Exception as e:
             log_debug(f"[CRITICAL ERROR] /process endpoint: {str(e)}")
-            current_user.update_balance(cost)
+            current_user.update_balance(cost) # Refund on crash
             return jsonify({"error": "Internal System Error. Please try again later."}), 500
     # --- SECURITY LOCK END ---
 
@@ -707,35 +705,37 @@ def get_deposit_history():
 @main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
 @login_required
 def manual_check_deposit(txn_id):
-    conn = get_db_conn(); c = conn.cursor()
-    c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
-    row = c.fetchone()
-    
-    if not row: 
-        conn.close()
-        return jsonify({"error": "Transaction not found"}), 404
+    # --- FIX: DEPOSIT LOCKING ---
+    with deposit_lock:
+        conn = get_db_conn(); c = conn.cursor()
+        c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
+        row = c.fetchone()
         
-    if row[1] == 'PAID': 
-        conn.close()
-        return jsonify({"status": "success", "message": "Already Paid"})
-    
-    is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
-    
-    if is_valid and paid_amount > 0:
-        current_user.update_balance(paid_amount)
-        c.execute("UPDATE deposit_history SET status='PAID', amount=? WHERE id=?", (paid_amount, row[0]))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "success", "message": f"Payment Confirmed! +${paid_amount} Added."})
-    else:
-        if status_msg and "Status:" in status_msg:
-            clean_status = status_msg.split(': ')[1].strip()
-            if clean_status in ['EXPIRED', 'FAILED']:
-                c.execute("UPDATE deposit_history SET status=? WHERE id=?", (clean_status, row[0]))
-                conn.commit()
+        if not row: 
+            conn.close()
+            return jsonify({"error": "Transaction not found"}), 404
+            
+        if row[1] == 'PAID': 
+            conn.close()
+            return jsonify({"status": "success", "message": "Already Paid"})
         
-        conn.close()
-        return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
+        is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
+        
+        if is_valid and paid_amount > 0:
+            current_user.update_balance(paid_amount)
+            c.execute("UPDATE deposit_history SET status='PAID', amount=? WHERE id=?", (paid_amount, row[0]))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "success", "message": f"Payment Confirmed! +${paid_amount} Added."})
+        else:
+            if status_msg and "Status:" in status_msg:
+                clean_status = status_msg.split(': ')[1].strip()
+                if clean_status in ['EXPIRED', 'FAILED']:
+                    c.execute("UPDATE deposit_history SET status=? WHERE id=?", (clean_status, row[0]))
+                    conn.commit()
+            
+            conn.close()
+            return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
 
 @main_bp.route('/api/deposit/create', methods=['POST'])
 @login_required
@@ -763,32 +763,34 @@ def deposit_webhook():
     try:
         data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
         
+        # --- FIX: DEPOSIT LOCKING ---
         if status in ['paid', 'complete']: 
-            is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
-            
-            if is_valid and verified_amount > 0:
-                parts = order_id.split('_')
-                if len(parts) >= 2:
-                    user_id = int(parts[1])
-                    user = User.get(user_id)
-                    if user:
-                        conn = get_db_conn(); c = conn.cursor()
-                        c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
-                        existing = c.fetchone()
-                        
-                        if existing:
-                            if existing[1] != 'PAID':
-                                user.update_balance(verified_amount) 
-                                c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?", 
-                                          (data.get('currency', 'USDT'), verified_amount, existing[0]))
+            with deposit_lock:
+                is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
+                
+                if is_valid and verified_amount > 0:
+                    parts = order_id.split('_')
+                    if len(parts) >= 2:
+                        user_id = int(parts[1])
+                        user = User.get(user_id)
+                        if user:
+                            conn = get_db_conn(); c = conn.cursor()
+                            c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
+                            existing = c.fetchone()
+                            
+                            if existing:
+                                if existing[1] != 'PAID':
+                                    user.update_balance(verified_amount) 
+                                    c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?", 
+                                              (data.get('currency', 'USDT'), verified_amount, existing[0]))
+                                    conn.commit()
+                            else:
+                                user.update_balance(verified_amount)
+                                c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
+                                          (user_id, verified_amount, data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
                                 conn.commit()
-                        else:
-                            user.update_balance(verified_amount)
-                            c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                                      (user_id, verified_amount, data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-                            conn.commit()
-                        conn.close()
-                        return jsonify({"status": "ok"}), 200
+                            conn.close()
+                            return jsonify({"status": "ok"}), 200
         
         elif status in ['expired', 'failed', 'rejected']:
              conn = get_db_conn(); c = conn.cursor()
@@ -997,7 +999,7 @@ def buy_automation_license():
     # [KEEP ALL EXISTING CODE ABOVE]
 
 # ==========================================
-#   NEW: SINGLE LABEL PURCHASE LOGIC
+#   NEW: SINGLE LABEL PURCHASE LOGIC
 # ==========================================
 
 @main_bp.route('/api/purchase/single', methods=['POST'])

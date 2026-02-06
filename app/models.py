@@ -4,10 +4,10 @@ from flask import current_app
 from flask_login import UserMixin
 from datetime import datetime
 
-# --- UPDATED DB CONNECTION (High Load & Security) ---
+# --- UPDATED: High Load Connection Settings ---
 def get_db():
     conn = sqlite3.connect(current_app.config['DB_PATH'], timeout=60)
-    conn.execute("PRAGMA journal_mode=WAL") # Enable concurrency
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 class User(UserMixin):
@@ -141,25 +141,21 @@ class User(UserMixin):
             return None
         finally: conn.close()
 
+    # --- CRITICAL SECURITY FIX: ATOMIC UPDATE ---
     def update_balance(self, amount):
-        """
-        ATOMIC BALANCE UPDATE (SECURE)
-        Prevents race conditions where users could double-spend balance.
-        """
         conn = get_db()
         c = conn.cursor()
         try:
             if amount < 0:
                 cost = abs(amount)
-                # Ensure balance allows for deduction
+                # SQL does the math. This prevents race conditions.
                 c.execute("UPDATE users SET balance = balance - ? WHERE id = ? AND balance >= ?", (cost, self.id, cost))
             else:
                 c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (amount, self.id))
             
             if c.rowcount > 0:
                 conn.commit()
-                # Update local object state only if DB update succeeded
-                self.balance += amount 
+                self.balance += amount # Update local object for display
                 conn.close()
                 return True
             else:
@@ -195,17 +191,17 @@ class User(UserMixin):
         conn.close()
 
 class SenderAddress:
-    def __init__(self, id, user_id, name, company, phone, street1, street2, city, state, zip, phone_alt=None):
+    def __init__(self, id, user_id, name, company, phone, street1, street2, city, state, zip):
         self.id = id
         self.user_id = user_id
         self.name = name
         self.company = company
+        self.phone = phone
         self.street1 = street1
         self.street2 = street2
         self.city = city
         self.state = state
         self.zip = zip
-        self.phone = phone
 
     @staticmethod
     def get(id):
@@ -215,7 +211,6 @@ class SenderAddress:
         row = c.fetchone()
         conn.close()
         if row:
-            # Map DB columns to Object (Handle 10 columns)
-            # id, user_id, name, company, phone, street1, street2, city, state, zip
+            # Map DB columns to Object
             return SenderAddress(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
         return None

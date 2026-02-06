@@ -17,6 +17,7 @@ class LabelEngine:
     def __init__(self):
         self.mode = "production"
         self.debug_mode = True 
+        # Keep your existing sanitization logic
         self.sanitize_zpl = lambda text: str(text).replace("^", "").replace("~", "") if text else ""
 
     # --- HELPERS ---
@@ -128,7 +129,7 @@ class LabelEngine:
         retries = 5
         while retries > 0:
             try:
-                conn = sqlite3.connect(db_path, timeout=30)
+                conn = sqlite3.connect(db_path, timeout=60) # Increased Timeout
                 conn.execute("PRAGMA journal_mode=WAL") 
                 conn.execute(query, args)
                 conn.commit()
@@ -295,7 +296,16 @@ class LabelEngine:
             try: data_folder = current_app.config['DATA_FOLDER']
             except: return None, None, None
 
-        # 3. Load Templates
+        # 3. Load Templates (WITH SECURITY CHECK)
+        # --- SECURITY FIX: Whitelist templates to prevent directory traversal ---
+        ALLOWED_TEMPLATES = ['pitney_v2', 'stamps_v2', 'easypost_v2', 'stamps_v2_2digit']
+        # Extract base name without extension
+        base_template_name = str(template_choice).replace('.zpl', '').strip()
+        
+        if base_template_name not in ALLOWED_TEMPLATES:
+            # Fallback to default if malicious/unknown template
+            template_choice = 'pitney_v2'
+        
         templates = {}
         try:
             if "stamps_v2" in str(template_choice):
@@ -347,6 +357,12 @@ class LabelEngine:
         if not data_folder:
             try: data_folder = current_app.config['DATA_FOLDER']
             except: raise Exception("No Data Folder provided to Engine")
+
+        # --- SECURITY FIX: Whitelist templates in batch process too ---
+        ALLOWED_TEMPLATES = ['pitney_v2', 'stamps_v2', 'easypost_v2', 'stamps_v2_2digit']
+        base_template_name = str(template_choice).replace('.zpl', '').strip()
+        if base_template_name not in ALLOWED_TEMPLATES:
+            template_choice = 'pitney_v2'
 
         templates = {}
         try:
