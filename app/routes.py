@@ -11,6 +11,8 @@ import time
 import requests
 import json
 import string
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, send_from_directory, jsonify, redirect, url_for, current_app, Response, send_file
 from flask_login import login_user, login_required, logout_user, current_user
@@ -35,6 +37,7 @@ STRICT_HEADERS = [
 
 # SECURITY: LOAD FROM ENV
 OXAPAY_KEY = os.getenv('OXAPAY_KEY')
+OXAPAY_WEBHOOK_SECRET = os.getenv('OXAPAY_WEBHOOK_SECRET')
 ACTIVE_CONFIRMATIONS = set() 
 
 # --- SECURITY LOCKS ---
@@ -54,10 +57,13 @@ def get_db_conn():
     return conn
 
 # --- HELPER: SANITIZATION (PREVENT ZPL INJECTION) ---
-def sanitize_input(text):
-    if not text: return ""
-    # Remove ZPL command characters and non-printable chars
-    return str(text).replace('^', '').replace('~', '').strip()
+def sanitize_input(text, max_len=120):
+    if text is None: return ""
+    # Remove ZPL command markers, control chars, and cap field length.
+    cleaned = str(text).replace('^', '').replace('~', '')
+    cleaned = ''.join(ch for ch in cleaned if ch.isprintable())
+    cleaned = re.sub(r'[\r\n\t]+', ' ', cleaned).strip()
+    return cleaned[:max_len]
 
 # --- HELPER: SEND OTP EMAIL ---
 def send_otp_email(user):
@@ -486,6 +492,8 @@ def api_batches():
     
     if view == 'history':
         query = "SELECT * FROM batches WHERE user_id = ?"
+    elif view == 'automation':
+        query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%' AND filename NOT LIKE 'SINGLE_%'"
     else:
         query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%'"
         
@@ -496,8 +504,19 @@ def api_batches():
     
     c.execute(query.replace("SELECT *", "SELECT COUNT(*)"), params); total_items = c.fetchone()[0]
     query += " LIMIT ? OFFSET ?"; params.extend([limit, offset])
-    c.execute(query, params); rows = c.fetchall(); conn.close()
-    
+    c.execute(query, params); rows = c.fetchall()
+
+    # Automation view: show real-time confirmation progress from history table
+    # instead of label-generation success_count.
+    confirmed_map = {}
+    if view == 'automation' and rows:
+        batch_ids = [r[0] for r in rows]
+        placeholders = ','.join(['?'] * len(batch_ids))
+        c.execute(f"SELECT batch_id, COUNT(*) FROM history WHERE status = 'CONFIRMED' AND batch_id IN ({placeholders}) GROUP BY batch_id", batch_ids)
+        confirmed_map = {row[0]: int(row[1]) for row in c.fetchall()}
+
+    conn.close()
+
     data = []
     for r in rows:
         b_id=r[0]; est_date=to_est(r[9]); is_exp=False
@@ -513,7 +532,7 @@ def api_batches():
             "batch_id": b_id, 
             "batch_name": clean_display_name, 
             "count": r[3], 
-            "success_count": r[4], 
+            "success_count": confirmed_map.get(b_id, 0) if view == 'automation' else r[4], 
             "status": r[5], 
             "date": est_date, 
             "is_expired": is_exp,
@@ -729,6 +748,25 @@ def download_xlsx(batch_id):
         print(f"XLSX Gen Error: {e}")
         return jsonify({"error": "FAILED TO GENERATE FILE"}), 500
 
+# --- OXAPAY: WEBHOOK SIGNATURE CHECK ---
+def is_valid_oxapay_webhook(req):
+    if not OXAPAY_WEBHOOK_SECRET:
+        print("[PAYMENT] WARNING: OXAPAY_WEBHOOK_SECRET not set; webhook signature not enforced")
+        return True
+
+    provided = (
+        req.headers.get('X-OxaPay-Signature')
+        or req.headers.get('X-OXAPAY-SIGNATURE')
+        or req.headers.get('X-Signature')
+        or ''
+    ).strip()
+    if not provided:
+        return False
+
+    raw_body = req.get_data() or b''
+    expected = hmac.new(OXAPAY_WEBHOOK_SECRET.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(provided.lower(), expected.lower())
+
 # --- OXAPAY: VERIFY HELPER ---
 def verify_oxapay_payment(track_id):
     try:
@@ -768,37 +806,38 @@ def get_deposit_history():
 @main_bp.route('/api/deposit/check/<txn_id>', methods=['POST'])
 @login_required
 def manual_check_deposit(txn_id):
-    # --- [SECURITY FIX] DEPOSIT LOCKING ---
     with deposit_lock:
         conn = get_db_conn(); c = conn.cursor()
         c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ? AND user_id = ?", (txn_id, current_user.id))
         row = c.fetchone()
-        
-        if not row: 
+
+        if not row:
             conn.close()
             return jsonify({"error": "Transaction not found"}), 404
-            
-        if row[1] == 'PAID': 
+
+        if row[1] == 'PAID':
             conn.close()
             return jsonify({"status": "success", "message": "Already Paid"})
-        
+
         is_valid, paid_amount, status_msg = verify_oxapay_payment(txn_id)
-        
+
         if is_valid and paid_amount > 0:
-            current_user.update_balance(paid_amount)
-            c.execute("UPDATE deposit_history SET status='PAID', amount=? WHERE id=?", (paid_amount, row[0]))
-            conn.commit()
+            c.execute("UPDATE deposit_history SET status='PAID', amount=? WHERE id=? AND status != 'PAID'", (paid_amount, row[0]))
+            if c.rowcount > 0:
+                c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (paid_amount, current_user.id))
+                conn.commit(); conn.close()
+                return jsonify({"status": "success", "message": f"Payment Confirmed! +${paid_amount} Added."})
             conn.close()
-            return jsonify({"status": "success", "message": f"Payment Confirmed! +${paid_amount} Added."})
-        else:
-            if status_msg and "Status:" in status_msg:
-                clean_status = status_msg.split(': ')[1].strip()
-                if clean_status in ['EXPIRED', 'FAILED']:
-                    c.execute("UPDATE deposit_history SET status=? WHERE id=?", (clean_status, row[0]))
-                    conn.commit()
-            
-            conn.close()
-            return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
+            return jsonify({"status": "success", "message": "Already Paid"})
+
+        if status_msg and "Status:" in status_msg:
+            clean_status = status_msg.split(': ')[1].strip()
+            if clean_status in ['EXPIRED', 'FAILED']:
+                c.execute("UPDATE deposit_history SET status=? WHERE id=?", (clean_status, row[0]))
+                conn.commit()
+
+        conn.close()
+        return jsonify({"error": f"Gateway Report: {status_msg}"}), 400
 
 @main_bp.route('/api/deposit/create', methods=['POST'])
 @login_required
@@ -824,45 +863,54 @@ def create_deposit():
 @main_bp.route('/api/deposit/webhook', methods=['POST'])
 def deposit_webhook():
     try:
-        data = request.json; status = data.get('status', '').lower(); order_id = data.get('orderId'); track_id = data.get('trackId')
-        
-        if status in ['paid', 'complete']: 
-            # --- [SECURITY FIX] DEPOSIT LOCKING ---
+        if not is_valid_oxapay_webhook(request):
+            return jsonify({"status": "error", "message": "Invalid webhook signature"}), 403
+
+        data = request.json or {}
+        status = str(data.get('status', '')).lower().strip()
+        order_id = str(data.get('orderId', '')).strip()
+        track_id = str(data.get('trackId', '')).strip()
+
+        if not track_id:
+            return jsonify({"status": "error", "message": "Missing trackId"}), 400
+
+        if status in ['paid', 'complete']:
             with deposit_lock:
                 is_valid, verified_amount, _ = verify_oxapay_payment(track_id)
-                
-                if is_valid and verified_amount > 0:
-                    parts = order_id.split('_')
-                    if len(parts) >= 2:
-                        user_id = int(parts[1])
-                        user = User.get(user_id)
-                        if user:
-                            conn = get_db_conn(); c = conn.cursor()
-                            c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (str(track_id),))
-                            existing = c.fetchone()
-                            
-                            if existing:
-                                if existing[1] != 'PAID':
-                                    user.update_balance(verified_amount) 
-                                    c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=?", 
-                                              (data.get('currency', 'USDT'), verified_amount, existing[0]))
-                                    conn.commit()
-                            else:
-                                user.update_balance(verified_amount)
-                                c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", 
-                                          (user_id, verified_amount, data.get('currency', 'USDT'), str(track_id), 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
-                                conn.commit()
-                            conn.close()
-                            return jsonify({"status": "ok"}), 200
-        
+                if not (is_valid and verified_amount > 0):
+                    return jsonify({"status": "ok"}), 200
+
+                parts = order_id.split('_')
+                if len(parts) < 2 or not parts[1].isdigit():
+                    return jsonify({"status": "error", "message": "Invalid orderId"}), 400
+
+                user_id = int(parts[1])
+                conn = get_db_conn(); c = conn.cursor()
+                c.execute("SELECT id, status FROM deposit_history WHERE txn_id = ?", (track_id,))
+                existing = c.fetchone()
+
+                if existing:
+                    deposit_id, _current_status = existing
+                    c.execute("UPDATE deposit_history SET status='PAID', currency=?, amount=? WHERE id=? AND status != 'PAID'", (data.get('currency', 'USDT'), verified_amount, deposit_id))
+                    if c.rowcount > 0:
+                        c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (verified_amount, user_id))
+                        conn.commit()
+                else:
+                    c.execute("INSERT INTO deposit_history (user_id, amount, currency, txn_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?)", (user_id, verified_amount, data.get('currency', 'USDT'), track_id, 'PAID', datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+                    c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (verified_amount, user_id))
+                    conn.commit()
+
+                conn.close()
+                return jsonify({"status": "ok"}), 200
+
         elif status in ['expired', 'failed', 'rejected']:
-             conn = get_db_conn(); c = conn.cursor()
-             c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (str(track_id),)); conn.commit(); conn.close()
-             
-    except Exception as e: 
+            conn = get_db_conn(); c = conn.cursor()
+            c.execute("UPDATE deposit_history SET status='FAILED' WHERE txn_id = ?", (track_id,)); conn.commit(); conn.close()
+
+    except Exception as e:
         print(f"[WEBHOOK ERROR] {e}")
         return jsonify({"status": "error"}), 500
-    
+
     return jsonify({"status": "ok"}), 200
 
 # --- AUTOMATION PUBLIC ENDPOINTS ---
