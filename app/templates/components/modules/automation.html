@@ -415,7 +415,7 @@
         window.autoCurrentPage = autoCurrentPage;
 
         try {
-            const res = await fetch(`/api/batches?page=${autoCurrentPage}&limit=10`);
+            const res = await fetch(`/api/batches?page=${autoCurrentPage}&limit=10&view=automation`);
             const json = await res.json();
             let html = '';
             

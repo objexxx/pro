@@ -492,6 +492,8 @@ def api_batches():
     
     if view == 'history':
         query = "SELECT * FROM batches WHERE user_id = ?"
+    elif view == 'automation':
+        query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%' AND filename NOT LIKE 'SINGLE_%'"
     else:
         query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%'"
         
@@ -502,8 +504,19 @@ def api_batches():
     
     c.execute(query.replace("SELECT *", "SELECT COUNT(*)"), params); total_items = c.fetchone()[0]
     query += " LIMIT ? OFFSET ?"; params.extend([limit, offset])
-    c.execute(query, params); rows = c.fetchall(); conn.close()
-    
+    c.execute(query, params); rows = c.fetchall()
+
+    # Automation view: show real-time confirmation progress from history table
+    # instead of label-generation success_count.
+    confirmed_map = {}
+    if view == 'automation' and rows:
+        batch_ids = [r[0] for r in rows]
+        placeholders = ','.join(['?'] * len(batch_ids))
+        c.execute(f"SELECT batch_id, COUNT(*) FROM history WHERE status = 'CONFIRMED' AND batch_id IN ({placeholders}) GROUP BY batch_id", batch_ids)
+        confirmed_map = {row[0]: int(row[1]) for row in c.fetchall()}
+
+    conn.close()
+
     data = []
     for r in rows:
         b_id=r[0]; est_date=to_est(r[9]); is_exp=False
@@ -519,7 +532,7 @@ def api_batches():
             "batch_id": b_id, 
             "batch_name": clean_display_name, 
             "count": r[3], 
-            "success_count": r[4], 
+            "success_count": confirmed_map.get(b_id, 0) if view == 'automation' else r[4], 
             "status": r[5], 
             "date": est_date, 
             "is_expired": is_exp,
