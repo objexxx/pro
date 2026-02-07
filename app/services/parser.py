@@ -197,8 +197,22 @@ class OrderParser:
 #   NEW FUNCTIONS FOR BULK / WALMART
 # ==========================================
 
-def parse_walmart_xlsx(file_stream, sender_profile):
+def parse_walmart_xlsx(file_stream, sender_profile, inventory_json=None):
     try:
+        # Parse Inventory Map
+        inventory_map = {}
+        if inventory_json:
+            try:
+                if isinstance(inventory_json, str):
+                    inventory_map = json.loads(inventory_json) if inventory_json.strip() else {}
+                elif isinstance(inventory_json, dict):
+                    inventory_map = inventory_json
+            except:
+                inventory_map = {}
+
+        if not inventory_map:
+            return [], 0, "INVENTORY EMPTY: ADD SKU WEIGHTS IN INVENTORY TAB"
+
         # Load the XLSX file
         xls = pd.ExcelFile(file_stream)
         target_sheet = None
@@ -252,7 +266,27 @@ def parse_walmart_xlsx(file_stream, sender_profile):
                 order_number = str(row.iloc[1]).strip()
                 if order_number.endswith('.0'): order_number = order_number[:-2]
 
-                # --- 5. MAP DATA ---
+                # --- 5. SKU + INVENTORY WEIGHT ---
+                raw_sku = str(row.iloc[25]).strip()
+                if raw_sku.endswith('.0'): raw_sku = raw_sku[:-2]
+                if not raw_sku:
+                    return [], 0, "SKU MISSING IN WALMART FILE"
+
+                if raw_sku not in inventory_map:
+                    return [], 0, f"SKU NOT MAPPED: {raw_sku} (ADD TO INVENTORY)"
+
+                item_data = inventory_map.get(raw_sku, {})
+                try:
+                    inv_weight = float(item_data.get('weight', 0))
+                except:
+                    inv_weight = 0
+                if inv_weight <= 0:
+                    return [], 0, f"INVALID WEIGHT FOR SKU: {raw_sku}"
+
+                # Total package weight = SKU weight * quantity
+                total_weight = inv_weight * qty
+
+                # --- 6. MAP DATA ---
                 entry = {
                     'to_name': raw_name,
                     'to_phone': str(row.iloc[7]).strip() if pd.notna(row.iloc[7]) else "",
@@ -262,8 +296,9 @@ def parse_walmart_xlsx(file_stream, sender_profile):
                     'to_state': str(row.iloc[12]).strip(),
                     'to_zip': final_zip,
                     'to_country': 'US',
-                    'weight': float(qty) * 1.0,  # 1 lb per item
-                    'Ref01': str(row.iloc[25]).strip(), # SKU
+                    'weight': total_weight,
+                    'reference': item_data.get('description', ''),
+                    'Ref01': raw_sku, # SKU
                     'Ref02': order_number,              # WALMART ORDER NUMBER (Saved to DB)
                     'from_name': sender_profile.name,
                     'from_company': sender_profile.company,
@@ -281,8 +316,8 @@ def parse_walmart_xlsx(file_stream, sender_profile):
                 print(f"Skipping row {index}: {e}")
                 continue
         
-        return data, len(data), 0.0
+        return data, len(data), None
         
     except Exception as e:
         print(f"Walmart Parsing Error: {e}")
-        return [], 0, 0.0
+        return [], 0, "WALMART PARSING ERROR"

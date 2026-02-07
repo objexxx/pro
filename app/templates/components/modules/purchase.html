@@ -165,12 +165,7 @@
 
             // Show Sender Dropdown
             senderSec.classList.remove('hidden');
-
-            // --- BUG FIX: CHECK FOR ADDRESS ---
-            const senderSelect = document.getElementById('sender_id');
-            if (senderSelect && senderSelect.options.length <= 1 && senderSelect.options[0].disabled) {
-               showNotification("NOTE: You must add a Sender Address in 'Address Book' for Walmart Mode.", "processing");
-            }
+            loadSenderProfiles();
 
             // Update UI Text
             if(uiOpMode) uiOpMode.innerText = 'WALMART_SYNC';
@@ -305,6 +300,13 @@
     document.addEventListener("DOMContentLoaded", function() {
         const savedVersion = document.querySelector('select[name="tracking_version"]').value;
         updateProtocolBadge(savedVersion);
+
+        const senderSelect = document.getElementById('sender_id');
+        if (senderSelect) {
+            senderSelect.addEventListener('change', function() {
+                if (this.value) localStorage.setItem('lastSelectedSenderPurchase', this.value);
+            });
+        }
         
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('csvUpload');
@@ -347,6 +349,37 @@
             }
         }
     });
+
+    async function loadSenderProfiles() {
+        const senderSelect = document.getElementById('sender_id');
+        if (!senderSelect) return;
+        try {
+            const res = await fetch('/api/addresses');
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) {
+                senderSelect.innerHTML = '<option value="" disabled selected>NO ADDRESSES FOUND (ADD IN ADDRESS TAB)</option>';
+                senderSelect.disabled = true;
+                showNotification("NOTE: You must add a Sender Address in 'Address Book' for Walmart Mode.", "processing");
+                return;
+            }
+            const savedId = localStorage.getItem('lastSelectedSenderPurchase');
+            let foundSaved = false;
+            let opts = '<option value="" disabled>Select Sender Profile...</option>';
+            data.forEach(a => {
+                const isSelected = savedId && String(a.id) === String(savedId);
+                if (isSelected) foundSaved = true;
+                opts += `<option value="${a.id}" ${isSelected ? 'selected' : ''}>${a.name} (${a.street1})</option>`;
+            });
+            senderSelect.innerHTML = opts;
+            senderSelect.disabled = false;
+            if (!foundSaved) senderSelect.value = "";
+        } catch(e) {
+            senderSelect.innerHTML = '<option value="" disabled selected>ERROR LOADING ADDRESSES</option>';
+            senderSelect.disabled = true;
+        }
+    }
+
+    window.loadSenderProfiles = loadSenderProfiles;
 
     function triggerVerification() {
         updateAllocationStatus('ALLOCATED');

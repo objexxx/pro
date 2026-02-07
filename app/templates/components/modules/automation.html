@@ -59,7 +59,6 @@
             <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] flex flex-col flex-1 relative overflow-hidden shadow-glow min-h-0">
                 <div class="flex border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#050505] shrink-0">
                     <button onclick="toggleConfigTab('credentials')" id="tab-credentials" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest border-b-2 border-black dark:border-white text-black dark:text-white transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111]">API Keys</button>
-                    <button onclick="toggleConfigTab('inventory')" id="tab-inventory" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">Inventory</button>
                     <button onclick="toggleConfigTab('sender')" id="tab-sender" class="flex-1 py-3 text-[9px] font-bold uppercase tracking-widest text-gray-400 border-b-2 border-transparent transition-all font-mono hover:bg-gray-100 dark:hover:bg-[#111] hover:text-black dark:hover:text-white">Sender</button>
                 </div>
 
@@ -113,21 +112,6 @@
                             </div>
                             <input type="text" id="in_csrf" value="{{ user.auth_csrf or '' }}" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all placeholder-gray-400">
                         </div>
-                    </div>
-
-                    <div id="panel-inventory" class="hidden h-full flex flex-col">
-                        <textarea id="in_inventory" class="hidden">{{ user.inventory_json or '{}' }}</textarea>
-                        
-                        <div class="bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] p-3 space-y-2 shrink-0 mb-3">
-                            <div class="grid grid-cols-2 gap-2">
-                                <input id="inv_sku" type="text" placeholder="SKU ID" class="p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
-                                <input id="inv_weight" type="number" placeholder="Lbs" class="p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
-                            </div>
-                            <input id="inv_desc" type="text" placeholder="Package Description" class="w-full p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-blue-500 placeholder-gray-400">
-                            <button onclick="addInvItem()" class="w-full py-2 bg-black dark:bg-white border border-transparent text-white dark:text-black text-[9px] font-bold uppercase tracking-widest hover:opacity-90 transition-all font-mono">Update Map</button>
-                        </div>
-
-                        <div id="inventory_list" class="space-y-2 flex-1 overflow-y-auto custom-scrollbar"></div>
                     </div>
 
                     <div id="panel-sender" class="hidden h-full flex flex-col space-y-4 overflow-y-auto custom-scrollbar">
@@ -344,7 +328,7 @@
     }
 
     function toggleConfigTab(tabId) {
-        ['credentials', 'inventory', 'sender'].forEach(id => {
+        ['credentials', 'sender'].forEach(id => {
             const p = document.getElementById(`panel-${id}`);
             const t = document.getElementById(`tab-${id}`);
             if(p && t) {
@@ -362,22 +346,20 @@
         }
     }
 
+    const AUTOMATION_API_KEY = "{{ user.api_key }}";
     async function loadDropdown() { const sel = document.getElementById('addr_select'); if(!sel) return; try { const res = await fetch('/api/addresses'); const data = await res.json(); if (data.length === 0) { sel.innerHTML = '<option value="">NO SAVED PROFILES</option>'; sel.disabled = true; addressesAvailable = false; } else { let opts = '<option value="" disabled>Select Sender Profile...</option>'; const savedId = localStorage.getItem('lastSelectedSender'); let foundSaved = false; data.forEach(a => { const isSelected = (savedId && String(a.id) === String(savedId)); if (isSelected) foundSaved = true; opts += `<option value="${a.id}" ${isSelected ? 'selected' : ''}>${a.name} | ${a.state}</option>`; }); sel.innerHTML = opts; sel.disabled = false; addressesAvailable = true; if (!foundSaved) sel.value = ""; } checkParseReady(); } catch(e) { sel.innerHTML = '<option>ERROR LOADING</option>'; } }
     function handleAddrChange() { const sel = document.getElementById('addr_select'); if (sel && sel.value) { localStorage.setItem('lastSelectedSender', sel.value); checkParseReady(); } }
-    function renderInventory() { const raw = document.getElementById('in_inventory'); const listDiv = document.getElementById('inventory_list'); if(!raw || !listDiv) return; let data = {}; try { data = JSON.parse(raw.value); } catch(e) { data = {}; } if (Object.keys(data).length === 0) { listDiv.innerHTML = '<div class="p-3 text-center text-gray-400 italic text-[9px] font-mono uppercase tracking-widest">Inventory map empty.</div>'; return; } let html = ''; for (const [sku, details] of Object.entries(data)) { html += `<div class="flex items-center justify-between p-2.5 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E]"><div class="flex flex-col"><span class="text-[10px] font-bold text-black dark:text-white font-mono">${sku}</span><span class="text-[8px] text-gray-500 uppercase tracking-widest font-mono">${details.weight} lbs // ${details.description}</span></div><button onclick="removeInvItem('${sku}')" class="text-red-500 hover:text-red-600 text-[8px] font-bold uppercase tracking-widest font-mono">Remove</button></div>`; } listDiv.innerHTML = html; }
-    function addInvItem() { const sku = document.getElementById('inv_sku').value.trim(); const weight = document.getElementById('inv_weight').value.trim(); const desc = document.getElementById('inv_desc').value.trim(); const hiddenInput = document.getElementById('in_inventory'); if (!sku || !weight || !desc) { showNotification("MISSING FIELDS", "error"); return; } let data = {}; try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; } data[sku] = { "weight": parseFloat(weight), "description": desc }; hiddenInput.value = JSON.stringify(data); renderInventory(); document.getElementById('inv_sku').value = ''; document.getElementById('inv_weight').value = ''; document.getElementById('inv_desc').value = ''; showNotification(`MAPPED: ${sku}`, "success"); }
-    function removeInvItem(sku) { const hiddenInput = document.getElementById('in_inventory'); let data = {}; try { data = JSON.parse(hiddenInput.value || "{}"); } catch(e) { data = {}; } if(data[sku]) { delete data[sku]; hiddenInput.value = JSON.stringify(data); renderInventory(); showNotification(`UNMAPPED: ${sku}`, "success"); } }
-    async function formatFile() { const fileInput = document.getElementById('in_file'); const addrSelect = document.getElementById('addr_select'); const inventoryData = document.getElementById('in_inventory').value; if (!fileInput.files[0]) { showNotification("MISSING FILE: UPLOAD .TXT", "error"); return; } if (!addrSelect.value) { showNotification("MISSING PROFILE: SELECT SENDER", "error"); return; } const formData = new FormData(); formData.append('file', fileInput.files[0]); formData.append('address_id', addrSelect.value); formData.append('inventory', inventoryData); const btn = document.getElementById('parseBtn'); const originalText = btn.innerText; btn.innerText = "PROCESSING..."; btn.disabled = true; try { const res = await fetch('/api/automation/format', { method: 'POST', body: formData }); if (res.ok) { const blob = await res.blob(); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Parsed_Orders_${new Date().getTime()}.zip`; document.body.appendChild(a); a.click(); a.remove(); showNotification("FILE PARSED SUCCESSFULLY", 'success'); } else { const err = await res.json(); showNotification(`ERROR: ${err.error || 'BAD REQUEST'}`, 'error'); } } catch(e) { showNotification("CONNECTION FAILED", 'error'); } btn.innerText = originalText; btn.disabled = false; }
+    async function formatFile() { const fileInput = document.getElementById('in_file'); const addrSelect = document.getElementById('addr_select'); if (!fileInput.files[0]) { showNotification("MISSING FILE: UPLOAD .TXT", "error"); return; } if (!addrSelect.value) { showNotification("MISSING PROFILE: SELECT SENDER", "error"); return; } const formData = new FormData(); formData.append('file', fileInput.files[0]); formData.append('address_id', addrSelect.value); const btn = document.getElementById('parseBtn'); const originalText = btn.innerText; btn.innerText = "PROCESSING..."; btn.disabled = true; try { const res = await fetch('/api/automation/format', { method: 'POST', headers: {'X-API-Key': AUTOMATION_API_KEY}, body: formData }); if (res.ok) { const blob = await res.blob(); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Parsed_Orders_${new Date().getTime()}.zip`; document.body.appendChild(a); a.click(); a.remove(); showNotification("FILE PARSED SUCCESSFULLY", 'success'); } else { const err = await res.json(); showNotification(`ERROR: ${err.error || 'BAD REQUEST'}`, 'error'); } } catch(e) { showNotification("CONNECTION FAILED", 'error'); } btn.innerText = originalText; btn.disabled = false; }
     function handleFileSelect(input) { if (input.files && input.files[0]) { const name = input.files[0].name; const span = document.getElementById('selectedFileName'); if(span) { span.innerText = name; span.classList.add('text-black', 'dark:text-white', 'font-bold'); } showNotification(name + " STAGED", 'success'); fileSelected = true; checkParseReady(); } }
     function checkParseReady() { const parseBtn = document.getElementById('parseBtn'); const addrValue = document.getElementById('addr_select') ? document.getElementById('addr_select').value : null; if (parseBtn && fileSelected && addressesAvailable && addrValue) { parseBtn.disabled = false; parseBtn.classList.remove('text-gray-400', 'cursor-not-allowed', 'bg-gray-100', 'dark:bg-[#151515]'); parseBtn.classList.add('bg-black', 'dark:bg-white', 'text-white', 'dark:text-black', 'hover:opacity-90'); } }
-    async function saveSettings() { const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; const formData = new FormData(); formData.append('cookies', document.getElementById('in_cookies').value); formData.append('csrf', document.getElementById('in_csrf').value); formData.append('inventory', document.getElementById('in_inventory').value); const arActive = document.getElementById('autoRenewActive'); formData.append('auto_renew', arActive ? arActive.checked : false); try { const res = await fetch('/api/automation/save', { method: 'POST', body: formData }); if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } else showNotification("SAVE FAILED", 'error'); } catch (e) { showNotification("ERROR SAVING", 'error'); } btn.innerText = original; }
+    async function saveSettings() { const btn = document.getElementById('saveBtn'); const original = btn.innerText; btn.innerText = "SAVING..."; const formData = new FormData(); formData.append('cookies', document.getElementById('in_cookies').value); formData.append('csrf', document.getElementById('in_csrf').value); const arActive = document.getElementById('autoRenewActive'); formData.append('auto_renew', arActive ? arActive.checked : false); try { const res = await fetch('/api/automation/save', { method: 'POST', headers: {'X-API-Key': AUTOMATION_API_KEY}, body: formData }); if (res.ok) { showNotification("SETTINGS SAVED", 'success'); } else { const err = await res.json(); showNotification(err.error || "SAVE FAILED", 'error'); } } catch (e) { showNotification("ERROR SAVING", 'error'); } btn.innerText = original; }
     
     async function confirmOrder(batchId) { 
         showNotification('JOB STARTED - MONITORING', 'processing'); 
         try { 
             const res = await fetch('/api/automation/confirm', { 
                 method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
+                headers: {'Content-Type': 'application/json', 'X-API-Key': AUTOMATION_API_KEY}, 
                 body: JSON.stringify({ batch_id: batchId }) 
             }); 
             const data = await res.json(); 
@@ -539,7 +521,6 @@
     if(wasSubscribed) { 
         loadAutomationHistory(); 
         loadDropdown(); 
-        renderInventory();
         setInterval(loadAutomationHistory, 3000); 
     }
 </script>

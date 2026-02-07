@@ -49,6 +49,20 @@ def safe_write(db_path, query, args=()):
         print(f"[DB FAIL] Could not write to DB after 10 attempts.")
         return False
 
+def get_batch_status(db_path, batch_id):
+    try:
+        conn = sqlite3.connect(db_path, timeout=30)
+        c = conn.cursor()
+        c.execute("SELECT status FROM batches WHERE batch_id = ?", (batch_id,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except:
+        return None
+
+def is_blocked_status(status):
+    return status in ('REFUNDED', 'FAILED')
+
 # --- ERROR LOGGING HELPER ---
 def log_server_error(db_path, source, msg, batch_id=None):
     safe_write(db_path, 
@@ -207,17 +221,35 @@ def worker_loop(app, worker_id):
                 price = get_worker_price(db_path, uid, ltype, version)
 
                 try:
+                    # If admin already cancelled/refunded, skip immediately
+                    current_status = get_batch_status(db_path, bid)
+                    if is_blocked_status(current_status):
+                        log_debug(f"[T{worker_id}] Skipping {bid} (status={current_status})")
+                        continue
+
                     csv_path = os.path.join(data_folder, 'uploads', fname)
                     if not os.path.exists(csv_path): raise Exception(f"File {fname} missing")
 
                     df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
                     generated_files = []
                     success = 0
+                    cancelled = False
+                    cancel_status = None
+                    last_status_check = 0
                     
                     history_buffer = [] 
                     buffer_size = 5 
                     
                     for index, row in df.iterrows():
+                        # --- CANCEL CHECK (ADMIN REFUND/CANCEL) ---
+                        if time.time() - last_status_check > 2:
+                            last_status_check = time.time()
+                            current_status = get_batch_status(db_path, bid)
+                            if is_blocked_status(current_status):
+                                cancelled = True
+                                cancel_status = current_status
+                                break
+
                         # --- HEARTBEAT CHECK (ACTIVE) ---
                         if time.time() - last_heartbeat_time > 5:
                             safe_write(db_path, "INSERT OR REPLACE INTO system_config (key, value) VALUES ('worker_last_heartbeat', ?)", 
@@ -235,7 +267,7 @@ def worker_loop(app, worker_id):
                                 history_buffer.append((
                                     bid, uid, ref, tracking, 'SUCCESS', 
                                     row_data.get('FromName',''), row_data.get('ToName',''), row_data.get('Street1To',''), 
-                                    version, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), row_data.get('Ref02', '')
+                                    version, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), row_data.get('Ref02', '')
                                 ))
                                 
                             else:
@@ -261,6 +293,14 @@ def worker_loop(app, worker_id):
                                 except Exception as e:
                                     print(f"[DB FLUSH FAIL] {e}")
 
+                    if cancelled:
+                        # Best-effort cleanup of partial files
+                        for f in generated_files:
+                            try: os.remove(f)
+                            except: pass
+                        log_debug(f"[T{worker_id}] Halted {bid} (status={cancel_status})")
+                        continue
+
                     # --- FLUSH REMAINING ---
                     if history_buffer:
                         safe_write(db_path, "UPDATE batches SET success_count = ? WHERE batch_id = ?", (success, bid))
@@ -280,6 +320,12 @@ def worker_loop(app, worker_id):
                         for f in generated_files:
                             try: os.remove(f)
                             except: pass
+
+                    # If admin cancelled/refunded mid-run, do not overwrite status
+                    current_status = get_batch_status(db_path, bid)
+                    if is_blocked_status(current_status):
+                        log_debug(f"[T{worker_id}] Final status preserved for {bid} (status={current_status})")
+                        continue
 
                     status = 'COMPLETED'
                     if success == 0: status = 'FAILED'

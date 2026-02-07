@@ -97,21 +97,27 @@ def system_health():
         
         c.execute("SELECT SUM(amount) FROM revenue_ledger WHERE created_at > datetime('now', '-30 days')")
         sub_rev_30 = c.fetchone()[0] or 0.0
+
+        c.execute("SELECT SUM(amount) FROM revenue_ledger WHERE created_at > datetime('now', 'start of day')")
+        sub_rev_today = c.fetchone()[0] or 0.0
         
         c.execute("SELECT SUM(amount) FROM revenue_ledger WHERE created_at > datetime('now', '-7 days')")
         sub_rev_7 = c.fetchone()[0] or 0.0
     except:
         sub_rev_total = 0.0
         sub_rev_30 = 0.0
+        sub_rev_today = 0.0
         sub_rev_7 = 0.0
 
-    # --- REVENUE FIX: Uses batch price if available, falls back to user price, then 3.00 ---
-    # Also added 'CONFIRMED' and 'READY' statuses so stats update instantly
-    c.execute("""
-        SELECT SUM(b.success_count * COALESCE(b.price, u.price_per_label, 3.00)) 
-        FROM batches b JOIN users u ON b.user_id = u.id 
-        WHERE b.status IN ('COMPLETED','PARTIAL','CONFIRMED','READY')
-    """)
+    # --- REVENUE (LABELS): TIME-BASED FROM HISTORY ---
+    # Uses per-label history timestamps for accurate day/30d stats.
+    base_hist = """
+        FROM history h
+        JOIN batches b ON h.batch_id = b.batch_id
+        JOIN users u ON b.user_id = u.id
+        WHERE h.status = 'SUCCESS' AND b.status != 'REFUNDED'
+    """
+    c.execute(f"SELECT SUM(COALESCE(b.price, u.price_per_label, 3.00)) {base_hist}")
     batch_rev_live = c.fetchone()[0] or 0.0
     rev_arch = float(config.get('archived_revenue', '0.00'))
     
@@ -119,21 +125,25 @@ def system_health():
     rev_life = batch_rev_live + rev_arch + sub_rev_total
     
     # 30 Day Revenue
-    c.execute("""
-        SELECT SUM(b.success_count * COALESCE(b.price, u.price_per_label, 3.00)) 
-        FROM batches b JOIN users u ON b.user_id = u.id 
-        WHERE b.status IN ('COMPLETED','PARTIAL','CONFIRMED','READY') 
-        AND b.created_at > datetime('now', '-30 days')
+    c.execute(f"""
+        SELECT SUM(COALESCE(b.price, u.price_per_label, 3.00))
+        {base_hist} AND h.created_at > datetime('now', '-30 days')
     """)
     batch_rev_30 = c.fetchone()[0] or 0.0
     rev_30 = batch_rev_30 + sub_rev_30
+
+    # Today's Revenue (UTC)
+    c.execute(f"""
+        SELECT SUM(COALESCE(b.price, u.price_per_label, 3.00))
+        {base_hist} AND h.created_at > datetime('now', 'start of day')
+    """)
+    batch_rev_today = c.fetchone()[0] or 0.0
+    rev_today = batch_rev_today + sub_rev_today
     
     # 7-Day Rolling Average for Projection
-    c.execute("""
-        SELECT SUM(b.success_count * COALESCE(b.price, u.price_per_label, 3.00)) 
-        FROM batches b JOIN users u ON b.user_id = u.id 
-        WHERE b.status IN ('COMPLETED','PARTIAL','CONFIRMED','READY') 
-        AND b.created_at > datetime('now', '-7 days')
+    c.execute(f"""
+        SELECT SUM(COALESCE(b.price, u.price_per_label, 3.00))
+        {base_hist} AND h.created_at > datetime('now', '-7 days')
     """)
     batch_rev_7 = c.fetchone()[0] or 0.0
     rev_7d = batch_rev_7 + sub_rev_7
@@ -150,9 +160,58 @@ def system_health():
         "worker_status": "PAUSED" if is_paused else "ONLINE", 
         "queue_depth": q, "active_confirmations": c_active, 
         "errors_24h": err_batch + err_sys, "last_heartbeat": last_beat, 
+        "revenue_today": rev_today,
         "revenue_lifetime": rev_life, "revenue_30d": rev_30,
         "revenue_est_30d": rev_est_30, "subs_mrr": rev_mrr, "subs_count": sub_slots_used
     })
+
+@admin_bp.route('/api/jobs/queue_action', methods=['POST'])
+@login_required
+@admin_required
+def queue_action():
+    data = request.json or {}
+    bid = data.get('batch_id')
+    act = data.get('action')
+    if not bid or act not in ['reset', 'refund_unprocessed', 'cancel']:
+        return jsonify({"error": "INVALID_REQUEST"}), 400
+    
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT batch_id, user_id, count, success_count, status, price FROM batches WHERE batch_id=?", (bid,))
+    row = c.fetchone()
+    if not row:
+        conn.close(); return jsonify({"error": "BATCH_NOT_FOUND"}), 404
+    _, uid, count, success_count, status, price = row
+    if status not in ('QUEUED', 'PROCESSING'):
+        conn.close(); return jsonify({"error": "BATCH_NOT_IN_QUEUE"}), 400
+    
+    now_ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    if act == 'reset':
+        if int(success_count) > 0:
+            conn.close()
+            return jsonify({"error": "CANNOT_RESET_WITH_LABELS"}), 400
+        c.execute("UPDATE batches SET status='QUEUED' WHERE batch_id=?", (bid,))
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, "QUEUE_RESET", f"Requeued {bid}", now_ts))
+        msg = f"BATCH {bid} RESET TO QUEUED"
+    elif act == 'cancel':
+        c.execute("UPDATE batches SET status='FAILED' WHERE batch_id=?", (bid,))
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, "QUEUE_CANCEL", f"Cancelled {bid} (no refund)", now_ts))
+        msg = f"BATCH {bid} CANCELLED"
+    else:
+        if price is None:
+            c.execute("SELECT price_per_label FROM users WHERE id=?", (uid,)); p = c.fetchone()
+            price = p[0] if p else 3.00
+        refund = float(count) * float(price)
+        c.execute("UPDATE users SET balance = balance + ? WHERE id=?", (refund, uid))
+        # Refunds revoke access entirely (even if some labels were generated)
+        c.execute("UPDATE batches SET status='REFUNDED' WHERE batch_id=?", (bid,))
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, "QUEUE_REFUND", f"Refunded {bid} ${refund:.2f} (full batch, access revoked)", now_ts))
+        msg = f"REFUNDED ${refund:.2f} (FULL BATCH, ACCESS REVOKED)"
+    
+    conn.commit(); conn.close()
+    return jsonify({"status": "success", "message": msg})
 
 @admin_bp.route('/api/server/errors')
 @login_required
@@ -283,30 +342,69 @@ def track_list():
 @admin_required
 def track_export():
     days = int(request.args.get('days', 30))
+    prefix = request.args.get('prefix', 'all')
     cutoff = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT h.tracking, u.username, h.created_at FROM history h JOIN users u ON h.user_id = u.id WHERE h.created_at > ? ORDER BY h.created_at DESC", (cutoff,))
+    base = "FROM history h JOIN users u ON h.user_id = u.id WHERE h.created_at > ?"
+    params = [cutoff]
+    if prefix and prefix != 'all':
+        base += " AND h.tracking LIKE ?"
+        params.append(f"{prefix}%")
+    c.execute(f"SELECT h.tracking, u.username, h.created_at {base} ORDER BY h.created_at DESC", params)
     rows = c.fetchall(); conn.close()
     out = io.StringIO(); w = csv.writer(out); w.writerow(['Tracking ID', 'Username', 'Date UTC']); w.writerows(rows)
     return Response(out.getvalue(), mimetype='text/csv', headers={"Content-disposition": f"attachment; filename=tracking_export_{days}d.csv"})
+
+@admin_bp.route('/api/payments/list')
+@login_required
+@admin_required
+def payments_list():
+    page = int(request.args.get('page', 1)); limit = 50; offset = (page-1)*limit
+    search = request.args.get('search', '').strip()
+    status = request.args.get('status', 'all').strip().upper()
+    conn = get_db(); c = conn.cursor()
+    base = "FROM deposit_history d LEFT JOIN users u ON d.user_id = u.id WHERE 1=1"
+    params = []
+    if status and status != 'ALL':
+        base += " AND UPPER(d.status) = ?"
+        params.append(status)
+    if search:
+        base += " AND (d.txn_id LIKE ? OR u.username LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%"])
+    c.execute(f"SELECT COUNT(*) {base}", params); total = c.fetchone()[0]
+    c.execute(f"SELECT d.txn_id, d.amount, d.currency, d.status, d.created_at, u.username {base} ORDER BY d.created_at DESC LIMIT ? OFFSET ?", (*params, limit, offset))
+    rows = [{"txn_id":r[0], "amount":r[1] or 0.0, "currency":r[2] or "", "status":r[3] or "", "date":r[4] or "", "user":r[5] or "UNKNOWN"} for r in c.fetchall()]
+    conn.close()
+    return jsonify({"data": rows, "pagination": {"current_page": page, "total_pages": math.ceil(total/limit), "total_items": total}})
 
 @admin_bp.route('/api/users/search', methods=['GET'])
 @login_required
 @admin_required
 def search_users():
-    q = request.args.get('q', '').strip(); conn = get_db(); c = conn.cursor()
+    q = request.args.get('q', '').strip()
+    page = int(request.args.get('page', 1)); limit = 50; offset = (page-1)*limit
+    conn = get_db(); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM users WHERE is_admin = 0"); total_count = c.fetchone()[0]
-    if q: c.execute("SELECT id, username, balance, created_at FROM users WHERE username LIKE ? AND is_admin = 0 ORDER BY id DESC LIMIT 50", (f"%{q}%",))
-    else: c.execute("SELECT id, username, balance, created_at FROM users WHERE is_admin = 0 ORDER BY id DESC LIMIT 50")
-    rows = [{"id":r[0], "username":r[1], "balance":r[2], "date":r[3]} for r in c.fetchall()]; conn.close()
-    return jsonify({"users": rows, "total": total_count})
+    base = "FROM users WHERE is_admin = 0"
+    params = []
+    if q:
+        base += " AND username LIKE ?"
+        params.append(f"%{q}%")
+    c.execute(f"SELECT COUNT(*) {base}", params); total_filtered = c.fetchone()[0]
+    c.execute(f"SELECT id, username, balance, created_at, is_banned {base} ORDER BY id DESC LIMIT ? OFFSET ?", (*params, limit, offset))
+    rows = [{"id":r[0], "username":r[1], "balance":r[2], "date":r[3], "is_banned": bool(r[4])} for r in c.fetchall()]; conn.close()
+    return jsonify({
+        "users": rows,
+        "total": total_count,
+        "pagination": {"current_page": page, "total_pages": math.ceil(total_filtered/limit), "total_items": total_filtered}
+    })
 
 @admin_bp.route('/api/users/details/<int:uid>', methods=['GET'])
 @login_required
 @admin_required
 def user_details(uid):
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT price_per_label, subscription_end, auto_renew FROM users WHERE id=?", (uid,)); u = c.fetchone()
+    c.execute("SELECT price_per_label, subscription_end, auto_renew, is_banned FROM users WHERE id=?", (uid,)); u = c.fetchone()
     if not u: conn.close(); return jsonify({}), 404
     
     c.execute("SELECT ip_address FROM login_history WHERE user_id=? ORDER BY created_at DESC LIMIT 1", (uid,)); ip = c.fetchone()
@@ -326,6 +424,7 @@ def user_details(uid):
     return jsonify({
         "ip": ip[0] if ip else "None", 
         "prices": prices, 
+        "is_banned": bool(u[3]),
         "subscription": {
             "is_active": u[1] and datetime.strptime(u[1], "%Y-%m-%d %H:%M:%S") > datetime.utcnow(), 
             "end_date": u[1] or "--", 
@@ -343,11 +442,24 @@ def user_action():
     target_username = u_row[0] if u_row else f"Unknown_ID_{uid}"
     
     msg = "Action Completed"
+    ban_state = None
 
     if act == 'reset_pass':
         c.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(data.get('new_password')), uid))
         msg = f"PASSWORD RESET FOR {target_username}"
         safe_notify_user(conn, uid, "SECURITY ALERT: Your password was reset by admin.", "processing")
+    elif act == 'set_ban':
+        ban_state = bool(data.get('ban', True))
+        c.execute("UPDATE users SET is_banned=? WHERE id=?", (1 if ban_state else 0, uid))
+        action = "USER_BAN" if ban_state else "USER_UNBAN"
+        detail = f"{'Banned' if ban_state else 'Unbanned'} {target_username}"
+        c.execute("INSERT INTO admin_audit_log (admin_id, action, details, created_at) VALUES (?, ?, ?, ?)", 
+                  (current_user.id, action, detail, datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        if ban_state:
+            safe_notify_user(conn, uid, "ACCOUNT SUSPENDED: Access revoked by admin.", "error")
+        else:
+            safe_notify_user(conn, uid, "ACCOUNT RESTORED: Access re-enabled by admin.", "success")
+        msg = f"USER {target_username} {'BANNED' if ban_state else 'UNBANNED'}"
     elif act == 'update_price':
         l, v, p = data.get('label_type'), data.get('version'), float(data.get('price'))
         
@@ -384,7 +496,10 @@ def user_action():
         msg = f"LICENSE GRANTED TO {target_username} ({days} DAYS)"
     
     conn.commit(); conn.close()
-    return jsonify({"status": "success", "message": msg})
+    resp = {"status": "success", "message": msg}
+    if ban_state is not None:
+        resp["is_banned"] = ban_state
+    return jsonify(resp)
 
 @admin_bp.route('/api/logs', methods=['GET'])
 @login_required

@@ -23,7 +23,7 @@ def create_app():
         raise RuntimeError("SECURITY ERROR: SECRET_KEY must be set in production environment")
     app.secret_key = env_secret or secrets.token_hex(32)
 
-    app.config['VERSION'] = 'v1.0.3' 
+    app.config['VERSION'] = 'v1.0.4' 
     
     # --- DATABASE SETUP ---
     app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -68,6 +68,10 @@ def create_app():
     app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME') 
     app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD') 
     app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME')
+
+    # --- SECURITY: REQUIRE OXAPAY WEBHOOK SECRET IN PRODUCTION ---
+    if not app.debug and not os.environ.get('OXAPAY_WEBHOOK_SECRET'):
+        raise RuntimeError("SECURITY ERROR: OXAPAY_WEBHOOK_SECRET must be set in production environment")
 
     @app.context_processor
     def inject_version():

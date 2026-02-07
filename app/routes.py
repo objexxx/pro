@@ -493,7 +493,11 @@ def api_batches():
     if view == 'history':
         query = "SELECT * FROM batches WHERE user_id = ?"
     elif view == 'automation':
-        query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%' AND filename NOT LIKE 'SINGLE_%'"
+        query = (
+            "SELECT * FROM batches WHERE user_id = ? "
+            "AND filename NOT LIKE 'WALMART_%' AND filename NOT LIKE 'SINGLE_%' "
+            "AND batch_id NOT LIKE 'SINGLE_%'"
+        )
     else:
         query = "SELECT * FROM batches WHERE user_id = ? AND filename NOT LIKE 'WALMART_%'"
         
@@ -581,7 +585,8 @@ def process():
         sender = SenderAddress.get(sender_id)
         if not sender or sender.user_id != current_user.id: return jsonify({"error": "Invalid Sender Profile"}), 400
         
-        data, count, _ = parser.parse_walmart_xlsx(file, sender)
+        data, count, err = parser.parse_walmart_xlsx(file, sender, current_user.inventory_json)
+        if err: return jsonify({"error": err}), 400
         if count == 0: return jsonify({"error": "No valid rows found in XLSX. Check format."}), 400
         
         df = pd.DataFrame(data)
@@ -681,7 +686,8 @@ def verify_csv():
         if not sender_id: return jsonify({"error": "Sender Profile Required"}), 400
         sender = SenderAddress.get(sender_id)
         if not sender or sender.user_id != current_user.id: return jsonify({"error": "Invalid Sender"}), 400
-        _, count, _ = parser.parse_walmart_xlsx(file, sender)
+        _, count, err = parser.parse_walmart_xlsx(file, sender, current_user.inventory_json)
+        if err: return jsonify({"error": err}), 400
         if count == 0: return jsonify({"error": "No valid rows found in XLSX"}), 400
     else:
         try: 
@@ -705,6 +711,7 @@ def download_xlsx(batch_id):
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: conn.close(); return jsonify({"error": "UNAUTHORIZED"}), 403
+    if batch_row[1] in ('REFUNDED', 'FAILED'): conn.close(); return jsonify({"error": f"ACCESS REVOKED: BATCH {batch_row[1]}"}), 403
     if not batch_row[0].startswith("WALMART_"): conn.close(); return jsonify({"error": "NOT A WALMART BATCH"}), 400
     
     c.execute("SELECT ref02, tracking FROM history WHERE batch_id = ? AND status = 'SUCCESS'", (batch_id,))
@@ -751,8 +758,8 @@ def download_xlsx(batch_id):
 # --- OXAPAY: WEBHOOK SIGNATURE CHECK ---
 def is_valid_oxapay_webhook(req):
     if not OXAPAY_WEBHOOK_SECRET:
-        print("[PAYMENT] WARNING: OXAPAY_WEBHOOK_SECRET not set; webhook signature not enforced")
-        return True
+        print("[PAYMENT] ERROR: OXAPAY_WEBHOOK_SECRET not set; rejecting webhook")
+        return False
 
     provided = (
         req.headers.get('X-OxaPay-Signature')
@@ -766,6 +773,12 @@ def is_valid_oxapay_webhook(req):
     raw_body = req.get_data() or b''
     expected = hmac.new(OXAPAY_WEBHOOK_SECRET.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(provided.lower(), expected.lower())
+
+def require_api_key():
+    key = request.headers.get('X-API-Key')
+    if not key or not current_user.api_key:
+        return False
+    return hmac.compare_digest(str(key), str(current_user.api_key))
 
 # --- OXAPAY: VERIFY HELPER ---
 def verify_oxapay_payment(track_id):
@@ -931,15 +944,44 @@ def public_automation_config():
 @login_required
 def automation_save():
     if not current_user.is_subscribed: return jsonify({"error": "LICENSE REQUIRED"}), 403
-    cookies = request.form.get('cookies', ''); csrf = request.form.get('csrf', '').strip(); inventory = request.form.get('inventory', '')
+    if not require_api_key(): return jsonify({"error": "INVALID API KEY"}), 403
+    cookies = request.form.get('cookies', '')
+    csrf = request.form.get('csrf', '').strip()
+    if 'inventory' in request.form:
+        inventory = request.form.get('inventory', '')
+    else:
+        inventory = current_user.inventory_json or ''
     current_user.update_settings(cookies, csrf, "", inventory, False)
     return jsonify({"status": "success", "message": "SETTINGS SAVED"})
+
+@main_bp.route('/api/inventory/save', methods=['POST'])
+@login_required
+def inventory_save():
+    data = request.json or {}
+    inventory = data.get('inventory', {})
+    try:
+        if isinstance(inventory, str):
+            inv_json = inventory.strip()
+            if inv_json == '':
+                inv_json = '{}'
+            # Validate JSON if provided as string
+            json.loads(inv_json)
+        else:
+            inv_json = json.dumps(inventory)
+    except Exception:
+        return jsonify({"error": "INVALID INVENTORY FORMAT"}), 400
+
+    conn = get_db_conn(); c = conn.cursor()
+    c.execute("UPDATE users SET inventory_json = ? WHERE id = ?", (inv_json, current_user.id))
+    conn.commit(); conn.close()
+    return jsonify({"status": "success", "message": "INVENTORY SAVED"})
 
 @main_bp.route('/api/automation/format', methods=['POST'])
 @login_required
 @limiter.limit("100 per minute")
 def automation_format():
     if not current_user.is_subscribed: return jsonify({"error": "LICENSE REQUIRED"}), 403
+    if not require_api_key(): return jsonify({"error": "INVALID API KEY"}), 403
     file = request.files.get('file')
     if not file: return jsonify({"error": "NO FILE UPLOADED"}), 400
     address_id = request.form.get('address_id'); sender_address = None
@@ -964,10 +1006,20 @@ def automation_format():
 @limiter.limit("120 per minute")
 def automation_confirm():
     if not current_user.is_subscribed: return jsonify({"error": "UNAUTHORIZED: License Required"}), 403
+    if not require_api_key(): return jsonify({"error": "INVALID API KEY"}), 403
     batch_id = request.json.get('batch_id')
     conn = get_db_conn(); c = conn.cursor()
-    c.execute("SELECT status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); row = c.fetchone()
+    c.execute("SELECT status, filename, batch_id FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); row = c.fetchone()
     if row and row[0] == 'REFUNDED': conn.close(); return jsonify({'error': 'ACCESS REVOKED: THIS BATCH WAS REFUNDED'}), 403
+    if not row:
+        conn.close()
+        return jsonify({'error': 'BATCH NOT FOUND'}), 404
+    # Restrict confirmation to automation (no SINGLE/WALMART)
+    fname = row[1] or ''
+    bid = row[2] or ''
+    if fname.startswith('WALMART_') or fname.startswith('SINGLE_') or str(bid).startswith('SINGLE_'):
+        conn.close()
+        return jsonify({'error': 'INVALID BATCH TYPE'}), 400
     conn.close()
     if batch_id in ACTIVE_CONFIRMATIONS: return jsonify({"error": "THIS BATCH IS ALREADY RUNNING"}), 429
     raw_cookies = current_user.auth_cookies; raw_csrf = current_user.auth_csrf
@@ -994,7 +1046,7 @@ def download_csv(batch_id):
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: conn.close(); return jsonify({"error": "UNAUTHORIZED"}), 403
-    if batch_row[1] == 'REFUNDED': conn.close(); return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
+    if batch_row[1] in ('REFUNDED', 'FAILED'): conn.close(); return jsonify({"error": f"ACCESS REVOKED: BATCH {batch_row[1]}"}), 403
     download_name = f"{batch_id}.csv"
     if batch_row and batch_row[0] and '_' in batch_row[0]: download_name = batch_row[0].split('_', 1)[1]
     c.execute("SELECT id, from_name, to_name, tracking, created_at, address_to FROM history WHERE batch_id = ?", (batch_id,)); rows = c.fetchall(); conn.close()
@@ -1012,7 +1064,7 @@ def download_pdf(batch_id):
     conn = get_db_conn(); c = conn.cursor()
     c.execute("SELECT filename, status FROM batches WHERE batch_id = ? AND user_id = ?", (batch_id, current_user.id)); batch_row = c.fetchone()
     if not batch_row: return jsonify({"error": "UNAUTHORIZED ACCESS"}), 403
-    if batch_row[1] == 'REFUNDED': return jsonify({"error": "ACCESS REVOKED: BATCH REFUNDED"}), 403
+    if batch_row[1] in ('REFUNDED', 'FAILED'): return jsonify({"error": f"ACCESS REVOKED: BATCH {batch_row[1]}"}), 403
     clean_name = f"Batch_{batch_id}"
     if batch_row and batch_row[0] and '_' in batch_row[0]: clean_name = os.path.splitext(batch_row[0].split('_', 1)[1])[0]
     return send_from_directory(os.path.join(current_app.config['DATA_FOLDER'], 'pdfs'), f"{batch_id}.pdf", as_attachment=True, download_name=f"{clean_name}_{batch_id}.pdf")

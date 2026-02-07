@@ -96,6 +96,7 @@
             if (tabName === 'addresses' && typeof loadAddressList === 'function') loadAddressList();
             if (tabName === 'automation') { if(typeof loadDropdown === 'function') loadDropdown(); if(typeof loadAutomationHistory === 'function') loadAutomationHistory(); }
             if (tabName === 'single' && typeof initSinglePage === 'function') initSinglePage();
+            if (tabName === 'purchase' && typeof loadSenderProfiles === 'function') loadSenderProfiles();
             updateNavUI(tabName);
         }
 
@@ -333,9 +334,11 @@
                                     let colorStyles = '';
                                     let isProcessing = false;
                                     let isRefunded = false;
+                                    let isBlocked = false;
 
                                     if (batch.status === 'REFUNDED') {
                                         isRefunded = true;
+                                        isBlocked = true;
                                         colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
                                         badgeTxt = 'REFUNDED';
                                     } 
@@ -373,6 +376,7 @@
                                     else {
                                         colorStyles = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
                                         badgeTxt = 'FAILED';
+                                        if (batch.status === 'FAILED') isBlocked = true;
                                     }
 
                                     let buttons = [];
@@ -383,7 +387,7 @@
                                     else if (isProcessing && batch.status !== 'CONFIRMING') {
                                         buttons.push(`<span class="flex items-center gap-1 text-[9px] leading-none font-mono font-bold text-gray-400 dark:text-gray-600 cursor-wait select-none">WAIT</span>`);
                                     } 
-                                    else if (batch.success_count > 0 || ['CONFIRMING', 'CONFIRMED', 'AUTH_ERROR', 'CONFIRM_FAILED', 'COMPLETED', 'PARTIAL'].includes(batch.status)) {
+                                    else if (!isBlocked && (batch.success_count > 0 || ['CONFIRMING', 'CONFIRMED', 'AUTH_ERROR', 'CONFIRM_FAILED', 'COMPLETED', 'PARTIAL'].includes(batch.status))) {
                                         // 1. PDF BUTTON
                                         buttons.push(`<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`);
                                         buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);

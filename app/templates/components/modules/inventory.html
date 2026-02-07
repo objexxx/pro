@@ -1,28 +1,170 @@
 <div class="w-full max-w-[1600px] mx-auto flex flex-col h-full py-6 px-6 space-y-6 animate-in fade-in duration-500">
     <div class="flex flex-col md:flex-row md:items-end justify-between border-b border-gray-200 dark:border-[#1E1E1E] pb-6 gap-4">
         <div>
-            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Inventory Manager</h2>
-            <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Walmart SKU & Weight Configuration</p>
+            <h2 class="text-xl font-mono font-bold text-black dark:text-white uppercase tracking-wider">> Inventory Console</h2>
+            <p class="text-[10px] text-gray-500 font-mono mt-1 uppercase">Amazon + Walmart SKU-to-Package Mapping</p>
+            <p class="text-[9px] text-gray-400 font-mono mt-1 uppercase tracking-wider">SKU Matching Is Case-Sensitive</p>
+        </div>
+        <div class="flex gap-3">
+            <div class="px-4 py-2 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] text-center">
+                <p class="text-[8px] font-bold text-gray-500 uppercase tracking-widest font-mono mb-0.5">Total SKUs</p>
+                <p id="inv_total" class="text-[12px] font-mono font-bold text-black dark:text-white">0</p>
+            </div>
         </div>
     </div>
 
-    <div class="flex-1 flex flex-col items-center justify-center p-12 border border-dashed border-gray-200 dark:border-[#1E1E1E] bg-gray-50/50 dark:bg-[#0A0A0A]/50">
-        <div class="text-center space-y-4 max-w-md">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-[#151515] border border-gray-200 dark:border-[#222] mb-4">
-                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+    <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-4 flex flex-col gap-4 min-h-0">
+            <div class="bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] p-5 shadow-glow">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 font-mono">Add / Update SKU</h3>
+                <div class="space-y-3">
+                    <input id="inv_sku" type="text" placeholder="SKU (EX: AMZ-123 / WM-456)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white placeholder-gray-400">
+                    <input id="inv_weight" type="number" step="0.01" placeholder="Weight (LBS)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white placeholder-gray-400">
+                    <input id="inv_desc" type="text" placeholder="Package Description (Optional)" class="w-full p-3 bg-gray-50 dark:bg-[#050505] border border-gray-200 dark:border-[#1E1E1E] text-[10px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white placeholder-gray-400">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="invAddOrUpdate()" class="py-3 bg-black dark:bg-white text-white dark:text-black text-[9px] font-bold uppercase tracking-widest hover:opacity-90 transition-all font-mono">Add / Update</button>
+                        <button onclick="invClearForm()" class="py-3 border border-gray-200 dark:border-[#1E1E1E] text-gray-500 hover:text-black dark:hover:text-white hover:border-black dark:hover:border-white text-[9px] font-bold uppercase transition-all font-mono">Clear</button>
+                    </div>
+                    <p class="text-[9px] text-gray-400 font-mono uppercase tracking-wider">Auto-Save Enabled</p>
+                </div>
             </div>
-            
-            <h3 class="text-lg font-bold text-black dark:text-white uppercase tracking-widest font-mono">Module In Development</h3>
-            
-            <p class="text-xs text-gray-500 font-mono leading-relaxed">
-                The <span class="text-black dark:text-white font-bold">Walmart Inventory Manager</span> is currently under construction. 
-                <br><br>
-                This module will allow you to map SKUs to package weights automatically, streamlining your Walmart fulfillment workflow.
-            </p>
+        </div>
 
-            <div class="pt-6">
-                <span class="px-3 py-1.5 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border border-yellow-500/20 rounded text-[9px] font-bold uppercase tracking-widest">Coming in V1.0.4</span>
+        <div class="lg:col-span-8 flex flex-col bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-glow overflow-hidden min-h-0">
+            <div class="p-4 border-b border-gray-200 dark:border-[#1E1E1E] flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-gray-50 dark:bg-[#050505]">
+                <div class="flex items-center gap-3 w-full md:w-auto">
+                    <input id="inv_search" type="text" placeholder="Search SKU or Description..." oninput="renderInventoryList()" class="w-full md:w-72 p-2.5 bg-white dark:bg-black border border-gray-200 dark:border-[#333] text-[9px] font-mono text-black dark:text-white outline-none focus:border-black dark:focus:border-white placeholder-gray-400">
+                </div>
+                <div class="text-[9px] font-mono text-gray-500 uppercase">Showing <span id="inv_visible">0</span> Items</div>
             </div>
+
+            <div class="flex-1 overflow-y-auto custom-scrollbar" id="inventory_list"></div>
         </div>
     </div>
 </div>
+
+<textarea id="inv_data" class="hidden">{{ user.inventory_json or '{}' }}</textarea>
+
+<script>
+    let inventoryMap = {};
+
+    function loadInventoryData() {
+        const raw = document.getElementById('inv_data');
+        if (!raw) return;
+        try {
+            const parsed = JSON.parse(raw.value || '{}');
+            inventoryMap = (parsed && typeof parsed === 'object') ? parsed : {};
+        } catch(e) {
+            inventoryMap = {};
+        }
+        renderInventoryList();
+    }
+
+    function persistInventoryData() {
+        const raw = document.getElementById('inv_data');
+        if (raw) raw.value = JSON.stringify(inventoryMap);
+    }
+
+    function invClearForm() {
+        document.getElementById('inv_sku').value = '';
+        document.getElementById('inv_weight').value = '';
+        document.getElementById('inv_desc').value = '';
+    }
+
+    function invAddOrUpdate() {
+        const sku = document.getElementById('inv_sku').value.trim();
+        const weightVal = document.getElementById('inv_weight').value.trim();
+        const desc = document.getElementById('inv_desc').value.trim();
+        if (!sku || !weightVal) { showNotification("MISSING SKU OR WEIGHT", "error"); return; }
+        const weight = parseFloat(weightVal);
+        if (isNaN(weight) || weight <= 0) { showNotification("INVALID WEIGHT", "error"); return; }
+
+        inventoryMap[sku] = { weight: weight, description: desc };
+        persistInventoryData();
+        renderInventoryList();
+        showNotification(`SKU ${sku} UPDATED`, "success");
+        invClearForm();
+        invSave();
+    }
+
+    function invRemoveItem(sku) {
+        if (inventoryMap[sku]) {
+            delete inventoryMap[sku];
+            persistInventoryData();
+            renderInventoryList();
+            showNotification(`SKU ${sku} REMOVED`, "success");
+            invSave();
+        }
+    }
+
+    function invSelectItem(sku) {
+        const item = inventoryMap[sku];
+        if (!item) return;
+        document.getElementById('inv_sku').value = sku;
+        document.getElementById('inv_weight').value = item.weight;
+        document.getElementById('inv_desc').value = item.description || '';
+    }
+
+    function renderInventoryList() {
+        const list = document.getElementById('inventory_list');
+        const search = document.getElementById('inv_search') ? document.getElementById('inv_search').value.trim().toLowerCase() : '';
+        if (!list) return;
+        const entries = Object.entries(inventoryMap || {});
+        const filtered = entries.filter(([sku, details]) => {
+            if (!search) return true;
+            const d = details || {};
+            const hay = `${sku} ${(d.description || '')}`.toLowerCase();
+            return hay.includes(search);
+        });
+
+        document.getElementById('inv_total').innerText = entries.length;
+        document.getElementById('inv_visible').innerText = filtered.length;
+
+        if (filtered.length === 0) {
+            list.innerHTML = `<div class="p-6 text-center text-gray-400 text-[9px] font-mono uppercase tracking-[0.2em]">NO INVENTORY FOUND</div>`;
+            return;
+        }
+
+        let html = '';
+        filtered.sort((a, b) => a[0].localeCompare(b[0])).forEach(([sku, details]) => {
+            const safeSku = String(sku).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+            const weight = (details && details.weight !== undefined) ? details.weight : '';
+            const desc = (details && details.description) ? details.description : 'NO DESCRIPTION';
+            html += `
+                <div class="flex items-center justify-between p-4 border-b border-gray-100 dark:border-[#151515] hover:bg-gray-50 dark:hover:bg-[#0A0A0A]">
+                    <div class="flex flex-col">
+                        <span class="text-[11px] font-bold text-black dark:text-white font-mono">${sku}</span>
+                        <span class="text-[9px] text-gray-500 font-mono uppercase">${weight} LBS // ${desc}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="invSelectItem('${safeSku}')" class="px-2.5 py-1 border border-blue-500/30 text-blue-500 hover:bg-blue-500/10 text-[8px] font-bold uppercase transition-all font-mono">Edit</button>
+                        <button onclick="invRemoveItem('${safeSku}')" class="px-2.5 py-1 border border-red-500/30 text-red-500 hover:bg-red-500/10 text-[8px] font-bold uppercase transition-all font-mono">Remove</button>
+                    </div>
+                </div>`;
+        });
+
+        list.innerHTML = html;
+    }
+
+    async function invSave() {
+        try {
+            const res = await fetch('/api/inventory/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inventory: inventoryMap })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showNotification(data.message || "INVENTORY SAVED", "success");
+            } else {
+                showNotification(data.error || "SAVE FAILED", "error");
+            }
+        } catch(e) {
+            showNotification("SAVE FAILED", "error");
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        loadInventoryData();
+    });
+</script>

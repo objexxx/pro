@@ -156,8 +156,19 @@ def detect_delimiter(filepath):
             return '\t' if '\t' in f.readline() else ','
     except: return ','
 
-def update_db_status(order_id, status):
-    execute_db("UPDATE history SET status = ? WHERE ref_id = ? OR ref02 = ?", (status, order_id, order_id))
+def update_db_status(batch_id, order_id, status):
+    execute_db(
+        "UPDATE history SET status = ? WHERE batch_id = ? AND (ref_id = ? OR ref02 = ?)",
+        (status, batch_id, order_id, order_id)
+    )
+
+def update_tracking_status(batch_id, tracking, status):
+    if not tracking:
+        return
+    execute_db(
+        "UPDATE history SET status = ? WHERE batch_id = ? AND tracking = ?",
+        (status, batch_id, tracking)
+    )
 
 def set_batch_status(batch_id, status):
     execute_db("UPDATE batches SET status = ? WHERE batch_id = ?", (status, batch_id))
@@ -375,12 +386,15 @@ def process_logic(batch_id, txt_path, cookies_input, explicit_csrf):
                     except Exception as e:
                         print(f"[AMAZON BOT] -> EXCEPTION: {e}")
                     
-                    if confirmed: save_to_history(tn) 
-                    else: group_success = False
+                    if confirmed:
+                        save_to_history(tn)
+                        update_tracking_status(batch_id, tn, 'CONFIRMED')
+                    else:
+                        group_success = False
 
                     time.sleep(random.uniform(0.8, 1.2))
 
-                if group_success: update_db_status(order_id, 'CONFIRMED')
+                if group_success: update_db_status(batch_id, order_id, 'CONFIRMED')
                 # --- FIX: Removed increment_batch_success to prevent double counting ---
                 time.sleep(0.1)
 

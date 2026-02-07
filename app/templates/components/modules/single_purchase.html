@@ -193,6 +193,15 @@
             userPrices['default'] = data.price_per_label;
             updateSinglePrice();
         } catch(e) {}
+
+        loadSingleSenderProfiles();
+        const senderSelect = document.getElementById('single_sender_select');
+        if (senderSelect && !senderSelect.dataset.bound) {
+            senderSelect.addEventListener('change', function() {
+                if (this.value) localStorage.setItem('lastSelectedSenderSingle', this.value);
+            });
+            senderSelect.dataset.bound = '1';
+        }
     }
 
     function generatePhone() {
@@ -230,6 +239,34 @@
         const ver = document.getElementById('single_version').value;
         const price = userPrices[ver] || userPrices['default'] || 3.00;
         document.getElementById('single_est_price').innerText = "$" + parseFloat(price).toFixed(2);
+    }
+
+    async function loadSingleSenderProfiles() {
+        const senderSelect = document.getElementById('single_sender_select');
+        if (!senderSelect) return;
+        try {
+            const res = await fetch('/api/addresses');
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) {
+                senderSelect.innerHTML = '<option value="" disabled selected>NO ADDRESSES FOUND (ADD IN ADDRESS TAB)</option>';
+                senderSelect.disabled = true;
+                return;
+            }
+            const savedId = localStorage.getItem('lastSelectedSenderSingle');
+            let foundSaved = false;
+            let opts = '<option value="" disabled>Select Sender Profile...</option>';
+            data.forEach(a => {
+                const isSelected = savedId && String(a.id) === String(savedId);
+                if (isSelected) foundSaved = true;
+                opts += `<option value="${a.id}" ${isSelected ? 'selected' : ''}>${a.name} | ${a.street1}</option>`;
+            });
+            senderSelect.innerHTML = opts;
+            senderSelect.disabled = false;
+            if (!foundSaved) senderSelect.value = "";
+        } catch(e) {
+            senderSelect.innerHTML = '<option value="" disabled selected>ERROR LOADING ADDRESSES</option>';
+            senderSelect.disabled = true;
+        }
     }
 
     async function submitSingleOrder() {

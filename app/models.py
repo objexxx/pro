@@ -70,6 +70,13 @@ class User(UserMixin):
                 FROM users WHERE id = ?
             """, (user_id,))
             data = c.fetchone()
+            if data and not data[7]:
+                new_key = "sk_live_" + str(uuid.uuid4()).replace('-','')[:24]
+                c.execute("UPDATE users SET api_key = ? WHERE id = ?", (new_key, data[0]))
+                conn.commit()
+                data = list(data)
+                data[7] = new_key
+                data = tuple(data)
             conn.close()
             if data: return User(*data)
             return None

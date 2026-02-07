@@ -125,8 +125,18 @@
             </div>
 
             <div class="p-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-sm">
+                <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 font-mono">Confirming</p>
+                <span id="confirming-count" class="text-2xl font-bold font-mono">0</span>
+            </div>
+
+            <div class="p-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-sm">
                 <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 font-mono">Lifetime Revenue</p>
                 <span id="rev-life" class="text-xl font-bold text-purple-600 dark:text-purple-500 font-mono">$0.00</span>
+            </div>
+
+            <div class="p-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-sm">
+                <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1 font-mono">Today's Revenue</p>
+                <span id="rev-today" class="text-xl font-bold text-green-600 dark:text-green-500 font-mono">$0.00</span>
             </div>
 
             <div class="p-4 bg-white dark:bg-[#0A0A0A] border border-gray-200 dark:border-[#1E1E1E] shadow-sm">
@@ -158,6 +168,7 @@
                 <button onclick="switchTab('confirming')" id="btn-confirming" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Confirming</button>
                 <button onclick="switchTab('history')" id="btn-history" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">History</button>
                 <button onclick="switchTab('tracking')" id="btn-tracking" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Tracking</button>
+                <button onclick="switchTab('payments')" id="btn-payments" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Payments</button>
                 <button onclick="switchTab('users')" id="btn-users" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Users</button>
                 <button onclick="switchTab('server_errors')" id="btn-server_errors" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Errors</button>
                 <button onclick="switchTab('logs')" id="btn-logs" class="tab-btn py-4 text-[10px] font-bold uppercase tracking-widest text-gray-400">Audit</button>
@@ -170,7 +181,7 @@
                 <div id="tab-queue-content" class="absolute inset-0 flex flex-col p-6 overflow-auto">
                     <table class="w-full text-left text-[10px] border border-gray-200 dark:border-[#1E1E1E]">
                         <thead class="bg-gray-100 dark:bg-[#111] text-gray-500 font-mono sticky top-0">
-                            <tr><th class="p-4">BATCH ID</th><th class="p-4">USER</th><th class="p-4">DATE</th><th class="p-4 text-center">SIZE</th><th class="p-4 text-center">STATUS</th></tr>
+                            <tr><th class="p-4">BATCH ID</th><th class="p-4">USER</th><th class="p-4">DATE</th><th class="p-4 text-center">SIZE</th><th class="p-4 text-center">STATUS</th><th class="p-4 text-right">ACTION</th></tr>
                         </thead>
                         <tbody id="live-queue-body" class="divide-y divide-gray-100 dark:divide-[#1E1E1E] bg-white dark:bg-[#0A0A0A] text-gray-700 dark:text-gray-300 font-mono"></tbody>
                     </table>
@@ -202,8 +213,8 @@
                     <div class="flex justify-between items-center pt-4">
                         <span id="hist-page-info" class="text-[9px] text-gray-400 uppercase font-bold font-mono">PAGE 1</span>
                         <div class="flex gap-2">
-                            <button onclick="changeHistPage(-1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] bg-white dark:bg-black hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">PREV</button>
-                            <button onclick="changeHistPage(1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] bg-white dark:bg-black hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">NEXT</button>
+                            <button id="hist-prev" onclick="changeHistPage(-1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] bg-white dark:bg-black hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">PREV</button>
+                            <button id="hist-next" onclick="changeHistPage(1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] bg-white dark:bg-black hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">NEXT</button>
                         </div>
                     </div>
                 </div>
@@ -246,6 +257,47 @@
                     </div>
                 </div>
 
+                <div id="tab-payments-content" class="hidden-section absolute inset-0 flex flex-col p-6 overflow-hidden">
+                    <div class="flex justify-between items-center border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] p-4 mb-4">
+                        <div class="flex items-center gap-4 w-full max-w-lg">
+                            <input type="text" id="pay-search" onkeypress="if(event.key==='Enter') { payPage = 1; fetchPayments(); }" class="flex-1 bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-2 text-xs outline-none font-mono" placeholder="Search Txn ID or Username...">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <select id="pay-status" onchange="payPage = 1; fetchPayments()" class="bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-2 text-xs outline-none font-mono">
+                                <option value="all">All Status</option>
+                                <option value="PAID">Success</option>
+                                <option value="PROCESSING">Processing</option>
+                                <option value="FAILED">Failed</option>
+                                <option value="EXPIRED">Expired</option>
+                                <option value="REJECTED">Rejected</option>
+                            </select>
+                            <button onclick="fetchPayments()" class="px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-[9px] font-bold uppercase font-mono">REFRESH</button>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-auto border border-gray-200 dark:border-[#1E1E1E]">
+                        <table class="w-full text-left text-[10px]">
+                            <thead class="bg-gray-100 dark:bg-[#111] text-gray-500 font-mono sticky top-0">
+                                <tr>
+                                    <th class="p-4 font-normal">DATE (UTC)</th>
+                                    <th class="p-4 font-normal">USERNAME</th>
+                                    <th class="p-4 font-normal text-right">AMOUNT</th>
+                                    <th class="p-4 font-normal text-center">CURRENCY</th>
+                                    <th class="p-4 font-normal text-center">STATUS</th>
+                                    <th class="p-4 font-normal">TXN ID</th>
+                                </tr>
+                            </thead>
+                            <tbody id="payments-body" class="divide-y divide-gray-100 dark:divide-[#1E1E1E] bg-white dark:bg-[#0A0A0A] text-gray-700 dark:text-gray-300 font-mono"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-between items-center pt-4">
+                        <span id="payments-page-info" class="text-[9px] text-gray-400 uppercase font-bold font-mono">PAGE 1</span>
+                        <div class="flex gap-2">
+                            <button id="payments-prev" onclick="changePaymentsPage(-1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] bg-white dark:bg-black hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">PREV</button>
+                            <button id="payments-next" onclick="changePaymentsPage(1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] bg-white dark:bg-black hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">NEXT</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="tab-users-content" class="hidden-section absolute inset-0 flex flex-col p-6 overflow-hidden">
                     <div class="flex flex-col md:flex-row gap-6 h-full">
                         <div class="w-full md:w-1/3 flex flex-col border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A]">
@@ -256,10 +308,17 @@
                                 </div>
                             </div>
                             <div class="p-4 border-b border-gray-200 dark:border-[#1E1E1E]">
-                                <input type="text" id="user-search" oninput="searchUsers()" class="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-2 text-xs outline-none font-mono" placeholder="Filter users...">
+                                <input type="text" id="user-search" oninput="resetUserSearch()" class="w-full bg-gray-50 dark:bg-black border border-gray-200 dark:border-[#333] p-2 text-xs outline-none font-mono" placeholder="Filter users...">
                             </div>
                             <div id="user-list-container" class="flex-1 overflow-y-auto custom-scrollbar">
                                 <div class="p-4 text-center text-gray-500 text-[10px]">LOADING...</div>
+                            </div>
+                            <div class="p-3 border-t border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#080808] flex justify-between items-center">
+                                <span id="users-page-info" class="text-[9px] text-gray-400 uppercase font-bold font-mono">PAGE 1</span>
+                                <div class="flex gap-2">
+                                    <button id="users-prev" onclick="changeUserPage(-1)" class="px-3 py-1.5 border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">PREV</button>
+                                    <button id="users-next" onclick="changeUserPage(1)" class="px-3 py-1.5 border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">NEXT</button>
+                                </div>
                             </div>
                         </div>
                         <div class="flex-1 border border-gray-200 dark:border-[#1E1E1E] bg-white dark:bg-[#0A0A0A] flex flex-col relative overflow-hidden">
@@ -270,7 +329,10 @@
                                 <div class="p-8 border-b border-gray-200 dark:border-[#1E1E1E] bg-gray-50 dark:bg-[#080808]">
                                     <div class="flex justify-between items-start">
                                         <div>
-                                            <h2 id="sel-username" class="text-3xl font-bold mb-2"></h2>
+                                            <div class="flex items-center gap-3 mb-2">
+                                                <h2 id="sel-username" class="text-3xl font-bold"></h2>
+                                                <span id="sel-banned" class="hidden px-2 py-0.5 text-[8px] font-bold uppercase tracking-widest font-mono text-red-500 border border-red-500/30 bg-red-500/10">BANNED</span>
+                                            </div>
                                             <div class="flex gap-4 text-[10px] text-gray-500 font-mono uppercase tracking-wide">
                                                 <span>IP: <span id="sel-ip" class="text-black dark:text-gray-300"></span></span>
                                                 <span>SUB: <span id="sel-sub-status"></span></span>
@@ -337,6 +399,7 @@
                                     <div class="border border-gray-200 dark:border-[#1E1E1E] p-5">
                                         <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 font-mono">Security</h3>
                                         <button onclick="promptReasonAndExec('reset_pass', {}, 'Enter New Password', true)" class="w-full border border-gray-200 dark:border-[#333] text-gray-500 hover:text-black dark:hover:text-white hover:border-black dark:hover:border-white py-3 text-[9px] font-bold uppercase transition-all font-mono">Reset Password</button>
+                                        <button id="btn-ban-user" onclick="confirmBan()" class="w-full mt-2 border border-red-500/30 text-red-500 hover:bg-red-500/10 py-3 text-[9px] font-bold uppercase transition-all font-mono">Ban User</button>
                                     </div>
                                     <div class="border border-gray-200 dark:border-[#1E1E1E] p-5">
                                         <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4 font-mono">Automation License</h3>
@@ -385,8 +448,8 @@
                             </select>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="changeLogPage(-1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">PREV</button>
-                            <button onclick="changeLogPage(1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">NEXT</button>
+                            <button id="logs-prev" onclick="changeLogPage(-1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">PREV</button>
+                            <button id="logs-next" onclick="changeLogPage(1)" class="px-4 py-2 border border-gray-200 dark:border-[#333] hover:bg-gray-100 dark:hover:bg-[#111] text-[9px] uppercase font-bold transition-all">NEXT</button>
                         </div>
                     </div>
                 </div>
@@ -448,8 +511,10 @@
         const API_BASE = "{{ url_for('admin.dashboard') }}".replace('/dashboard', '');
         let isWorkerPaused = false;
         let selectedUserId = null;
+        let selectedUserBanned = false;
         let currentTab = 'queue';
-        let histPage = 1, trackPage = 1, logPage = 1;
+        let histPage = 1, trackPage = 1, logPage = 1, payPage = 1, userPage = 1;
+        let histTotalPages = 1, logTotalPages = 1, payTotalPages = 1, userTotalPages = 1;
 
         const iconSun = document.getElementById('icon-sun');
         const iconMoon = document.getElementById('icon-moon');
@@ -467,6 +532,18 @@
             notif.innerHTML = `<div class="flex items-start gap-3 relative z-10"><div class="w-2 h-2 rounded-full ${dotColor} mt-1 flex-shrink-0"></div><div><h4 class="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">SYSTEM NOTIFICATION</h4><p class="text-xs font-mono font-bold text-black dark:text-white leading-tight">${message}</p></div></div><div class="absolute bottom-0 left-0 h-1 bg-gray-100 dark:bg-[#222] w-full"><div class="h-full" style="background-color: ${barColor}; animation: shrink 4s linear forwards;"></div></div>`;
             container.appendChild(notif);
             setTimeout(() => { notif.style.animation = 'fadeOut 0.5s forwards'; setTimeout(() => notif.remove(), 500); }, 4000);
+        }
+
+        function setPagerState(prevBtn, nextBtn, current, total) {
+            const disablePrev = current <= 1;
+            const disableNext = current >= total;
+            [[prevBtn, disablePrev], [nextBtn, disableNext]].forEach(([btn, disabled]) => {
+                if (!btn) return;
+                btn.disabled = disabled;
+                btn.classList.toggle('opacity-50', disabled);
+                btn.classList.toggle('cursor-not-allowed', disabled);
+                btn.classList.toggle('pointer-events-none', disabled);
+            });
         }
 
         let currentModalCallback = null;
@@ -499,10 +576,62 @@
                 userAction(action, extra); 
             }); 
         }
+
+        function renderBanButton() {
+            const btn = document.getElementById('btn-ban-user');
+            if (!btn) return;
+            const base = "w-full mt-2 py-3 text-[9px] font-bold uppercase transition-all font-mono";
+            if (selectedUserBanned) {
+                btn.innerText = "UNBAN USER";
+                btn.className = `${base} border border-green-500/30 text-green-500 hover:bg-green-500/10`;
+            } else {
+                btn.innerText = "BAN USER";
+                btn.className = `${base} border border-red-500/30 text-red-500 hover:bg-red-500/10`;
+            }
+        }
+
+        function confirmBan() {
+            if (!selectedUserId) return;
+            const title = selectedUserBanned ? "UNBAN USER" : "BAN USER";
+            const desc = selectedUserBanned
+                ? "Restore access for this account?"
+                : "This will block login for this account. Are you sure?";
+            openConfirm(title, desc, () => userAction('set_ban', { ban: !selectedUserBanned }));
+        }
         
         function refundBatch(bid) { openConfirm('REFUND BATCH', `Refund Batch ${bid}? This cannot be undone.`, () => { openPrompt('REFUND REASON', 'Enter reason for audit log:', (reason) => { fetch(`${API_BASE}/api/jobs/action`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({batch_id:bid, action:'refund', reason: reason}) }).then(r => r.json()).then(data => { if(data.status === 'success') { showNotification(data.message || 'BATCH REFUNDED', 'success'); fetchHistory(); } }); }); }); }
+
+        function queueAction(bid, action) {
+            let title = 'QUEUE ACTION';
+            let desc = 'Are you sure?';
+            if (action === 'reset') { title = 'RESET BATCH'; desc = `Requeue Batch ${bid}?`; }
+            if (action === 'refund_unprocessed') { title = 'REFUND UNPROCESSED'; desc = `Refund unprocessed labels for Batch ${bid}?`; }
+            if (action === 'cancel') { title = 'CANCEL BATCH'; desc = `Mark Batch ${bid} as FAILED without refund?`; }
+
+            openConfirm(title, desc, async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/jobs/queue_action`, {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ batch_id: bid, action })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        showNotification(data.message || 'ACTION COMPLETED', 'success');
+                        fetchSystemState();
+                        if(currentTab==='queue') fetchJobs();
+                        if(currentTab==='confirming') fetchConfirming();
+                        if(currentTab==='history') fetchHistory();
+                    } else {
+                        showNotification(data.error || 'ACTION FAILED', 'error');
+                    }
+                } catch(e) {
+                    showNotification('ACTION FAILED', 'error');
+                }
+            });
+        }
         
-        function switchTab(t) { ['queue','confirming','history','tracking','users','logs','server_errors','autoconfig','versioning'].forEach(x => { const el = document.getElementById('tab-'+x+'-content'); const btn = document.getElementById('btn-'+x); if(el) el.classList.add('hidden-section'); if(btn) { btn.classList.remove('active', 'border-black', 'dark:border-white', 'text-black', 'dark:text-white', 'border-purple-500', 'text-purple-500'); btn.classList.add('text-gray-400', 'border-transparent'); } }); document.getElementById('tab-'+t+'-content').classList.remove('hidden-section'); const activeBtn = document.getElementById('btn-'+t); 
+        function switchTab(t) { ['queue','confirming','history','tracking','payments','users','logs','server_errors','autoconfig','versioning'].forEach(x => { const el = document.getElementById('tab-'+x+'-content'); const btn = document.getElementById('btn-'+x); if(el) el.classList.add('hidden-section'); if(btn) { btn.classList.remove('active', 'border-black', 'dark:border-white', 'text-black', 'dark:text-white', 'border-purple-500', 'text-purple-500'); btn.classList.add('text-gray-400', 'border-transparent'); } }); document.getElementById('tab-'+t+'-content').classList.remove('hidden-section'); const activeBtn = document.getElementById('btn-'+t); 
         
         if (t === 'versioning') {
             activeBtn.classList.add('active', 'border-purple-500', 'text-purple-500');
@@ -510,12 +639,12 @@
             activeBtn.classList.add('active', 'border-black', 'dark:border-white', 'text-black', 'dark:text-white'); 
         }
         
-        activeBtn.classList.remove('text-gray-400', 'border-transparent'); currentTab = t; if(t==='queue') fetchJobs(); if(t==='confirming') fetchConfirming(); if(t==='history') fetchHistory(); if(t==='tracking') fetchTracking(); if(t==='users') searchUsers(); if(t==='logs') fetchLogs(); if(t==='server_errors') fetchServerErrors(); if(t==='autoconfig') fetchAutoConfig(); if(t==='versioning') fetchVersionConfig(); }
+        activeBtn.classList.remove('text-gray-400', 'border-transparent'); currentTab = t; if(t==='queue') fetchJobs(); if(t==='confirming') fetchConfirming(); if(t==='history') fetchHistory(); if(t==='tracking') fetchTracking(); if(t==='payments') fetchPayments(); if(t==='users') searchUsers(); if(t==='logs') fetchLogs(); if(t==='server_errors') fetchServerErrors(); if(t==='autoconfig') fetchAutoConfig(); if(t==='versioning') fetchVersionConfig(); }
         
-        async function fetchSystemState() { try { const res = await fetch(`${API_BASE}/api/system/health`); const data = await res.json(); const statusEl = document.getElementById('worker-state'); const pulseEl = document.getElementById('worker-pulse'); if (data.worker_status === 'PAUSED') { statusEl.innerText = "PAUSED"; statusEl.classList.replace('text-black', 'text-yellow-500'); statusEl.classList.replace('dark:text-white', 'text-yellow-500'); pulseEl.classList.replace('bg-green-500', 'bg-yellow-500'); document.getElementById('btn-pause').innerText = "RESUME"; isWorkerPaused = true; } else { statusEl.innerText = "ONLINE"; statusEl.classList.remove('text-yellow-500'); pulseEl.classList.replace('bg-yellow-500', 'bg-green-500'); document.getElementById('btn-pause').innerText = "PAUSE"; isWorkerPaused = false; } document.getElementById('queue-count').innerText = data.queue_depth; document.getElementById('error-count').innerText = data.errors_24h; document.getElementById('rev-life').innerText = "$" + parseFloat(data.revenue_lifetime).toFixed(2); document.getElementById('rev-30d').innerText = "$" + parseFloat(data.revenue_30d).toFixed(2); document.getElementById('rev-est-30d').innerText = "$" + parseFloat(data.revenue_est_30d).toFixed(2); document.getElementById('subs-mrr').innerText = "$" + parseFloat(data.subs_mrr).toFixed(2); document.getElementById('subs-count').innerText = data.subs_count; const hbDisplay = document.getElementById('hb-display'); const hbDot = document.getElementById('hb-dot'); if (data.last_heartbeat) { const last = new Date(data.last_heartbeat.replace(' ', 'T') + 'Z'); const diff = Math.round((new Date() - last) / 1000); if (diff > 60) { hbDisplay.innerText = "OFFLINE (>60s)"; hbDisplay.classList.add('text-red-500'); hbDot.classList.replace('bg-green-500', 'bg-red-500'); } else { hbDisplay.innerText = diff + "s LATENCY"; hbDisplay.classList.remove('text-red-500'); hbDot.classList.replace('bg-red-500', 'bg-green-500'); } } } catch(e) {} }
-        async function fetchJobs() { if(currentTab !== 'queue') return; const res = await fetch(`${API_BASE}/api/jobs/live`); const data = await res.json(); const tbody = document.getElementById('live-queue-body'); if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">IDLE</td></tr>'; return; } let html = ''; data.forEach(job => { html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515] last:border-0"><td class="p-4 font-bold text-black dark:text-white">${job.id}</td><td class="p-4 text-gray-500">${job.user}</td><td class="p-4 text-gray-400">${job.date}</td><td class="p-4 text-center font-bold text-black dark:text-white">${job.size}</td><td class="p-4 text-center text-blue-500 font-bold tracking-wider">${job.status}</td></tr>`; }); tbody.innerHTML = html; }
+        async function fetchSystemState() { try { const res = await fetch(`${API_BASE}/api/system/health`); const data = await res.json(); const statusEl = document.getElementById('worker-state'); const pulseEl = document.getElementById('worker-pulse'); if (data.worker_status === 'PAUSED') { statusEl.innerText = "PAUSED"; statusEl.classList.replace('text-black', 'text-yellow-500'); statusEl.classList.replace('dark:text-white', 'text-yellow-500'); pulseEl.classList.replace('bg-green-500', 'bg-yellow-500'); document.getElementById('btn-pause').innerText = "RESUME"; isWorkerPaused = true; } else { statusEl.innerText = "ONLINE"; statusEl.classList.remove('text-yellow-500'); pulseEl.classList.replace('bg-yellow-500', 'bg-green-500'); document.getElementById('btn-pause').innerText = "PAUSE"; isWorkerPaused = false; } document.getElementById('queue-count').innerText = data.queue_depth; const cEl = document.getElementById('confirming-count'); if (cEl) cEl.innerText = data.active_confirmations ?? 0; document.getElementById('error-count').innerText = data.errors_24h; const revToday = document.getElementById('rev-today'); if (revToday) revToday.innerText = "$" + parseFloat(data.revenue_today || 0).toFixed(2); document.getElementById('rev-life').innerText = "$" + parseFloat(data.revenue_lifetime).toFixed(2); document.getElementById('rev-30d').innerText = "$" + parseFloat(data.revenue_30d).toFixed(2); document.getElementById('rev-est-30d').innerText = "$" + parseFloat(data.revenue_est_30d).toFixed(2); document.getElementById('subs-mrr').innerText = "$" + parseFloat(data.subs_mrr).toFixed(2); document.getElementById('subs-count').innerText = data.subs_count; const hbDisplay = document.getElementById('hb-display'); const hbDot = document.getElementById('hb-dot'); if (data.last_heartbeat) { const last = new Date(data.last_heartbeat.replace(' ', 'T') + 'Z'); const diff = Math.round((new Date() - last) / 1000); if (diff > 60) { hbDisplay.innerText = "OFFLINE (>60s)"; hbDisplay.classList.add('text-red-500'); hbDot.classList.replace('bg-green-500', 'bg-red-500'); } else { hbDisplay.innerText = diff + "s LATENCY"; hbDisplay.classList.remove('text-red-500'); hbDot.classList.replace('bg-red-500', 'bg-green-500'); } } } catch(e) {} }
+        async function fetchJobs() { if(currentTab !== 'queue') return; const res = await fetch(`${API_BASE}/api/jobs/live`); const data = await res.json(); const tbody = document.getElementById('live-queue-body'); if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">IDLE</td></tr>'; return; } let html = ''; data.forEach(job => { const canReset = (parseInt(job.progress || 0) <= 0); const resetBtn = canReset ? `<button onclick="queueAction('${job.id}', 'reset')" class="px-2 py-1 border border-blue-500/30 text-blue-500 hover:bg-blue-500/10 text-[8px] font-bold uppercase transition-all font-mono">RESET</button>` : `<span class="px-2 py-1 text-[8px] text-gray-400 font-mono uppercase border border-gray-200 dark:border-[#333]">RESET</span>`; const refundBtn = `<button onclick="queueAction('${job.id}', 'refund_unprocessed')" class="px-2 py-1 border border-green-500/30 text-green-600 dark:text-green-500 hover:bg-green-500/10 text-[8px] font-bold uppercase transition-all font-mono">REFUND</button>`; const cancelBtn = `<button onclick="queueAction('${job.id}', 'cancel')" class="px-2 py-1 border border-red-500/30 text-red-500 hover:bg-red-500/10 text-[8px] font-bold uppercase transition-all font-mono">CANCEL</button>`; html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515] last:border-0"><td class="p-4 font-bold text-black dark:text-white">${job.id}</td><td class="p-4 text-gray-500">${job.user}</td><td class="p-4 text-gray-400">${job.date}</td><td class="p-4 text-center font-bold text-black dark:text-white">${job.size}</td><td class="p-4 text-center text-blue-500 font-bold tracking-wider">${job.status}</td><td class="p-4 text-right"><div class="flex justify-end gap-2">${resetBtn}${refundBtn}${cancelBtn}</div></td></tr>`; }); tbody.innerHTML = html; }
         async function fetchConfirming() { if(currentTab !== 'confirming') return; const res = await fetch(`${API_BASE}/api/jobs/confirming`); const data = await res.json(); const tbody = document.getElementById('live-confirming-body'); if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">NO ACTIVE CONFIRMATIONS</td></tr>'; return; } let html = ''; data.forEach(job => { html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515]"><td class="p-4 text-blue-500 font-bold font-mono">${job.id}</td><td class="p-4 text-gray-500">${job.user}</td><td class="p-4 text-gray-400">${job.date}</td><td class="p-4 text-center font-bold text-black dark:text-white">${job.progress} / ${job.size}</td><td class="p-4 text-center text-blue-500 animate-pulse font-bold tracking-wider">CONFIRMING...</td></tr>`; }); tbody.innerHTML = html; }
-        async function fetchHistory() { if(currentTab !== 'history') return; const q = document.getElementById('hist-search').value; const res = await fetch(`${API_BASE}/api/jobs/history?page=${histPage}&search=${q}`); const json = await res.json(); const tbody = document.getElementById('history-body'); document.getElementById('hist-page-info').innerText = `PAGE ${json.current_page} OF ${json.total_pages||1}`; let html = ''; if(json.data.length===0) html='<tr><td colspan="7" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">EMPTY</td></tr>'; else json.data.forEach(j => { let btn = j.status==='REFUNDED' ? '<span class="text-red-500 text-[9px] font-bold">REFUNDED</span>' : `<button onclick="refundBatch('${j.id}')" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 border border-red-200 dark:border-red-900/50 px-2 py-1 text-[9px] font-bold uppercase transition-all">REFUND</button>`; html+=`<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515]"><td class="p-4 font-mono">${j.id}</td><td class="p-4 font-bold text-black dark:text-white">${j.user}</td><td class="p-4 text-gray-400">${j.date}</td><td class="p-4 text-center font-mono">${j.progress}</td><td class="p-4 text-center text-green-600 dark:text-green-500 font-mono">$${j.value.toFixed(2)}</td><td class="p-4 text-center text-[9px] font-bold tracking-wide text-gray-500">${j.status}</td><td class="p-4 text-right">${btn}</td></tr>`; }); tbody.innerHTML = html; }
+        async function fetchHistory() { if(currentTab !== 'history') return; const q = document.getElementById('hist-search').value; const res = await fetch(`${API_BASE}/api/jobs/history?page=${histPage}&search=${q}`); const json = await res.json(); const tbody = document.getElementById('history-body'); histTotalPages = json.total_pages || 1; if(histPage > histTotalPages) { histPage = histTotalPages; return fetchHistory(); } document.getElementById('hist-page-info').innerText = `PAGE ${json.current_page} OF ${histTotalPages}`; setPagerState(document.getElementById('hist-prev'), document.getElementById('hist-next'), json.current_page || 1, histTotalPages); let html = ''; if(json.data.length===0) html='<tr><td colspan="7" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">EMPTY</td></tr>'; else json.data.forEach(j => { let btn = j.status==='REFUNDED' ? '<span class="text-red-500 text-[9px] font-bold">REFUNDED</span>' : `<button onclick="refundBatch('${j.id}')" class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 border border-red-200 dark:border-red-900/50 px-2 py-1 text-[9px] font-bold uppercase transition-all">REFUND</button>`; html+=`<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515]"><td class="p-4 font-mono">${j.id}</td><td class="p-4 font-bold text-black dark:text-white">${j.user}</td><td class="p-4 text-gray-400">${j.date}</td><td class="p-4 text-center font-mono">${j.progress}</td><td class="p-4 text-center text-green-600 dark:text-green-500 font-mono">$${j.value.toFixed(2)}</td><td class="p-4 text-center text-[9px] font-bold tracking-wide text-gray-500">${j.status}</td><td class="p-4 text-right">${btn}</td></tr>`; }); tbody.innerHTML = html; }
         
         async function fetchTracking() { 
             if(currentTab !== 'tracking') return; 
@@ -532,18 +661,60 @@
             }); 
             tbody.innerHTML = html; 
         }
+
+        async function fetchPayments() {
+            if(currentTab !== 'payments') return;
+            const q = document.getElementById('pay-search').value;
+            const status = document.getElementById('pay-status').value;
+            const res = await fetch(`${API_BASE}/api/payments/list?page=${payPage}&search=${encodeURIComponent(q)}&status=${status}`);
+            const json = await res.json();
+            const tbody = document.getElementById('payments-body');
+            const pInfo = document.getElementById('payments-page-info');
+            payTotalPages = (json.pagination && json.pagination.total_pages) ? json.pagination.total_pages : 1;
+            if(payPage > payTotalPages) { payPage = payTotalPages; return fetchPayments(); }
+            const curPage = (json.pagination && json.pagination.current_page) ? json.pagination.current_page : 1;
+            if (pInfo) pInfo.innerText = `PAGE ${curPage} OF ${payTotalPages}`;
+            setPagerState(document.getElementById('payments-prev'), document.getElementById('payments-next'), curPage, payTotalPages);
+            let html = '';
+            if (!json.data || json.data.length === 0) {
+                html = '<tr><td colspan="6" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">NO PAYMENTS FOUND</td></tr>';
+            } else {
+                json.data.forEach(p => {
+                    const rawStatus = (p.status || '').toUpperCase();
+                    let badgeClass = 'text-gray-500 border-gray-300 dark:border-[#333] bg-gray-100 dark:bg-[#111]';
+                    let badgeText = rawStatus || 'UNKNOWN';
+                    if (rawStatus === 'PAID') { badgeClass = 'text-green-600 dark:text-green-500 border-green-500/20 bg-green-500/5'; badgeText = 'SUCCESS'; }
+                    else if (rawStatus === 'PROCESSING') { badgeClass = 'text-blue-500 border-blue-500/20 bg-blue-500/5'; }
+                    else if (['FAILED','EXPIRED','REJECTED'].includes(rawStatus)) { badgeClass = 'text-red-500 border-red-500/20 bg-red-500/5'; }
+                    const amt = parseFloat(p.amount || 0).toFixed(2);
+                    html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515]">
+                        <td class="p-4 text-gray-400 font-mono">${p.date || ''}</td>
+                        <td class="p-4 text-gray-500 font-bold">${p.user || 'UNKNOWN'}</td>
+                        <td class="p-4 text-right text-green-600 dark:text-green-500 font-mono">$${amt}</td>
+                        <td class="p-4 text-center text-gray-500 font-mono">${(p.currency || '').toUpperCase()}</td>
+                        <td class="p-4 text-center"><span class="px-2 py-1 border ${badgeClass} text-[9px] font-bold uppercase font-mono">${badgeText}</span></td>
+                        <td class="p-4 font-mono text-black dark:text-white">${p.txn_id || '--'}</td>
+                    </tr>`;
+                });
+            }
+            tbody.innerHTML = html;
+        }
+
+        function changePaymentsPage(d) { payPage += d; if(payPage < 1) payPage = 1; if(payPage > payTotalPages) payPage = payTotalPages; fetchPayments(); }
         
-        async function fetchLogs() { if(currentTab !== 'logs') return; const limit = document.getElementById('logs-limit').value; const res = await fetch(`${API_BASE}/api/logs?page=${logPage}&limit=${limit}`); const data = await res.json(); const tbody = document.getElementById('logs-body'); document.getElementById('logs-page-info').innerText = `PAGE ${data.pagination.current_page} OF ${data.pagination.total_pages || 1}`; let html = ''; data.data.forEach(l => { let color = 'text-gray-500'; if(l.action === 'REFUND' || l.action.includes('REVOKE')) color = 'text-red-500'; if(l.action === 'BALANCE_ADJUST') color = 'text-green-600 dark:text-green-500'; if(l.action === 'CONFIG_UPDATE') color = 'text-purple-500'; html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515]"><td class="p-4 text-gray-400 font-mono">${l.date}</td><td class="p-4 font-bold text-[10px] tracking-wider ${color}">${l.action}</td><td class="p-4 text-black dark:text-white">${l.details}</td></tr>`; }); tbody.innerHTML = html || '<tr><td colspan="3" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">NO LOGS FOUND</td></tr>'; }
+        async function fetchLogs() { if(currentTab !== 'logs') return; const limit = document.getElementById('logs-limit').value; const res = await fetch(`${API_BASE}/api/logs?page=${logPage}&limit=${limit}`); const data = await res.json(); const tbody = document.getElementById('logs-body'); logTotalPages = data.pagination.total_pages || 1; if(logPage > logTotalPages) { logPage = logTotalPages; return fetchLogs(); } const curPage = data.pagination.current_page || 1; document.getElementById('logs-page-info').innerText = `PAGE ${curPage} OF ${logTotalPages}`; setPagerState(document.getElementById('logs-prev'), document.getElementById('logs-next'), curPage, logTotalPages); let html = ''; data.data.forEach(l => { let color = 'text-gray-500'; if(l.action === 'REFUND' || l.action.includes('REVOKE')) color = 'text-red-500'; if(l.action === 'BALANCE_ADJUST') color = 'text-green-600 dark:text-green-500'; if(l.action === 'CONFIG_UPDATE') color = 'text-purple-500'; html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515]"><td class="p-4 text-gray-400 font-mono">${l.date}</td><td class="p-4 font-bold text-[10px] tracking-wider ${color}">${l.action}</td><td class="p-4 text-black dark:text-white">${l.details}</td></tr>`; }); tbody.innerHTML = html || '<tr><td colspan="3" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">NO LOGS FOUND</td></tr>'; }
         function resetLogs() { logPage = 1; fetchLogs(); }
-        function changeLogPage(d) { logPage += d; if(logPage < 1) logPage = 1; fetchLogs(); }
+        function changeLogPage(d) { logPage += d; if(logPage < 1) logPage = 1; if(logPage > logTotalPages) logPage = logTotalPages; fetchLogs(); }
         async function fetchServerErrors() { if(currentTab !== 'server_errors') return; const res = await fetch(`${API_BASE}/api/server/errors`); const data = await res.json(); const tbody = document.getElementById('server-errors-body'); let html = ''; data.forEach(e => { html += `<tr class="hover:bg-gray-50 dark:hover:bg-[#111] border-b border-gray-100 dark:border-[#151515] group"><td class="p-4 text-gray-400 font-mono">${e.date}</td><td class="p-4 text-yellow-600 dark:text-yellow-500 font-bold uppercase text-[10px]">${e.source}</td><td class="p-4 text-blue-500 font-mono">${e.batch || '--'}</td><td class="p-4 text-red-500 font-mono text-[10px] whitespace-pre-wrap break-all">${e.msg}</td></tr>`; }); tbody.innerHTML = html || '<tr><td colspan="4" class="p-8 text-center text-gray-400 text-[10px] tracking-widest uppercase">NO SYSTEM ERRORS RECORDED</td></tr>'; }
         async function fetchAutoConfig() { const res = await fetch(`${API_BASE}/api/automation/config`); const data = await res.json(); document.getElementById('cfg_price_monthly').value = data.automation_price_monthly || ''; document.getElementById('cfg_price_lifetime').value = data.automation_price_lifetime || ''; document.getElementById('cfg_slots_monthly').value = data.slots_monthly_total || ''; document.getElementById('cfg_slots_lifetime').value = data.slots_lifetime_total || ''; }
         async function saveAutoConfig() { const payload = { automation_price_monthly: document.getElementById('cfg_price_monthly').value, automation_price_lifetime: document.getElementById('cfg_price_lifetime').value, slots_monthly_total: document.getElementById('cfg_slots_monthly').value, slots_lifetime_total: document.getElementById('cfg_slots_lifetime').value }; const res = await fetch(`${API_BASE}/api/automation/config`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) }); if(res.ok) { const data = await res.json(); showNotification(data.message || "CONFIG SAVED", "success"); } else { showNotification("ERROR SAVING CONFIG", "error"); } }
-        function exportCsv() { const d = document.getElementById('export-days').value; window.location.href = `${API_BASE}/api/tracking/export?days=${d}`; showNotification(`DOWNLOADING CSV (${d} DAYS)...`, 'success'); }
-        function changeHistPage(d) { histPage += d; if(histPage<1) histPage=1; fetchHistory(); }
+        function exportCsv() { const d = document.getElementById('export-days').value; const prefix = document.getElementById('track-prefix').value; window.location.href = `${API_BASE}/api/tracking/export?days=${d}&prefix=${prefix}`; showNotification(`DOWNLOADING CSV (${d} DAYS)...`, 'success'); }
+        function changeHistPage(d) { histPage += d; if(histPage<1) histPage=1; if(histPage > histTotalPages) histPage = histTotalPages; fetchHistory(); }
         async function toggleWorker() { const action = isWorkerPaused ? 'resume' : 'pause'; await fetch(`${API_BASE}/api/queue/control`, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action})}); fetchSystemState(); }
         let userSearchTimeout;
-        async function searchUsers() { const q = document.getElementById('user-search').value; const container = document.getElementById('user-list-container'); const countLabel = document.getElementById('total-users-count'); clearTimeout(userSearchTimeout); userSearchTimeout = setTimeout(async()=>{ const res = await fetch(`${API_BASE}/api/users/search?q=${q}`); const data = await res.json(); if(countLabel) countLabel.innerText = data.total; if(data.users.length === 0) { container.innerHTML = '<div class="p-4 text-center text-gray-400 text-[10px] uppercase">No Users Found</div>'; return; } let html = ''; data.users.forEach(u => { const activeClass = (selectedUserId == u.id) ? 'bg-gray-100 dark:bg-[#111] border-l-2 border-black dark:border-white' : 'border-l-2 border-transparent'; html += `<div onclick="loadUser('${u.id}', '${u.username}', '${u.balance}')" class="p-3 border-b border-gray-100 dark:border-[#151515] hover:bg-gray-50 dark:hover:bg-[#111] cursor-pointer group ${activeClass} transition-all"><div class="flex justify-between items-center"><span class="text-xs text-black dark:text-gray-300 font-bold group-hover:text-black dark:group-hover:text-white">${u.username}</span><span class="text-[10px] text-green-600 dark:text-green-500 font-mono">$${parseFloat(u.balance).toFixed(2)}</span></div><div class="text-[9px] text-gray-400 font-mono mt-1">ID: ${u.id} | Joined: ${u.date}</div></div>`; }); container.innerHTML = html; }, 300); }
+        function resetUserSearch() { userPage = 1; searchUsers(); }
+        function changeUserPage(d) { userPage += d; if(userPage < 1) userPage = 1; if(userPage > userTotalPages) userPage = userTotalPages; searchUsers(); }
+        async function searchUsers() { const q = document.getElementById('user-search').value; const container = document.getElementById('user-list-container'); const countLabel = document.getElementById('total-users-count'); clearTimeout(userSearchTimeout); userSearchTimeout = setTimeout(async()=>{ const res = await fetch(`${API_BASE}/api/users/search?q=${encodeURIComponent(q)}&page=${userPage}`); const data = await res.json(); if(countLabel) countLabel.innerText = data.total; userTotalPages = (data.pagination && data.pagination.total_pages) ? data.pagination.total_pages : 1; if(userPage > userTotalPages) { userPage = userTotalPages; return searchUsers(); } const curPage = (data.pagination && data.pagination.current_page) ? data.pagination.current_page : 1; const pageInfo = document.getElementById('users-page-info'); if(pageInfo) pageInfo.innerText = `PAGE ${curPage} OF ${userTotalPages}`; setPagerState(document.getElementById('users-prev'), document.getElementById('users-next'), curPage, userTotalPages); if(!data.users || data.users.length === 0) { container.innerHTML = '<div class="p-4 text-center text-gray-400 text-[10px] uppercase">No Users Found</div>'; return; } let html = ''; data.users.forEach(u => { const activeClass = (selectedUserId == u.id) ? 'bg-gray-100 dark:bg-[#111] border-l-2 border-black dark:border-white' : 'border-l-2 border-transparent'; const bannedBadge = u.is_banned ? '<span class="px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest font-mono text-red-500 border border-red-500/30 bg-red-500/10">BANNED</span>' : ''; html += `<div onclick="loadUser('${u.id}', '${u.username}', '${u.balance}')" class="p-3 border-b border-gray-100 dark:border-[#151515] hover:bg-gray-50 dark:hover:bg-[#111] cursor-pointer group ${activeClass} transition-all"><div class="flex justify-between items-center"><div class="flex items-center gap-2"><span class="text-xs text-black dark:text-gray-300 font-bold group-hover:text-black dark:group-hover:text-white">${u.username}</span>${bannedBadge}</div><span class="text-[10px] text-green-600 dark:text-green-500 font-mono">$${parseFloat(u.balance).toFixed(2)}</span></div><div class="text-[9px] text-gray-400 font-mono mt-1">ID: ${u.id} | Joined: ${u.date}</div></div>`; }); container.innerHTML = html; }, 300); }
         
         // --- UPDATED LOAD USER ---
         async function loadUser(id, name, bal) { 
@@ -560,6 +731,13 @@
             document.getElementById('sel-ip').innerText = d.ip; 
             document.getElementById('sel-sub-status').innerText = d.subscription.is_active ? "ACTIVE" : "INACTIVE"; 
             document.getElementById('sel-sub-status').className = d.subscription.is_active ? "text-green-500 font-bold" : "text-gray-500"; 
+            selectedUserBanned = !!d.is_banned;
+            renderBanButton();
+            const banBadge = document.getElementById('sel-banned');
+            if (banBadge) {
+                if (selectedUserBanned) banBadge.classList.remove('hidden');
+                else banBadge.classList.add('hidden');
+            }
             
             // Populate ALL price fields (95055, 94888, 94019, 95888, 91149, 93055)
             document.getElementById('price-priority-95055').value = d.prices['priority_95055'] || d.prices['priority'];
@@ -592,6 +770,15 @@
                     document.getElementById('balance-adj-amount').value = ''; 
                     searchUsers(); 
                 } 
+                if(act==='set_ban') {
+                    if (typeof data.is_banned !== 'undefined') selectedUserBanned = !!data.is_banned;
+                    renderBanButton();
+                    const banBadge = document.getElementById('sel-banned');
+                    if (banBadge) {
+                        if (selectedUserBanned) banBadge.classList.remove('hidden');
+                        else banBadge.classList.add('hidden');
+                    }
+                }
                 if(act==='revoke_sub' || act==='grant_sub') loadUser(selectedUserId, document.getElementById('sel-username').innerText, document.getElementById('sel-balance').innerText.replace('$','')); 
             } else { 
                 showNotification("ACTION FAILED", "error"); 

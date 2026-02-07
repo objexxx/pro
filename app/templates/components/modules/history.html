@@ -80,9 +80,11 @@
                     let colorStyles = '';
                     let isProcessing = false;
                     let isRefunded = false;
+                    let isBlocked = false;
 
                     if (batch.status === 'REFUNDED') {
                         isRefunded = true;
+                        isBlocked = true;
                         colorStyles = 'text-red-500 border-red-500/30 bg-red-500/10';
                         badgeTxt = 'REFUNDED';
                     } 
@@ -120,6 +122,7 @@
                     else {
                         colorStyles = 'text-red-600 dark:text-red-400 border-red-500/20 bg-red-500/5';
                         badgeTxt = 'FAILED';
+                        if (batch.status === 'FAILED') isBlocked = true;
                     }
 
                     // --- BUTTON LOGIC ---
@@ -138,7 +141,7 @@
                                 WAIT
                             </span>`);
                     } 
-                    else if (batch.success_count > 0) {
+                    else if (!isBlocked && batch.success_count > 0) {
                         // 1. PDF BUTTON
                         buttons.push(`<a href="/api/download/pdf/${batch.batch_id}" class="text-blue-500 hover:text-blue-400 font-black uppercase text-[9px] leading-none transition-colors">PDF</a>`);
                         buttons.push(`<span class="text-gray-300 text-[9px] leading-none select-none">|</span>`);
